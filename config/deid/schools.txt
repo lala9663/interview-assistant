@@ -1,0 +1,75 @@
+# 학교명 사전 초안 (공개적으로 알려진 주요 학교). 사내 목록으로 교체·확장할 것.
+# 형식: 정식명 | 별칭 | 별칭 ...   첫 이름이 정식명이고 별칭은 모두 같은 토큰이 된다.
+# 일반 단어와 겹치는 약칭(연대, 고대, 이대, 홍대 등)은 일부러 넣지 않았다.
+# 사전에 없어도 "OO대학교", "OO고등학교" 형태는 pattern 탐지기가 잡는다.
+
+# 대학교
+서울대학교 | 서울대 | SNU | Seoul National University
+연세대학교 | 연세대 | Yonsei University
+고려대학교 | 고려대 | Korea University
+한국과학기술원 | 카이스트 | KAIST
+포항공과대학교 | 포항공대 | 포스텍 | POSTECH
+울산과학기술원 | 유니스트 | UNIST
+광주과학기술원 | 지스트 | GIST
+대구경북과학기술원 | 디지스트 | DGIST
+성균관대학교 | 성균관대 | SKKU
+한양대학교 | 한양대 | Hanyang University
+서강대학교 | 서강대 | Sogang University
+중앙대학교 | 중앙대 | Chung-Ang University
+경희대학교 | 경희대 | Kyung Hee University
+한국외국어대학교 | 한국외대 | 외대 | HUFS
+서울시립대학교 | 서울시립대 | 시립대
+이화여자대학교 | 이화여대 | Ewha Womans University
+숙명여자대학교 | 숙명여대
+성신여자대학교 | 성신여대
+덕성여자대학교 | 덕성여대
+동덕여자대학교 | 동덕여대
+서울여자대학교 | 서울여대
+건국대학교 | 건국대 | Konkuk University
+동국대학교 | 동국대 | Dongguk University
+홍익대학교 | 홍익대 | Hongik University
+국민대학교 | 국민대
+숭실대학교 | 숭실대
+세종대학교 | 세종대
+광운대학교 | 광운대
+명지대학교 | 명지대
+단국대학교 | 단국대
+가톨릭대학교 | 가톨릭대
+아주대학교 | 아주대 | Ajou University
+인하대학교 | 인하대 | Inha University
+한국항공대학교 | 항공대
+서울과학기술대학교 | 서울과기대 | 서울과학기술대
+한국기술교육대학교 | 코리아텍 | KOREATECH
+한국방송통신대학교 | 방송통신대 | 방통대
+부산대학교 | 부산대 | Pusan National University
+경북대학교 | 경북대 | Kyungpook National University
+전남대학교 | 전남대
+전북대학교 | 전북대
+충남대학교 | 충남대
+충북대학교 | 충북대
+강원대학교 | 강원대
+제주대학교 | 제주대
+경상국립대학교 | 경상대
+부경대학교 | 부경대
+영남대학교 | 영남대
+계명대학교 | 계명대
+동아대학교 | 동아대
+
+# 해외 대학
+Massachusetts Institute of Technology | MIT | 매사추세츠공대
+Stanford University | Stanford | 스탠퍼드대학교 | 스탠퍼드대 | 스탠퍼드
+Carnegie Mellon University | CMU | 카네기멜론대학교 | 카네기멜론
+University of California, Berkeley | UC Berkeley | 버클리대학교 | UC버클리
+Georgia Institute of Technology | Georgia Tech | 조지아공대
+University of Tokyo | 도쿄대학교 | 도쿄대
+National University of Singapore | NUS | 싱가포르국립대
+
+# 고등학교 (전국 단위 모집 등 이름만으로 좁혀지는 학교)
+서울과학고등학교 | 서울과학고 | 서울과고
+경기과학고등학교 | 경기과학고 | 경기과고
+한국과학영재학교 | 과학영재학교
+민족사관고등학교 | 민족사관고 | 민사고
+대원외국어고등학교 | 대원외고
+명덕외국어고등학교 | 명덕외고
+상산고등학교 | 상산고
+용인한국외국어대학교부설고등학교 | 외대부고

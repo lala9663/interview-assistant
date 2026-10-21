@@ -1,0 +1,32 @@
+# 비식별화 설정. 경로는 IA_DEID_FILE로 바꾼다.
+# 토큰 형식은 초안이다 (구현 순서 2단계 사전 작업, 사용자 확정 전). 실제 데이터를 넣기 전에 확정할 것.
+# 이미 저장된 토큰은 형식을 바꿔도 그대로 남는다.
+deid:
+  # {n}은 지원자별·항목별 순번. {n}이 없으면 그 항목의 모든 값이 토큰 하나로 치환된다.
+  tokens:
+    candidate: "[지원자]"
+    person: "[인물-{n}]"
+    phone: "[전화-{n}]"
+    email: "[이메일-{n}]"
+    birthdate: "[생년월일-{n}]"
+    rrn: "[주민번호-{n}]"
+    address: "[주소-{n}]"
+    school: "[학교-{n}]"
+    company: "[회사-{n}]"
+
+  # 이 파일 기준 상대 경로. 한 줄에 "정식명 | 별칭 | 별칭". 여러 파일을 나열하면 합친다.
+  # 사내 목록이 생기면 파일을 추가하고 여기에 나열한다.
+  dictionaries:
+    school: [deid/schools.txt]
+    company: [deid/companies.txt]
+
+  # 순서는 무관하다. 겹치는 구간은 합쳐서 하나의 토큰으로 바꾼다.
+  # known_identity: 지원서에 적힌 본인 정보 / regex: 전화·이메일·주민번호·생년월일·주소
+  # dictionary: 학교·회사 사전 / pattern: 사전에 없는 "OO대학교", "(주)OO" 형태
+  # titled_person: "이서준 팀장님"처럼 호칭이 붙은 제3자 이름 (NER 도입 전 임시 규칙)
+  # ner: 한국어 NER 모델. 코드에서 recognizer를 넘겨야 켜진다.
+  detectors: [known_identity, regex, dictionary, pattern, titled_person]
+
+  # 치환하지 않을 표현 (학교·회사·인물·주소에만 적용). 예: 채용 회사 자신의 이름.
+  # 비워 두면 모두 치환한다. 지원자 본인 정보와 연락처는 여기에 넣어도 치환된다.
+  allow: []

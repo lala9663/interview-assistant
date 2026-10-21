@@ -6,7 +6,7 @@ from pathlib import Path
 from typing import Any
 
 import yaml
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, SecretStr
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -34,6 +34,9 @@ class Settings(BaseSettings):
 
     database_url: str = "sqlite+pysqlite:///./dev.db"
     providers_file: Path = Path("config/providers.yaml")
+    deid_file: Path = Path("config/deid.yaml")
+    # Fernet key for encrypted columns (candidate identity, de-identification reverse map).
+    encryption_key: SecretStr | None = None
 
 
 def load_providers(path: Path) -> ProvidersConfig:

@@ -1,0 +1,366 @@
+# 비식별화 누출 검수용 합성 샘플 20건. 전부 가상 인물이며 실제 개인정보는 없다.
+#
+# 만든 규칙
+# - 휴대전화: 010-0xxx-xxxx, 010-1xxx-xxxx (가입자에게 배정되지 않는 국번대)
+# - 이메일: example.com / example.org / example.net (RFC 2606 예약 도메인)
+# - 주민등록번호: 마스킹된 형태 또는 검증번호가 틀린 번호
+# - 주소: 실재 시·군·구에 지어낸 도로명(솔바람길, 별빛누리길 등)
+# - 학교·회사: 사전에 있는 공개 기관명, 또는 지어낸 이름(한빛대학교, 누리소프트 등)
+# - 제3자 이름은 호칭이 붙은 형태로만 등장한다. 호칭 없는 제3자 이름은 NER 도입 후 범위.
+#
+# identity: 지원서에서 이미 알고 있는 본인 정보 (KnownIdentity)
+# expected: 본문에 등장하는 식별 값 정답 목록. 비식별화 후 하나도 남으면 안 된다.
+#   부분 누출도 잡도록 주소는 도로명·건물·호수처럼 조각으로, 이름은 이름만 따로 나온 경우도 적는다.
+# keep: 식별 정보 옆의 일반 표현. 치환에 같이 먹히면 과잉 치환으로 실패한다.
+samples:
+  - id: S01
+    kind: 자기소개
+    identity:
+      name: 김도윤
+      phones: [010-0123-4567]
+      emails: [doyoon.kim@example.com]
+      birthdate: "1995-03-14"
+      addresses: ["서울특별시 마포구 솔바람길 27, 101동 1203호"]
+      schools: [한빛대학교]
+      companies: ["(주)누리소프트"]
+    text: >-
+      안녕하세요. 백엔드 개발자로 지원한 김도윤입니다. 한빛대학교 컴퓨터공학과를 졸업하고
+      (주)누리소프트에서 4년간 결제 시스템을 개발했습니다. 연락처는 010-0123-4567,
+      이메일은 doyoon.kim@example.com입니다.
+    expected:
+      - {category: candidate, value: 김도윤}
+      - {category: school, value: 한빛대학교}
+      - {category: company, value: 누리소프트}
+      - {category: phone, value: 010-0123-4567}
+      - {category: email, value: doyoon.kim@example.com}
+    keep: [컴퓨터공학과를 졸업하고, 결제 시스템, 백엔드 개발자로]
+
+  - id: S02
+    kind: 면접 답변
+    identity:
+      name: 이서연
+      schools: [서울대학교]
+      companies: [네이버]
+    text: >-
+      네이버 검색팀에 있을 때 박준혁 팀장님과 배포 일정 때문에 의견이 갈린 적이 있습니다.
+      팀장님은 일정을 지키자고 하셨고, 저는 테스트를 더 하자고 했습니다. 결국 정민지 선배님이
+      중재해 주셔서 단계적 배포로 합의했습니다. 그때 팀원들이 저를 서연 님이라고 부르면서
+      리뷰를 꼼꼼히 해 줬던 게 기억에 남습니다.
+    expected:
+      - {category: company, value: 네이버}
+      - {category: person, value: 박준혁}
+      - {category: person, value: 정민지}
+      - {category: candidate, value: 서연}
+    keep: [검색팀에, 팀장님과, 선배님이]
+
+  - id: S03
+    kind: 전사(STT)
+    identity:
+      name: 박지훈
+      phones: [010-1234-0987]
+      birthdate: "1993-11-23"
+      addresses: ["경기도 수원시 영통구 누리별로 88"]
+    text: >-
+      네 저는 박 지훈이라고 합니다 어 연락처는 010 1234 0987 이고요 생년월일은 1993년 11월 23일입니다
+      지금은 경기도 수원시 영통구에 살고 있습니다
+    expected:
+      - {category: candidate, value: 박지훈}
+      - {category: phone, value: 010 1234 0987}
+      - {category: birthdate, value: 1993년 11월 23일}
+      - {category: address, value: 경기도 수원시 영통구}
+
+  - id: S04
+    kind: 이력서 발췌
+    identity:
+      name: 최유진
+      aliases: [Yujin Choi]
+      phones: ["+82 10-0456-7788"]
+      emails: [yujin.choi@example.org]
+      birthdate: "1997-01-09"
+      addresses: ["부산광역시 해운대구 새빛누리로 15"]
+      schools: [부산대학교]
+      companies: [LG전자]
+    text: |-
+      이름: 최유진 (Yujin Choi)
+      생년월일: 1997/01/09
+      주소: 부산광역시 해운대구 새빛누리로 15
+      휴대전화: +82 10-0456-7788
+      E-mail: yujin.choi@example.org
+      학력: 부산대학교 전자공학과 졸업
+      경력: LG전자 생산기술연구소 연구원 (3년)
+    expected:
+      - {category: candidate, value: 최유진}
+      - {category: candidate, value: Yujin Choi}
+      - {category: birthdate, value: 1997/01/09}
+      - {category: address, value: 부산광역시 해운대구}
+      - {category: address, value: 새빛누리로 15}
+      - {category: phone, value: "+82 10-0456-7788"}
+      - {category: email, value: yujin.choi@example.org}
+      - {category: school, value: 부산대학교}
+      - {category: company, value: LG전자}
+    keep: [전자공학과 졸업, 생산기술연구소 연구원]
+
+  - id: S05
+    kind: 면접 답변
+    identity:
+      name: 정하은
+      schools: [KAIST]
+      companies: [카카오]
+    text: >-
+      카이스트에서 석사를 마치고 카카오에서 추천 시스템을 3년간 운영했습니다. 그 과정에서 대규모
+      트래픽을 다루는 경험을 쌓았고, 이제는 반도체 공정 데이터에 이 경험을 적용해 보고 싶어
+      지원했습니다. 정하은이라는 이름으로 오픈소스 기여도 꾸준히 하고 있습니다.
+    expected:
+      - {category: school, value: 카이스트}
+      - {category: company, value: 카카오}
+      - {category: candidate, value: 정하은}
+    keep: [반도체 공정 데이터, 추천 시스템]
+
+  - id: S06
+    kind: 자기소개
+    identity:
+      name: 윤서준
+      phones: ["01009871234"]
+      emails: [SJ.Yoon@example.net]
+      birthdate: "1996-07-02"
+    text: >-
+      윤서준입니다. 1996년 7월 2일생이고, 주민등록번호 앞자리는 960702-1******입니다.
+      연락처 01009871234, 메일은 sj.yoon@EXAMPLE.net으로 주시면 됩니다.
+    expected:
+      - {category: candidate, value: 윤서준}
+      - {category: birthdate, value: 1996년 7월 2일}
+      - {category: rrn, value: 960702-1******}
+      - {category: phone, value: "01009871234"}
+      - {category: email, value: sj.yoon@example.net}
+
+  - id: S07
+    kind: 전사(STT)
+    identity:
+      name: 강민서
+      schools: [푸른솔대학교]
+      companies: [다온랩스]
+    text: >-
+      그 프로젝트는 다온랩스에 있을 때 했던 건데요 어 당시 오태호 CTO님이 직접 아키텍처를
+      리뷰해 주셨고 저는 데이터 파이프라인 쪽을 맡았습니다 푸른솔대 다닐 때 했던 연구랑도
+      이어지는 부분이 있어서 재밌었어요
+    expected:
+      - {category: company, value: 다온랩스}
+      - {category: person, value: 오태호}
+      - {category: school, value: 푸른솔대}
+
+  - id: S08
+    kind: 자기소개
+    identity:
+      name: 한지민
+      companies: [쿠팡, 새봄테크]
+    text: >-
+      첫 직장은 새봄테크라는 스타트업이었고, 이후 쿠팡으로 옮겨 물류 최적화를 담당했습니다.
+      쿠팡에서는 배송 경로 알고리즘을, 새봄테크에서는 사내 ERP를 만들었습니다. 사이드 프로젝트로
+      하늘시스템즈 주식회사와 협업한 경험도 있습니다.
+    expected:
+      - {category: company, value: 새봄테크}
+      - {category: company, value: 쿠팡}
+      - {category: company, value: 하늘시스템즈}
+
+  - id: S09
+    kind: 면접 답변
+    identity:
+      name: 서예준
+      schools: [새솔고등학교, 연세대학교]
+    text: >-
+      새솔고 다닐 때부터 로봇 동아리를 했고, 연세대 기계공학과에 진학해서 제어 연구실에서
+      학부연구생으로 있었습니다. 지도교수이셨던 문정훈 교수님 추천으로 대학원 진학도
+      고민했었습니다. 서울과학고 출신 동기들이 많아서 자극을 많이 받았습니다.
+    expected:
+      - {category: school, value: 새솔고}
+      - {category: school, value: 연세대}
+      - {category: person, value: 문정훈}
+      - {category: school, value: 서울과학고}
+    keep: [지도교수이셨던, 학부연구생으로, 출신 동기들이, 기계공학과에]
+
+  - id: S10
+    kind: 자기소개
+    identity:
+      name: 임수아
+      phones: [042-012-3456]
+      addresses: ["대전광역시 유성구 별빛누리길 42, 한울아파트 103동 502호"]
+    text: >-
+      현재 대전광역시 유성구 별빛누리길 42 한울아파트 103동 502호에 살고 있어서 근무지 이동은
+      문제없습니다. 집 전화는 042-012-3456입니다. 임수아라고 합니다.
+    expected:
+      - {category: candidate, value: 임수아}
+      - {category: address, value: 대전광역시 유성구}
+      - {category: address, value: 별빛누리길 42}
+      - {category: address, value: 한울아파트}
+      - {category: address, value: 103동 502호}
+      - {category: phone, value: 042-012-3456}
+
+  - id: S11
+    kind: 면접 답변
+    identity:
+      name: 조현우
+      aliases: [Hyunwoo Jo]
+      companies: [엔씨소프트]
+    text: >-
+      엔씨소프트에서 일할 때 해외 퍼블리셔 담당자들은 저를 Hyunwoo라고 불렀는데요. 그때 제가 맡은
+      패치가 라이브 서버에서 장애를 냈고, 새벽에 롤백하면서 배운 게 많습니다. 이후로는 배포 전에
+      체크리스트를 반드시 돌립니다.
+    expected:
+      - {category: company, value: 엔씨소프트}
+      - {category: candidate, value: Hyunwoo}
+    keep: [퍼블리셔 담당자들은, 라이브 서버]
+
+  - id: S12
+    kind: 자기소개
+    identity:
+      name: 신재원
+      aliases: [Jaewon Shin]
+      schools: [Carnegie Mellon University]
+      companies: [Google]
+    text: >-
+      Carnegie Mellon University에서 컴퓨터과학 석사를 하고 Google 클라우드 팀에서 2년 일했습니다.
+      동료들은 저를 Jaewon이라고 불렀습니다. 한국에 돌아와서는 신재원이라는 이름으로 기술 블로그를
+      운영하고 있습니다.
+    expected:
+      - {category: school, value: Carnegie Mellon University}
+      - {category: company, value: Google}
+      - {category: candidate, value: Jaewon}
+      - {category: candidate, value: 신재원}
+
+  - id: S13
+    kind: 면접 답변
+    identity:
+      name: 오세린
+    text: >-
+      제가 팀 리드를 맡았을 때 신입이었던 남궁민수 사원이 코드 리뷰를 어려워했습니다. 그래서
+      송다인 책임님께 부탁해 페어 프로그래밍 시간을 만들었고, 한 달 뒤에는 민수 씨가 리뷰어로
+      참여할 정도가 됐습니다. 이 경험을 계기로 온보딩 문서를 정리했습니다.
+    expected:
+      - {category: person, value: 남궁민수}
+      - {category: person, value: 송다인}
+      - {category: person, value: 민수}
+    keep: [신입이었던, 사원이, 책임님께, 페어 프로그래밍]
+
+  - id: S14
+    kind: 전사(STT)
+    identity:
+      name: 배준서
+      phones: [010-0777-1212]
+      emails: [junseo.bae@example.com]
+      birthdate: "1998-05-17"
+    text: >-
+      네 안녕하십니까 지원자 배준서입니다 저는 98년 5월 17일에 태어났고요 휴대폰 번호는
+      010 0777 1212 이메일은 JUNSEO.BAE@EXAMPLE.COM 입니다
+    expected:
+      - {category: candidate, value: 배준서}
+      - {category: birthdate, value: 98년 5월 17일}
+      - {category: phone, value: 010 0777 1212}
+      - {category: email, value: junseo.bae@example.com}
+
+  - id: S15
+    kind: 면접 답변
+    identity:
+      name: 황보윤아
+      companies: [SK하이닉스]
+    text: >-
+      SK하이닉스에서 일할 때 협력사인 미래로보틱스와 장비 데이터 연동 프로젝트를 했습니다.
+      상대 회사의 류승호 PM과 매주 회의를 하면서 인터페이스를 맞췄고, 황보윤아 님 덕분에 일정이
+      빨라졌다는 피드백을 받았습니다. 윤아 씨라고 부르는 분도 많았습니다.
+    expected:
+      - {category: company, value: SK하이닉스}
+      - {category: company, value: 미래로보틱스}
+      - {category: person, value: 류승호}
+      - {category: candidate, value: 황보윤아}
+      - {category: candidate, value: 윤아}
+    keep: [협력사인, 상대 회사의, PM과]
+
+  - id: S16
+    kind: 자기소개
+    identity:
+      name: 노은채
+      phones: [010-0345-6789]
+      addresses: ["경기도 성남시 분당구 솔내음로 95"]
+    text: >-
+      성남시 분당구 솔내음로 95에 살고 있습니다. 해외 체류 중일 때는 +82-10-0345-6789로 연락 주시면
+      됩니다. 노은채입니다.
+    expected:
+      - {category: address, value: 성남시 분당구}
+      - {category: address, value: 솔내음로 95}
+      - {category: phone, value: "+82-10-0345-6789"}
+      - {category: candidate, value: 노은채}
+
+  - id: S17
+    kind: 면접 답변
+    identity:
+      name: 문태오
+    text: >-
+      SNU에서 학부를, POSTECH에서 석사를 했는데 두 학교 연구실 문화가 많이 달랐습니다. 이후
+      NAVER에 입사해서도 비슷한 차이를 느꼈고요. 그래서 저는 새로운 조직에 가면 먼저 일하는
+      방식을 묻는 편입니다.
+    expected:
+      - {category: school, value: SNU}
+      - {category: school, value: POSTECH}
+      - {category: company, value: NAVER}
+    keep: [두 학교 연구실 문화]
+
+  - id: S18
+    kind: 자기소개
+    identity:
+      name: 홍다은
+      phones: [010-0246-8135]
+      emails: [daeun.hong@example.com, dhong.dev@example.org]
+      birthdate: "1994-08-12"
+    text: >-
+      홍다은입니다. 생년월일은 1994.08.12이고, 전화는 010.0246.8135입니다. 개인 메일
+      daeun.hong@example.com과 개발용 메일 dhong.dev@example.org 둘 다 확인합니다.
+      주민등록번호는 940812-2345671 입니다.
+    expected:
+      - {category: candidate, value: 홍다은}
+      - {category: birthdate, value: "1994.08.12"}
+      - {category: phone, value: 010.0246.8135}
+      - {category: email, value: daeun.hong@example.com}
+      - {category: email, value: dhong.dev@example.org}
+      - {category: rrn, value: 940812-2345671}
+
+  - id: S19
+    kind: 전사(STT)
+    identity:
+      name: 양시우
+      schools: [한빛대학교]
+      companies: [누리랩스]
+    text: >-
+      석사는 한빛대학교 대학원에서 했고요 지도교수님은 백승민 교수님이셨습니다 졸업하고 누리랩스에
+      들어갔는데 거기서 고객사였던 ㈜푸름데이터와 같이 일하면서 데이터 품질 문제를 많이 봤습니다
+    expected:
+      - {category: school, value: 한빛대학교}
+      - {category: person, value: 백승민}
+      - {category: company, value: 누리랩스}
+      - {category: company, value: 푸름데이터}
+    keep: [고객사였던, 지도교수님은, 대학원에서, 데이터 품질]
+
+  - id: S20
+    kind: 자기소개
+    identity:
+      name: 김하린
+      aliases: [Harin Kim]
+      phones: [010-0909-1010]
+      emails: [harin.k@example.net]
+      birthdate: "1999-12-01"
+      addresses: ["광주광역시 북구 다솜누리로 7, 2층"]
+      schools: [전남대학교, 다온여자고등학교]
+      companies: [카카오뱅크]
+    text: >-
+      안녕하세요, 김하린(Harin Kim)입니다. 1999년 12월 1일에 태어났고 광주광역시 북구 다솜누리로 7에서
+      자랐습니다. 다온여고와 전남대를 졸업했고 카카오뱅크에서 인턴을 했습니다. 연락은
+      010-0909-1010 또는 harin.k@example.net으로 부탁드립니다.
+    expected:
+      - {category: candidate, value: 김하린}
+      - {category: candidate, value: Harin Kim}
+      - {category: birthdate, value: 1999년 12월 1일}
+      - {category: address, value: 광주광역시 북구}
+      - {category: address, value: 다솜누리로 7}
+      - {category: school, value: 다온여고}
+      - {category: school, value: 전남대}
+      - {category: company, value: 카카오뱅크}
+      - {category: phone, value: 010-0909-1010}
+      - {category: email, value: harin.k@example.net}

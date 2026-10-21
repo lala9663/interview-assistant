@@ -2,6 +2,7 @@
 
 from interview_assistant.models.audit import ActorType, AuditLog
 from interview_assistant.models.base import Base
+from interview_assistant.models.deid import DeidCategory, DeidMapping
 from interview_assistant.models.interview import (
     Availability,
     AvailabilitySource,
@@ -37,6 +38,8 @@ __all__ = [
     "Candidate",
     "CandidateNote",
     "CompetencySet",
+    "DeidCategory",
+    "DeidMapping",
     "EvaluatorType",
     "Interviewer",
     "InterviewerRole",
