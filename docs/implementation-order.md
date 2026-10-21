@@ -76,10 +76,10 @@ Phase 1 PoC(6주 추정)를 13단계로 나눈다. 오디오 없는 텍스트 �
 
 **1단계 구현 (브랜치 feat/domain-models)**
 
-- [ ] 엔티티 13개 SQLAlchemy 모델 (JobPosting, CompetencySet, Candidate, Application, Screening, InterviewSession, SessionInterviewer, QAItem, Score, CandidateNote, Interviewer, Availability, AuditLog)
-- [ ] Alembic 초기 마이그레이션, SQLite로 적용·롤백 테스트
-- [ ] 모델 테스트 (관계, 비식별 토큰 유니크, 삭제 정책 필드)
-- [ ] PR 올리고 테스트 통과 확인 후 머지
+- [x] 엔티티 13개 SQLAlchemy 모델 (JobPosting, CompetencySet, Candidate, Application, Screening, InterviewSession, SessionInterviewer, QAItem, Score, CandidateNote, Interviewer, Availability, AuditLog)
+- [x] Alembic 초기 마이그레이션, SQLite로 적용·롤백 테스트
+- [x] 모델 테스트 (관계, 비식별 토큰 유니크, 삭제 정책 필드)
+- [ ] PR 올리고 테스트 통과 확인 후 머지 (PR #1 오픈, 18개 통과, 머지 대기)
 
 **2단계 사전 작업 (같은 주 후반)**
 
