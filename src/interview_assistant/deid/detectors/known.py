@@ -12,7 +12,7 @@ from collections.abc import Iterator
 from functools import lru_cache
 
 from interview_assistant.deid.detectors.base import Detector
-from interview_assistant.deid.detectors.contact import DATE
+from interview_assistant.deid.detectors.contact import ADDRESS_PIECE, ADDRESS_REGION, DATE
 from interview_assistant.deid.text import HANGUL as H
 from interview_assistant.deid.text import LEFT, normalize, parse_date, term_pattern
 from interview_assistant.deid.types import DeidCategory, Detection, KnownIdentity
@@ -72,7 +72,7 @@ def _compile(known: KnownIdentity) -> tuple[Rule, ...]:
 
     for email in known.emails:
         value = normalize(DeidCategory.email, email)
-        add(DeidCategory.email, rf"(?i:{re.escape(email.strip())})", value)
+        add(DeidCategory.email, rf"(?i:{_loose(email.strip())})", value)
 
     if known.birthdate and (iso := parse_date(known.birthdate)):
         add(DeidCategory.birthdate, DATE.pattern, iso)
@@ -80,18 +80,21 @@ def _compile(known: KnownIdentity) -> tuple[Rule, ...]:
 
     for address in known.addresses:
         fragments = {address, *(f.strip() for f in address.split(","))}
+        fragments.update(m.group().strip() for m in ADDRESS_PIECE.finditer(address))
+        if (region := ADDRESS_REGION.match(address.strip())) and " " in region.group().strip():
+            fragments.add(region.group().strip())
         for fragment in sorted(fragments, key=len, reverse=True):
             if len(fragment) >= 4:
                 add(DeidCategory.address, LEFT + _flexible_spaces(fragment), address)
 
     for school in known.schools:
         for variant in _school_variants(school):
-            add(DeidCategory.school, term_pattern(variant), school)
+            add(DeidCategory.school, term_pattern(variant, loose=True), school)
 
     for company in known.companies:
         bare = " ".join(_CORP.sub(" ", company).split())
         for variant in {company, bare}:
-            add(DeidCategory.company, term_pattern(variant), company)
+            add(DeidCategory.company, term_pattern(variant, loose=True), company)
 
     return tuple(rules)
 
@@ -129,8 +132,11 @@ def _romanised_given_names(alias: str) -> list[str]:
 
 def _digits_pattern(phone: str) -> str:
     digits = normalize(DeidCategory.phone, phone)
-    sep = r"[-.\s)(]{0,2}"
+    # Up to three separator characters: letter-spaced PDF text reads "0 1 0 . 0 2 1 1".
+    sep = r"[-.\s)(]{0,3}"
     local = sep.join(digits)
+    if digits.startswith("0"):
+        local = rf"(?:\(\s?)?{local}"  # "(010) 0123-4567": take the bracket with the number
     alternatives = [local]
     if digits.startswith("0"):
         alternatives.append(r"\+82[-.\s]?(?:\(0\))?" + sep.join(digits[1:]))
@@ -138,8 +144,15 @@ def _digits_pattern(phone: str) -> str:
 
 
 def _flexible_spaces(fragment: str) -> str:
-    parts = [re.escape(p) for p in re.split(r"[\s,]+", fragment) if p]
+    """Separators match any run of spaces and commas; within a part, one whitespace character
+    may sit between letters (a narrow table cell wraps "솔바람길" as "솔바" / "람길")."""
+    parts = [_loose(p) for p in re.split(r"[\s,]+", fragment) if p]
     return r"[\s,]*".join(parts)
+
+
+def _loose(value: str) -> str:
+    """Literal value with one optional whitespace character between characters."""
+    return r"\s?".join(re.escape(c) for c in value)
 
 
 def _school_variants(school: str) -> list[str]:

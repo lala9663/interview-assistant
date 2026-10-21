@@ -25,15 +25,23 @@ src/interview_assistant/
     detectors/          # 교체 가능한 탐지기: 본인 정보, 정규식, 사전, 형태 패턴, 호칭 붙은 이름, NER 자리
     store.py            # 토큰 발급과 역매핑 저장 (원래 값은 암호화)
     reidentify.py       # 재식별. 역매핑을 복호화하는 유일한 곳, 호출마다 감사 로그
-    leaks.py            # 누출 검수 로직
+    documents.py        # 추출 문서 전체(파일명·속성 포함)를 블록 단위로 비식별화. 스캔본은 거부
+    leaks.py            # 누출 검수 로직 (텍스트 샘플, 파일 샘플)
+    review.py           # 사람이 보는 검토 리포트 (HTML 1개)
+  documents/            # 서류 텍스트 추출 (5단계에서 앞당김). 원본 영역 전용
+    base.py             # DocumentExtractor 인터페이스, 형식 판별, extract_document
+    pdf.py, word.py, powerpoint.py, webpage.py   # PDF, DOCX, PPTX, HTML 구현
+    normalize.py        # NFC, 제로폭 문자 제거, 전각 숫자 변환 (모든 추출 결과에 적용)
   providers/
     base.py             # LLMProvider, STTProvider, EmbeddingProvider, DiarizationProvider
     registry.py         # impl 이름 -> 구현 클래스
     fake.py             # 테스트용 구현
 scripts/
-  check_leaks.py        # 비식별화 누출 검수 리포트
+  check_leaks.py        # 비식별화 누출 검수 (텍스트 샘플 / --documents 파일 샘플 / --report 검토 리포트)
+  make_resume_fixtures.py  # 가상 이력서 20건과 정답 목록 생성
 tests/
-  fixtures/deid_samples.yaml  # 합성 샘플 20건과 정답 목록
+  fixtures/deid_samples.yaml  # 합성 텍스트 샘플 20건과 정답 목록
+  fixtures/resumes/     # 가상 이력서 파일 20건 (PDF 6, DOCX 4, PPTX 3, HTML 4, 스캔 PDF 3)과 manifest.yaml
 ```
 
 ## 실행
@@ -87,6 +95,44 @@ uv run python scripts/check_leaks.py
 
 실제 샘플로 검수할 때는 같은 형식의 YAML을 만들어 `--samples`로 넘긴다. 리포트는 값을 가려서 출력한다 (`--show-values`로 해제).
 
+### 서류 파일
+
+LLM으로 가는 서류 텍스트는 `extract_document` → `deidentify_document`만 거친다. 이미지는 세기만 하고 버리며, 원본 파일이나 이미지를 모델로 보내는 경로는 없다.
+
+```python
+document = extract_document(upload_bytes, upload_filename)   # PDF, DOCX, PPTX, HTML
+result = deidentify_document(deid, document, candidate_id=cid, known=identity)
+prompt_text = result.text   # 파일명·문서 속성·본문·표·머리글·바닥글·노트·링크·숨은 텍스트, 토큰 치환본
+```
+
+- 추출 결과는 블록 단위(`documents/types.py`의 `BlockKind`)다. 흰 글씨, 0.5pt 글자, 슬라이드 밖 도형, `display:none`처럼 보이지 않는 텍스트는 `hidden` 블록으로 따로 둔다.
+- 텍스트 레이어가 없는 쪽(스캔본)이 하나라도 있으면 `needs_ocr`이고, `deidentify_document`가 `OcrRequired`로 거부한다. OCR은 아직 없으므로 문서 전체를 보류한다.
+- HWP/HWPX와 구형 .doc/.ppt는 `UnsupportedFormat`으로 거부한다.
+- 추출기 교체: `extract_document(..., extractors={"pdf": MyPdfExtractor()})`. 구현은 `DocumentExtractor`를 따른다.
+- 라이브러리: pdfplumber(MIT, pdfminer.six MIT, pypdfium2 Apache-2.0/BSD-3), python-docx·python-pptx(MIT), beautifulsoup4(MIT), lxml(BSD). PyMuPDF(AGPL)는 쓰지 않는다.
+
+파일 단위 누출 검수 (가상 이력서 20건: 추출 → 비식별화 → 정답 값 검사, 파일명·속성 포함, 네트워크 없음):
+
+```bash
+uv run python scripts/check_leaks.py --documents
+```
+
+사람이 보는 검토 리포트 (샘플별 원본 추출 텍스트와 비식별본 나란히, 토큰 강조, 속성·버린 이미지 수, OK/누출 체크):
+
+```bash
+uv run python scripts/check_leaks.py --documents --report
+```
+
+리포트는 `reports/deid-review.html`에 생기고 브라우저로 연다. 원문이 그대로 들어 있으므로 원본 영역 문서로 다룬다: `reports/`는 git에서 제외되어 있고, 공유·첨부하지 않는다. 체크 결과는 그 브라우저에만 저장되며 "결과 복사"(TSV)나 "결과 저장"(JSON)으로 꺼낸다. 실제 서류로 검수할 때는 같은 형식의 manifest를 만들어 `--documents path/to/manifest.yaml`로 넘긴다.
+
+가상 이력서 다시 만들기 (dev 의존성 reportlab, pillow 필요). 한글 PDF와 스캔 이미지에 쓸 TrueType 폰트는 시스템에서 읽고 커밋하지 않는다. 기본으로 맑은 고딕·나눔고딕 경로를 찾고, 다른 폰트는 `--font` 또는 `IA_FIXTURE_FONT`로 준다:
+
+```bash
+uv run python scripts/make_resume_fixtures.py --font C:/Windows/Fonts/malgun.ttf
+```
+
+같은 폰트면 결과 파일이 바이트 단위로 같고, `manifest.yaml`(정답 목록)은 파일을 그리면서 기록한 값으로 쓴다.
+
 ## 진행 순서
 
-[docs/implementation-order.md](docs/implementation-order.md) 참조. 현재 2단계(비식별화) 구현 완료, 사용자 확인(토큰 형식, 사전, 실제 샘플 수동 검수) 대기. 다음은 3단계 실제 LLM Provider.
+[docs/implementation-order.md](docs/implementation-order.md) 참조. 현재 2단계(비식별화) 구현 완료, 사용자 확인(토큰 형식, 사전, 검토 리포트로 20건 수동 검수) 대기. 5단계 서류 파싱 중 텍스트 추출은 2단계 검수용으로 앞당겨 구현했다. 다음은 3단계 실제 LLM Provider.

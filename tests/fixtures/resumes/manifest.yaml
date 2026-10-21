@@ -1,0 +1,625 @@
+# 파일 단위 누출 검수용 가상 이력서 20건. 전부 가상 인물이며 실제 개인정보는 없다.
+# 생성: uv run python scripts/make_resume_fixtures.py (이 파일은 손으로 고치지 말 것)
+#
+# 만든 규칙 (tests/fixtures/deid_samples.yaml과 같다)
+# - 휴대전화: 010-0xxx-xxxx, 010-1xxx-xxxx (가입자에게 배정되지 않는 국번대)
+# - 이메일: example.com / example.org / example.net (RFC 2606 예약 도메인)
+# - 주소: 실재 시·군·구에 지어낸 도로명. 학교·회사: 사전의 공개 기관명 또는 지어낸 이름
+# - 증명사진: 실루엣만 그린 자리 표시 이미지
+#
+# file: 이 폴더 기준 경로. upload_name: 업로드 때 파일명이 디스크 이름과 다를 때만 (예: macOS NFD)
+# scanned: 텍스트 레이어 없는 스캔본이면 true. OCR 필요로 분류되어야 하고 누출 검사는 보류한다
+# identity: 지원서 양식에서 이미 아는 본인 정보 (KnownIdentity)
+# expected: 파일 안의 식별 값 정답. where는 그 값을 넣은 블록 종류
+#   (filename, metadata, body, table, header, footer, notes, comment, link, hidden,
+#    image = 이미지 속 글자라 OCR 전에는 추출되지 않음)
+# keep: 식별 정보 옆의 일반 표현. 치환에 같이 먹히면 과잉 치환으로 실패한다
+# images: 넣은 이미지 수 (추출기가 버린 이미지 수는 이 이상이어야 한다. 서식 썸네일 포함)
+samples:
+- id: R01
+  file: 이력서_권하린_2026.pdf
+  format: pdf
+  scanned: false
+  traps: [파일명에 이름, 작성자 메타데이터에 실명, 증명사진, '자간 넓힌 머리글 이름·바닥글 전화번호(권 하 린, 0 1 0 . 0 2 ...)', 표 셀 안 줄바꿈 주소, 영문·한자 이름, mailto 링크, 전화번호 여러 형식, 흰 글씨 숨은 텍스트, GitHub 주소에 영문 이름, 머리글·바닥글 반복]
+  identity:
+    name: 권하린
+    aliases: [Harin Kwon, 權夏潾]
+    phones: [010-0211-3344]
+    emails: [harin.kwon@example.com]
+    birthdate: '1996-04-17'
+    addresses: ['서울특별시 마포구 솔바람길 27, 101동 1203호']
+    schools: [한빛대학교]
+    companies: [(주)누리소프트]
+  expected:
+  - {category: candidate, value: 권하린, where: [filename, hidden, body, metadata, table]}
+  - {category: phone, value: '01002113344', where: [hidden]}
+  - {category: phone, value: 010.0211.3344, where: [body]}
+  - {category: candidate, value: harin-kwon, where: [body, link]}
+  - {category: candidate, value: Harin Kwon, where: [table]}
+  - {category: candidate, value: 權夏潾, where: [table]}
+  - {category: birthdate, value: 1996년 4월 17일, where: [table]}
+  - {category: phone, value: 010-0211-3344, where: [table]}
+  - {category: email, value: harin.kwon@example.com, where: [table, link, body]}
+  - {category: address, value: 서울특별시 마포구, where: [table]}
+  - {category: address, value: 솔바람길 27, where: [table]}
+  - {category: address, value: 101동 1203호, where: [table]}
+  - {category: school, value: 한빛대학교, where: [table]}
+  - {category: company, value: (주)누리소프트, where: [table]}
+  - {category: school, value: 한빛대, where: [body]}
+  - {category: company, value: 누리소프트, where: [body]}
+  - {category: person, value: 오태호, where: [body]}
+  - {category: candidate, value: 하린, where: [body]}
+  keep: [직무에 지원한, 전공하며, 업무를 맡아, 입사 후 포부, 백엔드 개발자, 백엔드 개발]
+  images: 1
+- id: R02
+  file: 남궁민재_이력서(최종).pdf
+  format: pdf
+  scanned: false
+  traps: [복성(남궁), 파일명에 이름, 제목·키워드 메타데이터, 띄어 쓴 이름(남궁 민재), 영문 대문자 이름, 성/이름 칸 분리, +82 국제 형식 전화번호, PDF 주석(메모)에 연락처, 증명사진, 머리글·바닥글 반복]
+  identity:
+    name: 남궁민재
+    aliases: [Minjae Namgung]
+    phones: [010-1302-4455]
+    emails: [mj.namgung@example.org]
+    birthdate: '1993-08-02'
+    addresses: ['경기도 성남시 분당구 새말로 112, 한울아파트 304동 1102호']
+    schools: [고려대학교]
+    companies: [카카오]
+  expected:
+  - {category: candidate, value: 남궁민재, where: [filename, comment, body]}
+  - {category: candidate, value: 남궁 민재, where: [metadata, body]}
+  - {category: email, value: mj.namgung@example.org, where: [metadata, table]}
+  - {category: phone, value: 010-1302-4455, where: [comment]}
+  - {category: candidate, value: 민재, where: [table]}
+  - {category: candidate, value: MINJAE, where: [table]}
+  - {category: candidate, value: NAMGUNG MINJAE, where: [table]}
+  - {category: birthdate, value: 1993.08.02, where: [table]}
+  - {category: phone, value: +82-10-1302-4455, where: [table]}
+  - {category: address, value: 경기도 성남시 분당구, where: [table]}
+  - {category: address, value: 새말로 112, where: [table]}
+  - {category: address, value: 한울아파트 304동 1102호, where: [table]}
+  - {category: school, value: 고려대학교, where: [table]}
+  - {category: company, value: 카카오, where: [table, body]}
+  - {category: school, value: 고려대, where: [body]}
+  - {category: person, value: 문정훈, where: [body]}
+  - {category: candidate, value: Minjae Namgung, where: [body]}
+  keep: [고장 난 물건을, 재직 중, 기록하는 습관, 오래 쓰이는 제품, 데이터 분석가, 데이터 분석]
+  images: 1
+- id: R03
+  file: Resume_SerinOh.pdf
+  format: pdf
+  scanned: false
+  traps: [영문 파일명(SerinOh), 어두운 사이드바의 흰 글씨(보이는 텍스트), 2단 레이아웃, 점 구분 전화번호, mailto 링크(문구만 보임), GitHub 주소에 영문 이름, 증명사진]
+  identity:
+    name: 오세린
+    aliases: [Serin Oh]
+    phones: [010-0447-1290]
+    emails: [serin.oh@example.net]
+    birthdate: '1998-12-05'
+    addresses: [부산광역시 해운대구 바다숲길 8]
+    schools: [부산대학교]
+    companies: [LG전자]
+  expected:
+  - {category: candidate, value: SerinOh, where: [filename]}
+  - {category: candidate, value: 오세린, where: [body, table]}
+  - {category: candidate, value: Serin Oh, where: [body, metadata, table]}
+  - {category: phone, value: 010.0447.1290, where: [body, table]}
+  - {category: email, value: serin.oh@example.net, where: [body, table, link]}
+  - {category: address, value: 부산광역시 해운대구, where: [body, table]}
+  - {category: address, value: 바다숲길 8, where: [body, table]}
+  - {category: candidate, value: serin-oh, where: [body, link]}
+  - {category: birthdate, value: 1998/12/05, where: [table]}
+  - {category: school, value: 부산대학교, where: [table, body]}
+  - {category: company, value: LG전자, where: [table, body]}
+  - {category: person, value: 김태현, where: [body]}
+  - {category: phone, value: 010-0447-1290, where: [body]}
+  keep: [경험을 바탕으로, 의사결정을 설명하는, 측정 가능한 목표로, 믿고 맡기는 사람, 회로 설계 엔지니어, 회로 설계]
+  images: 1
+- id: R04
+  file: 백승우-자기소개서-최종_v3.pdf
+  format: pdf
+  scanned: false
+  traps: [4쪽 문서에 바닥글 반복(이름·전화), 영문 작성자 메타데이터, 두 자리 연도 생년월일, 학교 약칭(카이스트), 증명사진]
+  identity:
+    name: 백승우
+    aliases: [Seungwoo Baek]
+    phones: [010-1588-0921]
+    emails: [swbaek@example.com]
+    birthdate: '1991-02-28'
+    addresses: ['대전광역시 유성구 별빛누리길 42, 한울아파트 103동 502호']
+    schools: [한국과학기술원]
+    companies: [새봄테크]
+  expected:
+  - {category: candidate, value: 백승우, where: [filename, body, table]}
+  - {category: candidate, value: Seungwoo Baek, where: [metadata, table, body]}
+  - {category: phone, value: 010 1588 0921, where: [body]}
+  - {category: birthdate, value: 91.02.28, where: [table]}
+  - {category: phone, value: (010) 1588-0921, where: [table]}
+  - {category: email, value: swbaek@example.com, where: [table]}
+  - {category: address, value: 대전광역시 유성구, where: [table]}
+  - {category: address, value: 별빛누리길 42, where: [table]}
+  - {category: address, value: 한울아파트 103동 502호, where: [table]}
+  - {category: school, value: 한국과학기술원, where: [table]}
+  - {category: company, value: 새봄테크, where: [table, body]}
+  - {category: school, value: 카이스트, where: [body]}
+  - {category: person, value: 정민지, where: [body]}
+  keep: [사용자 문제를, 고객 문의를 분류하는, 작게 만들고 빨리 확인합니다, 현장의 목소리를, 머신러닝 엔지니어, 머신러닝]
+  images: 1
+- id: R05
+  file: 황보은채 이력서.pdf
+  upload_name: 황보은채 이력서.pdf
+  format: pdf
+  scanned: false
+  traps: [macOS 업로드 파일명(NFD 분해 한글), 복성(황보), 전각 숫자 전화번호, 0.5pt 숨은 텍스트, 흰 글씨 숨은 텍스트, 호칭 붙은 추천인 이름, 증명사진, 머리글·바닥글 반복]
+  identity:
+    name: 황보은채
+    aliases: [Eunchae Hwangbo]
+    phones: [010-0732-6618]
+    emails: [eunchae.hb@example.org]
+    birthdate: '1997-06-11'
+    addresses: [인천광역시 연수구 물빛로 56]
+    schools: [인하대학교]
+    companies: [다온랩스]
+  expected:
+  - {category: candidate, value: 황보은채, where: [filename, hidden, metadata, body, table]}
+  - {category: email, value: eunchae.hb@example.org, where: [hidden, table, body]}
+  - {category: person, value: 이서준, where: [hidden, body]}
+  - {category: candidate, value: Eunchae Hwangbo, where: [table]}
+  - {category: birthdate, value: 1997.06.11, where: [table]}
+  - {category: phone, value: ０１０－０７３２－６６１８, where: [table]}
+  - {category: address, value: 인천광역시 연수구, where: [table]}
+  - {category: address, value: 물빛로 56, where: [table]}
+  - {category: school, value: 인하대학교, where: [table]}
+  - {category: company, value: 다온랩스, where: [table, body]}
+  - {category: school, value: 인하대, where: [body]}
+  - {category: candidate, value: 은채, where: [body]}
+  keep: [직무에 지원한, 전공하며, 업무를 맡아, 입사 후 포부, 프론트엔드 개발자, 프론트엔드 개발]
+  images: 1
+- id: R06
+  file: R06_차준호.pdf
+  format: pdf
+  scanned: false
+  traps: [좁은 표 셀에서 글자 단위 줄바꿈(주소·학교·회사), 세로로 쪼갠 이름 칸, 키워드 메타데이터에 이메일, 공백 구분 전화번호, (주) 붙은 회사명, 증명사진]
+  identity:
+    name: 차준호
+    aliases: [Junho Cha]
+    phones: [010-1914-2273]
+    emails: [junho.cha@example.net]
+    birthdate: '1994-10-30'
+    addresses: [광주광역시 북구 햇살마루길 19]
+    schools: [전남대학교]
+    companies: [(주)하늘시스템즈]
+  expected:
+  - {category: candidate, value: 차준호, where: [filename, table, body]}
+  - {category: email, value: junho.cha@example.net, where: [metadata, table]}
+  - {category: candidate, value: Junho Cha, where: [table, body]}
+  - {category: birthdate, value: '1994-10-30', where: [table]}
+  - {category: phone, value: 010 1914 2273, where: [table]}
+  - {category: address, value: 광주광역시 북구, where: [table]}
+  - {category: address, value: 햇살마루길 19, where: [table]}
+  - {category: school, value: 전남대학교, where: [table]}
+  - {category: company, value: (주)하늘시스템즈, where: [table]}
+  - {category: school, value: 전남대, where: [body]}
+  - {category: company, value: 하늘시스템즈, where: [body]}
+  - {category: person, value: 박하은, where: [body]}
+  keep: [고장 난 물건을, 재직 중, 기록하는 습관, 오래 쓰이는 제품, 임베디드 개발자, 임베디드 소프트웨어]
+  images: 1
+- id: R07
+  file: 유다인_이력서.docx
+  format: docx
+  scanned: false
+  traps: [머리글(이름·전화)·바닥글(이름), 작성자·마지막 수정자 메타데이터, app.xml 회사명, 증명사진, 셀 안 줄바꿈 주소, mailto 하이퍼링크, 흰 글씨 숨은 텍스트]
+  identity:
+    name: 유다인
+    aliases: [Dain Yoo]
+    phones: [010-0825-7731]
+    emails: [dain.yoo@example.com]
+    birthdate: '1995-01-23'
+    addresses: ['서울특별시 송파구 꽃내음로 33, 204동 801호']
+    schools: [성균관대학교]
+    companies: [네이버]
+  expected:
+  - {category: candidate, value: 유다인, where: [filename, header, footer, metadata, hidden, table, body]}
+  - {category: phone, value: 010-0825-7731, where: [header, table, body]}
+  - {category: candidate, value: Dain Yoo, where: [metadata, table]}
+  - {category: company, value: 네이버, where: [metadata, table, body]}
+  - {category: phone, value: 01008257731, where: [hidden]}
+  - {category: email, value: dain.yoo@example.com, where: [hidden, table, link]}
+  - {category: birthdate, value: 1995년 1월 23일, where: [table]}
+  - {category: address, value: 서울특별시 송파구, where: [table]}
+  - {category: address, value: 꽃내음로 33, where: [table]}
+  - {category: address, value: 204동 801호, where: [table]}
+  - {category: school, value: 성균관대학교, where: [table, body]}
+  - {category: person, value: 최유진, where: [body]}
+  keep: [경험을 바탕으로, 의사결정을 설명하는, 측정 가능한 목표로, 믿고 맡기는 사람, 백엔드 개발자, 백엔드 개발]
+  images: 1
+- id: R08
+  file: 입사지원서_탁지호.docx
+  format: docx
+  scanned: false
+  traps: [첫 페이지만 다른 머리글, '숨김 서식(w:vanish) 텍스트', 검토 메모(comment), 주소를 두 칸으로 분리, +82 (0) 전화번호, 설명 메타데이터에 이메일, 증명사진]
+  identity:
+    name: 탁지호
+    aliases: [Jiho Tak]
+    phones: [010-1176-0458]
+    emails: [jiho.tak@example.org]
+    birthdate: '1992-09-14'
+    addresses: [경기도 수원시 영통구 누리별로 88]
+    schools: [아주대학교]
+    companies: [삼성SDS]
+  expected:
+  - {category: candidate, value: 탁지호, where: [filename, header, table, body]}
+  - {category: email, value: jiho.tak@example.org, where: [header, metadata, table]}
+  - {category: phone, value: 010.1176.0458, where: [header]}
+  - {category: candidate, value: 지호, where: [comment]}
+  - {category: phone, value: 01011760458, where: [comment]}
+  - {category: address, value: 경기도 수원시 영통구, where: [hidden, table]}
+  - {category: address, value: 누리별로 88, where: [hidden, table]}
+  - {category: candidate, value: Jiho Tak, where: [table, body]}
+  - {category: birthdate, value: 1992/09/14, where: [table]}
+  - {category: phone, value: +82 (0)10 1176 0458, where: [table]}
+  - {category: school, value: 아주대학교, where: [table]}
+  - {category: company, value: 삼성SDS, where: [table, body]}
+  - {category: school, value: 아주대, where: [body]}
+  - {category: person, value: 한지민, where: [body]}
+  keep: [사용자 문제를, 고객 문의를 분류하는, 작게 만들고 빨리 확인합니다, 현장의 목소리를, 클라우드 엔지니어, 클라우드 운영]
+  images: 1
+- id: R09
+  file: 선우하람_Resume.docx
+  format: docx
+  scanned: false
+  traps: [복성(선우), 성/이름 칸 분리, 하이픈 영문 이름(Ha-ram Sunwoo), 표 안의 표(중첩), 블로그 주소에 영문 이름, 작성자 메타데이터 영문, 증명사진]
+  identity:
+    name: 선우하람
+    aliases: [Ha-ram Sunwoo]
+    phones: [010-0369-8812]
+    emails: [haram.sunwoo@example.net]
+    birthdate: '1999-03-03'
+    addresses: [대구광역시 수성구 들꽃길 21]
+    schools: [경북대학교]
+    companies: [푸른솔시스템즈]
+  expected:
+  - {category: candidate, value: 선우하람, where: [filename, body]}
+  - {category: candidate, value: Haram Sunwoo, where: [metadata]}
+  - {category: candidate, value: Ha-ram Sunwoo, where: [footer, table]}
+  - {category: email, value: haram.sunwoo@example.net, where: [footer, table, body]}
+  - {category: candidate, value: 하람, where: [table, body]}
+  - {category: birthdate, value: 1999.03.03, where: [table]}
+  - {category: phone, value: 01003698812, where: [table]}
+  - {category: address, value: 대구광역시 수성구, where: [table]}
+  - {category: address, value: 들꽃길 21, where: [table]}
+  - {category: candidate, value: haram-sunwoo, where: [table]}
+  - {category: school, value: 경북대학교, where: [table]}
+  - {category: company, value: 푸른솔시스템즈, where: [table, body]}
+  - {category: school, value: 경북대, where: [body]}
+  - {category: person, value: 윤서준, where: [body]}
+  keep: [직무에 지원한, 전공하며, 업무를 맡아, 입사 후 포부, QA 엔지니어, 품질 보증]
+  images: 1
+- id: R10
+  file: 이력서_문태오.docx
+  format: docx
+  scanned: false
+  traps: [사용자 정의 문서 속성(custom.xml), 4쪽 문서 바닥글 반복, 한자 이름, 영문 이름 성·이름 순서 뒤집힘, 기관 약칭(유니스트·현대차), 증명사진]
+  identity:
+    name: 문태오
+    aliases: [Taeo Moon, 文泰旿]
+    phones: [010-1450-6627]
+    emails: [taeo.moon@example.com]
+    birthdate: '1990-11-19'
+    addresses: [울산광역시 남구 은하수로 74]
+    schools: [울산과학기술원]
+    companies: [현대자동차]
+  expected:
+  - {category: candidate, value: 문태오, where: [filename, metadata, footer, table, body]}
+  - {category: phone, value: 010-1450-6627, where: [metadata]}
+  - {category: phone, value: +82-10-1450-6627, where: [footer]}
+  - {category: candidate, value: 'Moon, Taeo', where: [table]}
+  - {category: candidate, value: 文泰旿, where: [table]}
+  - {category: birthdate, value: '1990-11-19', where: [table]}
+  - {category: phone, value: 010 1450 6627, where: [table]}
+  - {category: email, value: taeo.moon@example.com, where: [table]}
+  - {category: address, value: 울산광역시 남구, where: [table]}
+  - {category: address, value: 은하수로 74, where: [table]}
+  - {category: school, value: 울산과학기술원, where: [table]}
+  - {category: company, value: 현대자동차, where: [table]}
+  - {category: school, value: 유니스트, where: [body]}
+  - {category: company, value: 현대차, where: [body]}
+  - {category: person, value: 강민서, where: [body]}
+  - {category: candidate, value: Taeo Moon, where: [body]}
+  keep: [고장 난 물건을, 재직 중, 기록하는 습관, 오래 쓰이는 제품, 자율주행 연구원, 자율주행 연구]
+  images: 1
+- id: R11
+  file: 포트폴리오_진서아.pptx
+  format: pptx
+  scanned: false
+  traps: [슬라이드 노트에 이름·전화, 슬라이드 마스터 바닥글에 이름(모든 슬라이드 반복), 증명사진, 텍스트 링크(mailto), 작성자 메타데이터, 흰 글씨 숨은 텍스트]
+  identity:
+    name: 진서아
+    aliases: [Seoa Jin]
+    phones: [010-0614-2209]
+    emails: [seoa.jin@example.org]
+    birthdate: '1996-07-07'
+    addresses: [서울특별시 성동구 바람결길 15]
+    schools: [한양대학교]
+    companies: [쿠팡]
+  expected:
+  - {category: candidate, value: 진서아, where: [filename, metadata, body, footer, hidden, table]}
+  - {category: candidate, value: Seoa Jin, where: [body, table]}
+  - {category: email, value: seoa.jin@example.org, where: [footer, link, table]}
+  - {category: candidate, value: 서아, where: [notes]}
+  - {category: phone, value: 010-0614-2209, where: [notes, table, body]}
+  - {category: phone, value: 01006142209, where: [hidden]}
+  - {category: birthdate, value: 1996.07.07, where: [table]}
+  - {category: address, value: 서울특별시 성동구, where: [table]}
+  - {category: address, value: 바람결길 15, where: [table]}
+  - {category: school, value: 한양대학교, where: [table, body]}
+  - {category: company, value: 쿠팡, where: [table, body]}
+  - {category: person, value: 서예준, where: [body]}
+  keep: [경험을 바탕으로, 의사결정을 설명하는, 측정 가능한 목표로, 믿고 맡기는 사람, UX 디자이너, UX 디자인]
+  images: 1
+- id: R12
+  file: MinhyukPyo_portfolio.pptx
+  format: pptx
+  scanned: false
+  traps: [영문 파일명, 그룹 도형 안 주소, 슬라이드 밖에 놓인 텍스트 상자(전화), 도형 클릭 하이퍼링크(mailto), 마지막 수정자 메타데이터, 노트에 추천인, 증명사진]
+  identity:
+    name: 표민혁
+    aliases: [Minhyuk Pyo]
+    phones: [010-1027-5583]
+    emails: [minhyuk.pyo@example.net]
+    birthdate: '1993-05-25'
+    addresses: [경기도 고양시 일산동구 호수빛로 61]
+    schools: [홍익대학교]
+    companies: [엔씨소프트]
+  expected:
+  - {category: candidate, value: MinhyukPyo, where: [filename]}
+  - {category: candidate, value: Minhyuk Pyo, where: [metadata, body, table]}
+  - {category: candidate, value: 표민혁, where: [body, hidden, table]}
+  - {category: address, value: 경기도 고양시 일산동구, where: [body, table]}
+  - {category: address, value: 호수빛로 61, where: [body, table]}
+  - {category: phone, value: (010) 1027-5583, where: [hidden]}
+  - {category: email, value: minhyuk.pyo@example.net, where: [link, table]}
+  - {category: person, value: 임수아, where: [notes, body]}
+  - {category: birthdate, value: 1993년 5월 25일, where: [table]}
+  - {category: phone, value: 010-1027-5583, where: [table]}
+  - {category: school, value: 홍익대학교, where: [table]}
+  - {category: company, value: 엔씨소프트, where: [table, body]}
+  - {category: school, value: 홍익대, where: [body]}
+  keep: [사용자 문제를, 고객 문의를 분류하는, 작게 만들고 빨리 확인합니다, 현장의 목소리를, 게임 클라이언트 개발자, 게임 클라이언트 개발]
+  images: 1
+- id: R13
+  file: 연가은 경력기술서.pptx
+  format: pptx
+  scanned: false
+  traps: [숨김 슬라이드, 성/이름 칸 분리, 제목 메타데이터에 이름, 노트에 추천인과 이메일, 시·군·구 없는 주소(세종), 증명사진]
+  identity:
+    name: 연가은
+    aliases: [Gaeun Yeon]
+    phones: [010-0958-3346]
+    emails: [gaeun.yeon@example.com]
+    birthdate: '1998-02-14'
+    addresses: [세종특별자치시 한솔빛로 27]
+    schools: [충남대학교]
+    companies: [새솔테크]
+  expected:
+  - {category: candidate, value: 연가은, where: [filename, metadata, body]}
+  - {category: person, value: 오지훈, where: [notes, body]}
+  - {category: email, value: gaeun.yeon@example.com, where: [notes, table, body]}
+  - {category: phone, value: 010.0958.3346, where: [body]}
+  - {category: candidate, value: 가은, where: [table, body]}
+  - {category: candidate, value: Gaeun Yeon, where: [table]}
+  - {category: birthdate, value: 1998.02.14, where: [table]}
+  - {category: phone, value: 010-0958-3346, where: [table]}
+  - {category: address, value: 세종특별자치시, where: [table]}
+  - {category: address, value: 한솔빛로 27, where: [table]}
+  - {category: school, value: 충남대학교, where: [table]}
+  - {category: company, value: 새솔테크, where: [table, body]}
+  - {category: school, value: 충남대, where: [body]}
+  keep: [직무에 지원한, 전공하며, 업무를 맡아, 입사 후 포부, 데이터 엔지니어, 데이터 엔지니어링]
+  images: 1
+- id: R14
+  file: 육지안_이력서.html
+  format: html
+  scanned: false
+  traps: [<title>·<meta author>에 이름, description 메타에 전화번호, <header>·<footer> 요소, mailto·tel 링크, '증명사진(data URI, alt에 이름)', <br>로 쪼갠 주소]
+  identity:
+    name: 육지안
+    aliases: [Jian Yuk]
+    phones: [010-1233-9087]
+    emails: [jian.yuk@example.org]
+    birthdate: '1995-09-09'
+    addresses: [서울특별시 관악구 노을빛길 45]
+    schools: [서울대학교]
+    companies: [비바리퍼블리카]
+  expected:
+  - {category: candidate, value: 육지안, where: [filename, table, body, metadata, header, footer]}
+  - {category: candidate, value: Jian Yuk, where: [table, body]}
+  - {category: birthdate, value: 1995년 9월 9일, where: [table]}
+  - {category: phone, value: 010-1233-9087, where: [table, metadata]}
+  - {category: email, value: jian.yuk@example.org, where: [table, link, footer]}
+  - {category: address, value: 서울특별시 관악구, where: [table]}
+  - {category: address, value: 노을빛길 45, where: [table]}
+  - {category: phone, value: '+821012339087', where: [link]}
+  - {category: school, value: 서울대, where: [body]}
+  - {category: company, value: 토스, where: [body]}
+  - {category: person, value: 남도윤, where: [body]}
+  - {category: school, value: 서울대학교, where: [table]}
+  - {category: company, value: 비바리퍼블리카, where: [table]}
+  keep: [고장 난 물건을, 재직 중, 기록하는 습관, 오래 쓰이는 제품, 보안 엔지니어, 정보 보안]
+  images: 1
+- id: R15
+  file: jegal_yunho_resume.html
+  format: html
+  scanned: false
+  traps: [EUC-KR 인코딩(CP949 확장 글자 포함), 복성(제갈), '&nbsp;로 띄운 이름', 'CSS 클래스(display:none) 숨은 연락처', 영문 파일명(성_이름 순서), 흰 배경 아닌 칸의 흰 글씨(보이는 텍스트)]
+  identity:
+    name: 제갈윤호
+    aliases: [Yunho Jegal]
+    phones: [010-0541-7720]
+    emails: [yunho.jegal@example.net]
+    birthdate: '1992-04-04'
+    addresses: [강원특별자치도 춘천시 소양숲길 12]
+    schools: [강원대학교]
+    companies: [다온랩스]
+  expected:
+  - {category: candidate, value: jegal_yunho, where: [filename]}
+  - {category: candidate, value: 제갈윤호, where: [metadata, hidden, table, body]}
+  - {category: candidate, value: 제갈 윤호, where: [body]}
+  - {category: phone, value: 010-0541-7720, where: [hidden, body]}
+  - {category: email, value: yunho.jegal@example.net, where: [hidden, table]}
+  - {category: candidate, value: Yunho Jegal, where: [table]}
+  - {category: birthdate, value: 1992.04.04, where: [table]}
+  - {category: phone, value: 010.0541.7720, where: [table]}
+  - {category: address, value: 강원특별자치도 춘천시, where: [table]}
+  - {category: address, value: 소양숲길 12, where: [table]}
+  - {category: company, value: 다온랩스, where: [body, table]}
+  - {category: school, value: 강원대학교, where: [body, table]}
+  - {category: person, value: 장예은, where: [body]}
+  keep: [경험을 바탕으로, 의사결정을 설명하는, 측정 가능한 목표로, 믿고 맡기는 사람, 인프라 엔지니어, 인프라 운영, 똠양꿍]
+  images: 0
+- id: R16
+  file: 이력서-마수빈.html
+  format: html
+  scanned: false
+  traps: [제로폭 공백으로 쪼갠 이름, 전각 숫자 전화번호, 인라인 흰 글씨, 'font-size:0 숨은 텍스트', HTML 주석·스크립트 속 이름(추출하지 않음), 작성자 메타데이터, 증명사진]
+  identity:
+    name: 마수빈
+    aliases: [Subin Ma]
+    phones: [010-1662-3018]
+    emails: [subin.ma@example.com]
+    birthdate: '1997-11-28'
+    addresses: [경상남도 창원시 성산구 별무리로 9]
+    schools: [창원대학교]
+    companies: [한빛테크]
+  expected:
+  - {category: candidate, value: 마수빈, where: [filename, metadata, body, hidden, table]}
+  - {category: candidate, value: Subin Ma, where: [body, table]}
+  - {category: phone, value: ０１０－１６６２－３０１８, where: [body]}
+  - {category: phone, value: 01016623018, where: [hidden]}
+  - {category: email, value: subin.ma@example.com, where: [hidden, table]}
+  - {category: birthdate, value: 1997.11.28, where: [hidden, table]}
+  - {category: phone, value: 010-1662-3018, where: [table]}
+  - {category: address, value: 경상남도 창원시 성산구, where: [table]}
+  - {category: address, value: 별무리로 9, where: [table]}
+  - {category: school, value: 창원대, where: [body]}
+  - {category: company, value: 한빛테크, where: [body, table]}
+  - {category: person, value: 홍서윤, where: [body]}
+  - {category: school, value: 창원대학교, where: [table]}
+  keep: [사용자 문제를, 고객 문의를 분류하는, 작게 만들고 빨리 확인합니다, 현장의 목소리를, 제어 소프트웨어 개발자, 제어 소프트웨어]
+  images: 1
+- id: R17
+  file: 하예린 이력서.htm
+  format: html
+  scanned: false
+  traps: [Word에서 내보낸 HTML(mso 서식), 인라인 태그로 쪼갠 이름(하<span>예린</span>), <wbr>로 쪼갠 이메일, 본문에 섞인 Word 머리글·바닥글, 조건부 주석 속 작성자(추출하지 않음)]
+  identity:
+    name: 하예린
+    aliases: [Yerin Ha]
+    phones: [010-0872-4451]
+    emails: [yerin.ha@example.org]
+    birthdate: '1994-03-21'
+    addresses: [제주특별자치도 제주시 귤빛로 30]
+    schools: [제주대학교]
+    companies: [카카오]
+  expected:
+  - {category: candidate, value: 하예린, where: [filename, metadata, body, table]}
+  - {category: email, value: yerin.ha@example.org, where: [body, link, table]}
+  - {category: phone, value: 010-0872-4451, where: [body]}
+  - {category: address, value: 제주특별자치도 제주시, where: [body, table]}
+  - {category: address, value: 귤빛로 30, where: [body, table]}
+  - {category: candidate, value: Yerin Ha, where: [table]}
+  - {category: birthdate, value: 1994년 3월 21일, where: [table]}
+  - {category: phone, value: 010 0872 4451, where: [table]}
+  - {category: school, value: 제주대, where: [body]}
+  - {category: company, value: 카카오, where: [body, table]}
+  - {category: person, value: 최다온, where: [body]}
+  - {category: candidate, value: 예린, where: [body]}
+  - {category: school, value: 제주대학교, where: [table]}
+  keep: [직무에 지원한, 전공하며, 업무를 맡아, 입사 후 포부, 서비스 기획자, 서비스 기획]
+  images: 0
+- id: R18
+  file: 설도현_이력서_스캔.pdf
+  format: pdf
+  scanned: true
+  ocr_pages: [1]
+  traps: [텍스트 레이어 없는 1쪽 스캔, 작성자 메타데이터에 실명(보류라 전송 안 됨), 파일명에 이름]
+  identity:
+    name: 설도현
+    aliases: [Dohyun Seol]
+    phones: [010-1381-0274]
+    emails: [dohyun.seol@example.net]
+    birthdate: '1993-01-15'
+    addresses: [서울특별시 노원구 초록숲길 5]
+    schools: [광운대학교]
+    companies: [누리소프트]
+  expected:
+  - {category: candidate, value: 설도현, where: [filename, metadata, image]}
+  - {category: candidate, value: Dohyun Seol, where: [image]}
+  - {category: birthdate, value: 1993.01.15, where: [image]}
+  - {category: phone, value: 010-1381-0274, where: [image]}
+  - {category: email, value: dohyun.seol@example.net, where: [image]}
+  - {category: school, value: 광운대학교, where: [image]}
+  - {category: company, value: 누리소프트, where: [image]}
+  - {category: address, value: 서울특별시 노원구, where: [image]}
+  - {category: address, value: 초록숲길 5, where: [image]}
+  - {category: school, value: 광운대, where: [image]}
+  - {category: person, value: 오태호, where: [image]}
+  keep: [고장 난 물건을, 재직 중, 기록하는 습관, 오래 쓰이는 제품, 펌웨어 개발자, 펌웨어 개발]
+  images: 1
+- id: R19
+  file: 봉채원_scan.pdf
+  format: pdf
+  scanned: true
+  ocr_pages: [1, 2]
+  traps: [2쪽 스캔, 스캔 앱 워터마크 글자만 있는 텍스트 레이어]
+  identity:
+    name: 봉채원
+    aliases: [Chaewon Bong]
+    phones: [010-0296-5530]
+    emails: [chaewon.bong@example.com]
+    birthdate: '1999-08-08'
+    addresses: [경기도 용인시 수지구 은빛로 18]
+    schools: [단국대학교]
+    companies: [새봄테크]
+  expected:
+  - {category: candidate, value: 봉채원, where: [filename, image]}
+  - {category: candidate, value: Chaewon Bong, where: [image]}
+  - {category: birthdate, value: 1999.08.08, where: [image]}
+  - {category: phone, value: 010-0296-5530, where: [image]}
+  - {category: email, value: chaewon.bong@example.com, where: [image]}
+  - {category: school, value: 단국대학교, where: [image]}
+  - {category: company, value: 새봄테크, where: [image]}
+  - {category: address, value: 경기도 용인시 수지구, where: [image]}
+  - {category: address, value: 은빛로 18, where: [image]}
+  - {category: person, value: 정민지, where: [image]}
+  keep: [경험을 바탕으로, 의사결정을 설명하는, 측정 가능한 목표로, 믿고 맡기는 사람, 웹 퍼블리셔, 웹 퍼블리싱]
+  images: 2
+- id: R20
+  file: 금태민_지원서.pdf
+  format: pdf
+  scanned: true
+  ocr_pages: [2]
+  traps: ['혼합 문서: 1쪽은 텍스트, 2쪽만 스캔', 일부만 읽히면 전체 보류]
+  identity:
+    name: 금태민
+    aliases: [Taemin Geum]
+    phones: [010-1749-3361]
+    emails: [taemin.geum@example.org]
+    birthdate: '1991-12-12'
+    addresses: [충청북도 청주시 흥덕구 오송빛로 40]
+    schools: [충북대학교]
+    companies: [하늘시스템즈]
+  expected:
+  - {category: candidate, value: 금태민, where: [filename, metadata, body, image]}
+  - {category: candidate, value: Taemin Geum, where: [body, image]}
+  - {category: school, value: 충북대, where: [body]}
+  - {category: company, value: 하늘시스템즈, where: [body, image]}
+  - {category: person, value: 박하은, where: [body]}
+  - {category: birthdate, value: 1991.12.12, where: [image]}
+  - {category: phone, value: 010-1749-3361, where: [image]}
+  - {category: email, value: taemin.geum@example.org, where: [image]}
+  - {category: school, value: 충북대학교, where: [image]}
+  - {category: address, value: 충청북도 청주시 흥덕구, where: [image]}
+  - {category: address, value: 오송빛로 40, where: [image]}
+  keep: [사용자 문제를, 고객 문의를 분류하는, 작게 만들고 빨리 확인합니다, 현장의 목소리를, 바이오 데이터 분석가, 바이오 데이터]
+  images: 1

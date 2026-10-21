@@ -6,6 +6,9 @@
     result = deid.deidentify(answer_text, candidate_id=candidate.id, known=identity)
     qa_item.answer_deidentified = result.text
 
+Files go through `deidentify_document(deid, extract_document(data, filename), ...)`, which covers
+every extracted block including the file name and properties and refuses scans (OcrRequired).
+
 Reverse lookup lives in `interview_assistant.deid.reidentify` and is deliberately not exported here.
 """
 
@@ -16,6 +19,12 @@ from interview_assistant.deid.config import (
     load_deid_config,
 )
 from interview_assistant.deid.deidentifier import Deidentifier
+from interview_assistant.deid.documents import (
+    DeidentifiedBlock,
+    DeidentifiedDocument,
+    OcrRequired,
+    deidentify_document,
+)
 from interview_assistant.deid.identity import open_identity, seal_identity
 from interview_assistant.deid.store import (
     InMemoryTokenStore,
@@ -35,16 +44,20 @@ __all__ = [
     "DeidCategory",
     "DeidConfig",
     "DeidResult",
+    "DeidentifiedBlock",
+    "DeidentifiedDocument",
     "Deidentifier",
     "Detection",
     "InMemoryTokenStore",
     "KnownIdentity",
+    "OcrRequired",
     "Replacement",
     "SqlTokenStore",
     "TokenFormats",
     "TokenStore",
     "build_deidentifier",
     "build_detectors",
+    "deidentify_document",
     "load_deid_config",
     "open_identity",
     "seal_identity",

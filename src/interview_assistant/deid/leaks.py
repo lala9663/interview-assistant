@@ -5,13 +5,23 @@ de-identification none of them may remain, in any spacing or separator variant. 
 also flags anything still shaped like a phone number, e-mail or 주민번호 even if it is not in
 the ground truth. Optional `keep` phrases guard the other direction: words that are not
 identifying must survive, so over-eager patterns do not garble what the LLM reads.
-Used by scripts/check_leaks.py and the test suite.
+
+The document check runs the same comparison on files: extract (PDF, DOCX, PPTX, HTML), then
+de-identify every block including the file name and properties, then look for each
+ground-truth value in every block. It also verifies the extraction itself: each value must be
+found in the kind of block it was planted in (a header value in a header block), images must
+have been dropped, and scanned files must be held as needing OCR rather than checked.
+
+Both sides are compared after the same Unicode clean-up the extractors apply (NFC, no
+zero-width characters, ASCII digits), so a value disguised by such characters still counts as
+a leak. Used by scripts/check_leaks.py and the test suite.
 """
 
 from __future__ import annotations
 
 import re
-from collections.abc import Callable, Sequence
+from collections.abc import Callable, Iterator, Mapping, Sequence
+from contextlib import contextmanager
 from dataclasses import dataclass, field
 from pathlib import Path
 
@@ -21,18 +31,30 @@ from sqlalchemy.pool import StaticPool
 from interview_assistant.crypto import FieldCipher
 from interview_assistant.db import make_engine, make_session_factory
 from interview_assistant.deid.config import DeidConfig, build_deidentifier
+from interview_assistant.deid.deidentifier import Deidentifier
 from interview_assistant.deid.detectors.contact import EMAIL, PHONE, RRN
+from interview_assistant.deid.documents import DeidentifiedDocument, deidentify_document
 from interview_assistant.deid.identity import open_identity, seal_identity
 from interview_assistant.deid.store import SqlTokenStore
 from interview_assistant.deid.text import parse_date
 from interview_assistant.deid.types import DeidCategory, KnownIdentity
+from interview_assistant.documents import (
+    DocumentExtractor,
+    ExtractedDocument,
+    ExtractionError,
+    extract_document,
+    normalize_text,
+)
 from interview_assistant.models import Base, Candidate
+
+Enroll = Callable[[str, KnownIdentity], tuple[str, KnownIdentity]]
 
 
 @dataclass(frozen=True)
 class ExpectedValue:
     category: DeidCategory
     value: str
+    where: tuple[str, ...] = ()  # block kinds the value was placed in (document samples)
 
 
 @dataclass(frozen=True)
@@ -85,7 +107,7 @@ def load_samples(path: Path) -> list[Sample]:
 
 def leak_pattern(expected: ExpectedValue) -> re.Pattern[str]:
     """Pattern for a value in any spacing / separator / case variant."""
-    category, value = expected.category, expected.value
+    category, value = expected.category, normalize_text(expected.value)
     if category in (DeidCategory.phone, DeidCategory.rrn):
         digits = re.sub(r"[^\d*]", "", value)
         variants = {digits}
@@ -108,6 +130,7 @@ def leak_pattern(expected: ExpectedValue) -> re.Pattern[str]:
 
 
 def find_leaks(output: str, expected: Sequence[ExpectedValue]) -> list[ExpectedValue]:
+    output = normalize_text(output)
     leaks = [e for e in expected if leak_pattern(e).search(output)]
     # The local part of an e-mail address identifies a person on its own.
     for e in expected:
@@ -119,6 +142,7 @@ def find_leaks(output: str, expected: Sequence[ExpectedValue]) -> list[ExpectedV
 
 
 def residual_scan(output: str) -> list[tuple[str, str]]:
+    output = normalize_text(output)
     found = []
     for kind, pattern in (("rrn", RRN), ("phone", PHONE), ("email", EMAIL)):
         found.extend((kind, m.group()) for m in pattern.finditer(output))
@@ -127,6 +151,7 @@ def residual_scan(output: str) -> list[tuple[str, str]]:
 
 def check_sample(sample: Sample, deidentify: Callable[[Sample], tuple[str, int]]) -> SampleReport:
     output, replaced = deidentify(sample)
+    source = normalize_text(sample.text)
     return SampleReport(
         sample_id=sample.id,
         kind=sample.kind,
@@ -135,19 +160,21 @@ def check_sample(sample: Sample, deidentify: Callable[[Sample], tuple[str, int]]
         replaced=replaced,
         leaks=find_leaks(output, sample.expected),
         residual=residual_scan(output),
-        lost=[k for k in sample.keep if k not in output],
+        lost=[k for k in sample.keep if normalize_text(k) not in normalize_text(output)],
         not_in_source=[
-            *(e.value for e in sample.expected if not leak_pattern(e).search(sample.text)),
-            *(k for k in sample.keep if k not in sample.text),
+            *(e.value for e in sample.expected if not leak_pattern(e).search(source)),
+            *(k for k in sample.keep if normalize_text(k) not in source),
         ],
     )
 
 
-def run_leak_check(samples: Sequence[Sample], config: DeidConfig) -> list[SampleReport]:
-    """De-identify every sample through the real path and check it.
+@contextmanager
+def real_path(config: DeidConfig) -> Iterator[tuple[Deidentifier, Enroll]]:
+    """The production de-identification path on a throwaway in-memory database.
 
-    Real path: in-memory SQLite, identity sealed into Candidate.encrypted_identity and opened
-    again, tokens persisted (encrypted) in deid_mappings. The key is throwaway. No network.
+    Yields the de-identifier and `enroll(pseudonym, identity) -> (candidate_id, known)`, which
+    seals the identity into Candidate.encrypted_identity and opens it again, as the app does.
+    Tokens are persisted (encrypted) in deid_mappings. Throwaway key, no network.
     """
     engine = make_engine(
         "sqlite+pysqlite:///:memory:",
@@ -162,22 +189,171 @@ def run_leak_check(samples: Sequence[Sample], config: DeidConfig) -> list[Sample
                 config, SqlTokenStore(session, cipher, config.token_formats())
             )
 
-            def deidentify(sample: Sample) -> tuple[str, int]:
+            def enroll(pseudonym: str, identity: KnownIdentity) -> tuple[str, KnownIdentity]:
                 candidate = Candidate(
-                    pseudonym=f"LEAKCHECK-{sample.id}",
-                    encrypted_identity=seal_identity(cipher, sample.identity),
+                    pseudonym=f"LEAKCHECK-{pseudonym}",
+                    encrypted_identity=seal_identity(cipher, identity),
                 )
                 session.add(candidate)
                 session.flush()
-                known = open_identity(cipher, candidate.encrypted_identity or "")
-                result = deid.deidentify(sample.text, candidate_id=candidate.id, known=known)
-                return result.text, len(result.replacements)
+                return candidate.id, open_identity(cipher, candidate.encrypted_identity or "")
 
-            reports = [check_sample(s, deidentify) for s in samples]
+            yield deid, enroll
             session.rollback()
     finally:
         engine.dispose()
-    return reports
+
+
+def run_leak_check(samples: Sequence[Sample], config: DeidConfig) -> list[SampleReport]:
+    """De-identify every sample through the real path (see `real_path`) and check it."""
+    with real_path(config) as (deid, enroll):
+
+        def deidentify(sample: Sample) -> tuple[str, int]:
+            candidate_id, known = enroll(sample.id, sample.identity)
+            result = deid.deidentify(sample.text, candidate_id=candidate_id, known=known)
+            return result.text, len(result.replacements)
+
+        return [check_sample(s, deidentify) for s in samples]
+
+
+# --- documents -------------------------------------------------------------------------------
+
+CHECKED, OCR_HOLD, ERROR = "checked", "ocr_hold", "error"
+
+
+@dataclass(frozen=True)
+class DocumentSample:
+    id: str
+    path: Path
+    upload_name: str  # the file name as uploaded; extracted and de-identified like the content
+    format: str
+    scanned: bool
+    identity: KnownIdentity
+    expected: tuple[ExpectedValue, ...]
+    keep: tuple[str, ...] = ()
+    traps: tuple[str, ...] = ()
+    images: int = 0  # images placed in the file; at least this many must be dropped
+    ocr_pages: tuple[int, ...] = ()
+
+
+@dataclass
+class DocumentReport:
+    sample: DocumentSample
+    status: str  # CHECKED, OCR_HOLD (needs OCR: nothing de-identified, nothing sent) or ERROR
+    document: ExtractedDocument | None = None
+    deidentified: DeidentifiedDocument | None = None
+    error: str = ""
+    leaks: list[tuple[ExpectedValue, str]] = field(default_factory=list)  # (value, block label)
+    residual: list[tuple[str, str, str]] = field(default_factory=list)  # (kind, surface, label)
+    lost: list[str] = field(default_factory=list)
+    not_in_source: list[str] = field(default_factory=list)  # value not extracted at all
+    missing: list[tuple[str, str]] = field(default_factory=list)  # (value, kind) absent there
+    problems: list[str] = field(default_factory=list)  # OCR classification, images, format
+
+    @property
+    def ok(self) -> bool:
+        if self.status == ERROR or self.problems:
+            return False
+        if self.status == OCR_HOLD:
+            return True
+        return not (self.leaks or self.residual or self.lost or self.not_in_source or self.missing)
+
+    @property
+    def leaked_values(self) -> int:
+        return len({e for e, _ in self.leaks}) + len(self.residual)
+
+
+def load_document_samples(path: Path) -> list[DocumentSample]:
+    """Manifest entries; `file` is relative to the manifest's folder."""
+    path = Path(path)
+    with path.open("r", encoding="utf-8") as f:
+        raw = yaml.safe_load(f) or {}
+    samples = []
+    for item in raw.get("samples", []):
+        file = path.parent / str(item["file"])
+        samples.append(
+            DocumentSample(
+                id=str(item["id"]),
+                path=file,
+                upload_name=str(item.get("upload_name") or file.name),
+                format=str(item.get("format", "")),
+                scanned=bool(item.get("scanned", False)),
+                identity=KnownIdentity.from_dict(item.get("identity") or {}),
+                expected=tuple(
+                    ExpectedValue(
+                        DeidCategory(e["category"]),
+                        str(e["value"]),
+                        tuple(str(w) for w in e.get("where", ())),
+                    )
+                    for e in item.get("expected", [])
+                ),
+                keep=tuple(str(k) for k in item.get("keep", [])),
+                traps=tuple(str(t) for t in item.get("traps", [])),
+                images=int(item.get("images", 0)),
+                ocr_pages=tuple(int(n) for n in item.get("ocr_pages", ())),
+            )
+        )
+    return samples
+
+
+def check_document(
+    sample: DocumentSample,
+    deid: Deidentifier,
+    enroll: Enroll,
+    extractors: Mapping[str, DocumentExtractor] | None = None,
+) -> DocumentReport:
+    try:
+        document = extract_document(sample.path.read_bytes(), sample.upload_name, extractors)
+    except ExtractionError as exc:
+        return DocumentReport(sample, ERROR, error=str(exc))
+
+    problems = []
+    if sample.format and document.format != sample.format:
+        problems.append(f"형식 {document.format} (정답 {sample.format})")
+    if document.needs_ocr != sample.scanned:
+        got = "OCR 필요" if document.needs_ocr else "텍스트형"
+        want = "OCR 필요" if sample.scanned else "텍스트형"
+        problems.append(f"{got}로 분류됨 (정답 {want})")
+    elif sample.ocr_pages and tuple(document.ocr_pages) != sample.ocr_pages:
+        problems.append(f"OCR 필요 쪽 {document.ocr_pages} (정답 {list(sample.ocr_pages)})")
+    if document.images_dropped < sample.images:
+        problems.append(f"버린 이미지 {document.images_dropped}개 (넣은 이미지 {sample.images}개)")
+    if document.needs_ocr:
+        return DocumentReport(sample, OCR_HOLD, document=document, problems=problems)
+
+    candidate_id, known = enroll(sample.id, sample.identity)
+    deidentified = deidentify_document(deid, document, candidate_id=candidate_id, known=known)
+    report = DocumentReport(
+        sample, CHECKED, document=document, deidentified=deidentified, problems=problems
+    )
+    for block in deidentified.blocks:
+        report.leaks.extend((e, block.label) for e in find_leaks(block.text, sample.expected))
+        report.residual.extend((k, v, block.label) for k, v in residual_scan(block.text))
+    output = normalize_text(deidentified.text)
+    report.lost = [k for k in sample.keep if normalize_text(k) not in output]
+
+    sources = [(b.kind.value, normalize_text(b.text)) for b in document.blocks]
+    for e in sample.expected:
+        pattern = leak_pattern(e)
+        if not any(pattern.search(text) for _, text in sources):
+            report.not_in_source.append(e.value)
+            continue
+        for kind in e.where:
+            if kind != "image" and not any(pattern.search(t) for k, t in sources if k == kind):
+                report.missing.append((e.value, kind))
+    source = normalize_text(document.render())
+    report.not_in_source.extend(k for k in sample.keep if normalize_text(k) not in source)
+    return report
+
+
+def run_document_leak_check(
+    samples: Sequence[DocumentSample],
+    config: DeidConfig,
+    extractors: Mapping[str, DocumentExtractor] | None = None,
+) -> list[DocumentReport]:
+    """Extract, de-identify (real path) and check every file sample."""
+    with real_path(config) as (deid, enroll):
+        return [check_document(s, deid, enroll, extractors) for s in samples]
 
 
 def mask(value: str) -> str:

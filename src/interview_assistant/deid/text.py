@@ -51,12 +51,16 @@ def right_boundary(term: str) -> str:
     return RIGHT_HANGUL if re.search(rf"[{HANGUL}]$", term) else RIGHT_LATIN
 
 
-def term_pattern(term: str) -> str:
+def term_pattern(term: str, *, loose: bool = False) -> str:
     """Regex for a literal term with boundaries.
 
     Spaces in the term match any run of whitespace, and a space is optional where Latin meets
     Hangul ("LG전자" also matches "LG 전자"). All-caps acronyms match case-sensitively (so
     "GIST" does not match "gist"); other Latin terms ignore case.
+
+    `loose` also allows one whitespace character between any two letters, for values known
+    exactly (the candidate's own school or employer) that a document may have wrapped mid-word
+    in a narrow table cell ("한빛대" / "학교").
     """
     parts: list[str] = []
     prev = ""
@@ -65,7 +69,7 @@ def term_pattern(term: str) -> str:
             if parts and parts[-1] != r"\s+":
                 parts.append(r"\s+")
         else:
-            if prev and {_script(prev), _script(ch)} == {"hangul", "latin"}:
+            if prev and (loose or {_script(prev), _script(ch)} == {"hangul", "latin"}):
                 parts.append(r"\s?")
             parts.append(re.escape(ch))
         prev = "" if ch.isspace() else ch

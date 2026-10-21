@@ -218,6 +218,9 @@ def test_titled_person_and_follow_up_mentions():
         "서비스 PM으로 일했습니다",
         "모든 선배님들",
         "고객사 프로젝트",
+        "인프라 엔지니어로 일했습니다",
+        "반도체 엔지니어 직무",
+        "연구소 연구원으로",
     ],
 )
 def test_titled_person_skips_common_words(text):
@@ -253,11 +256,29 @@ def known():
         ("한빛대 출신", "한빛대", DeidCategory.school),
         ("새솔여고에서", "새솔여고", DeidCategory.school),
         ("누리소프트에서", "누리소프트", DeidCategory.company),
+        # Shapes that come out of files: letter-spaced PDF text, bracketed area code, values a
+        # narrow table cell wrapped mid-word.
+        ("0 1 0 . 0 1 2 3 . 4 5 6 7", "0 1 0 . 0 1 2 3 . 4 5 6 7", DeidCategory.phone),
+        ("(010) 0123-4567", "(010) 0123-4567", DeidCategory.phone),
+        ("doyoon.kim@exa mple.com", "doyoon.kim@exa mple.com", DeidCategory.email),
+        ("한빛대\n학교 졸업", "한빛대\n학교", DeidCategory.school),
+        ("솔바\n람길 27", "솔바\n람길 27", DeidCategory.address),
     ],
 )
 def test_known_identity_variants(known, text, surface, category):
     found = {(s, c) for s, c, _ in spans(KnownIdentityDetector(), text, known)}
     assert (surface, category) in found
+
+
+def test_known_identity_address_split_across_cells(known):
+    """Each piece of the known address is found on its own and maps to the same value."""
+    found = spans(KnownIdentityDetector(), "주소 | 서울특별시 마포구 | 솔바람길 27 | 101동 1203호", known)
+    address = "서울특별시 마포구 솔바람길 27, 101동 1203호"
+    assert {(s, v) for s, c, v in found if c is DeidCategory.address} == {
+        ("서울특별시 마포구", address),
+        ("솔바람길 27", address),
+        ("101동 1203호", address),
+    }
 
 
 def test_known_identity_values_are_canonical(known):

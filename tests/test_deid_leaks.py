@@ -1,7 +1,6 @@
 """Completion criterion for step 2: 20 synthetic samples, zero leaks, no network."""
 
 import importlib.util
-import socket
 
 import pytest
 
@@ -20,16 +19,6 @@ from interview_assistant.models import DeidCategory
 from .conftest import ROOT
 
 SAMPLES = ROOT / "tests" / "fixtures" / "deid_samples.yaml"
-
-
-@pytest.fixture
-def no_network(monkeypatch):
-    def refuse(*args, **kwargs):
-        raise AssertionError("network access attempted")
-
-    monkeypatch.setattr(socket.socket, "connect", refuse)
-    monkeypatch.setattr(socket, "create_connection", refuse)
-    monkeypatch.setattr(socket, "getaddrinfo", refuse)
 
 
 @pytest.fixture(scope="module")

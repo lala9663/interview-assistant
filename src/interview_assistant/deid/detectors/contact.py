@@ -62,6 +62,14 @@ _TAIL = (
 )
 _PART = rf"(?:{_DISTRICT}|{_ROAD}|{_DONG})"
 
+# Pieces of a known address that identify on their own (road + number, building, unit). The
+# known-identity detector looks for them separately, because a document can split an address
+# across table cells ("서울특별시 마포구 | 솔바람길 27").
+ADDRESS_PIECE = re.compile(rf"{_ROAD}|{_BUILDING}|\d{{1,4}}\s*동\s*\d{{1,5}}\s*호")
+# The 시/도 + 시/군/구 head of an address ("경기도 수원시 영통구"), also looked for on its own so a
+# split address gets one token rather than one per cell.
+ADDRESS_REGION = re.compile(rf"^(?:{'|'.join(_SIDO)})(?:\s*{_DISTRICT})*")
+
 # 시/도 + 시/군/구 (+ 도로명/동 + 번지 + 건물·호수). "서울 강남구" alone already counts.
 ADDRESS_WITH_SIDO = re.compile(
     rf"{LEFT}(?:{'|'.join(_SIDO)})\s*{_DISTRICT}(?:\s*{_PART})*{_TAIL}"

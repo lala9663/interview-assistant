@@ -37,7 +37,9 @@ TITLED_NAME = re.compile(
 # Three-syllable words that start with a surname character and often precede a title.
 _NOT_NAMES = frozenset(
     "마케팅 모바일 백엔드 서비스 연구원 전직장 주니어 한국인 고객사 경쟁사 협력사 기획팀 인사팀 전략팀 "
-    "정규직 계약직 신입생 재학생 졸업생 대학원 지원자 면접관 담당자 관리자 책임자 선임자 후임자 전임자".split()
+    "정규직 계약직 신입생 재학생 졸업생 대학원 지원자 면접관 담당자 관리자 책임자 선임자 후임자 전임자 "
+    # Job-field words seen before 엔지니어/개발자 in resumes ("인프라 엔지니어", "반도체 엔지니어").
+    "인프라 반도체 연구소 전기차 제조업 하이브리드 공정팀 임베디".split()
 )
 # Given names never end in these (조사, or organisation words like 팀/사/부).
 _NOT_NAME_ENDINGS = frozenset("에의는을를로와과께들팀사부실처청단")

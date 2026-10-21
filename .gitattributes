@@ -1,0 +1,2 @@
+# Generated fixtures are compared byte for byte (and one is EUC-KR): never convert line endings.
+tests/fixtures/resumes/** -text
