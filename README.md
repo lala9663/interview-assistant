@@ -14,7 +14,9 @@ config/
   providers.fake.yaml   # 자격증명 없이 로컬 실행·테스트용
 src/interview_assistant/
   config.py             # 설정 로더 (env + providers.yaml)
+  db.py                 # 엔진, 세션 팩토리
   main.py               # FastAPI 앱
+  models/               # ORM 모델 13개 (업무정의서 6장)
   providers/
     base.py             # LLMProvider, STTProvider, EmbeddingProvider, DiarizationProvider
     registry.py         # impl 이름 -> 구현 클래스
@@ -36,8 +38,22 @@ uv run uvicorn interview_assistant.main:app --reload
 uv run pytest
 ```
 
-## 다음 단계
+## DB
 
-1. `providers/llm/anthropic_vertex.py`, `providers/stt/google_stt_v2.py` 구현
-2. DB 스키마 (업무정의서 6장) + Alembic 마이그레이션
-3. 서류 선별(FR-01) 파이프라인
+모델은 `src/interview_assistant/models/`, 마이그레이션은 `migrations/versions/`. 연결 문자열은 `IA_DATABASE_URL` (기본 SQLite). 컬럼 타입은 SQLite, PostgreSQL, MySQL 공통 범위만 쓴다.
+
+```bash
+uv run alembic upgrade head
+```
+
+모델을 바꾼 뒤 마이그레이션 생성:
+
+```bash
+uv run alembic revision --autogenerate -m "describe change"
+```
+
+`tests/test_migrations.py`가 마이그레이션 결과와 모델이 일치하는지 검사한다.
+
+## 진행 순서
+
+[docs/implementation-order.md](docs/implementation-order.md) 참조. 현재 1단계(도메인 모델·DB) 완료, 다음은 2단계 비식별화.
