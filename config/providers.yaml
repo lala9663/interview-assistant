@@ -1,0 +1,30 @@
+# PoC 기본값: GCP. 구성요소마다 impl을 바꾸면 코드 수정 없이 교체된다.
+# impl 이름 -> 클래스 매핑은 src/interview_assistant/providers/registry.py 참조.
+providers:
+  llm:
+    primary:
+      impl: anthropic_vertex
+      model: claude-opus-5-5
+      region: global
+    screening:
+      impl: anthropic_vertex
+      model: claude-haiku-5-5
+      region: global
+    # 대안: { impl: gemini_vertex } / { impl: vllm, base_url: http://... , model: qwen3-32b } / { impl: samsung_gauss }
+  stt:
+    streaming:
+      impl: google_stt_v2
+      model: chirp_3
+      language: ko-KR
+    batch:
+      impl: google_stt_v2
+      model: chirp_3
+      language: ko-KR
+      diarization: true
+    # 대안: { impl: faster_whisper, model: large-v3 } / { impl: clova_speech }
+  embedding:
+    impl: vertex_embedding
+    # 대안: { impl: bge_m3 } / { impl: voyage }
+  diarization:
+    impl: google_stt_v2
+    # 대안: { impl: pyannote }

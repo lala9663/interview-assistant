@@ -1,0 +1,22 @@
+# 자격증명 없이 로컬 실행·테스트할 때 쓰는 설정. IA_PROVIDERS_FILE=config/providers.fake.yaml
+providers:
+  llm:
+    primary:
+      impl: fake
+      model: fake-llm
+    screening:
+      impl: fake
+      model: fake-llm
+  stt:
+    streaming:
+      impl: fake
+      language: ko-KR
+    batch:
+      impl: fake
+      language: ko-KR
+      diarization: true
+  embedding:
+    impl: fake
+    dimensions: 8
+  diarization:
+    impl: fake
