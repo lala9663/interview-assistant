@@ -27,7 +27,8 @@ function messageFrom(status: number, body: ApiErrorBody | null): string {
 
 export async function apiFetch(path: string, init: RequestInit = {}): Promise<Response> {
   const headers = new Headers(init.headers)
-  if (init.body !== undefined && !headers.has('Content-Type')) headers.set('Content-Type', 'application/json')
+  // FormData (uploads) gets its multipart boundary from the browser.
+  if (init.body !== undefined && !(init.body instanceof FormData) && !headers.has('Content-Type')) headers.set('Content-Type', 'application/json')
   if (!headers.has('Accept')) headers.set('Accept', 'application/json')
   let res: Response
   try {
@@ -56,5 +57,6 @@ export const api = {
     request<T>(path, { method: 'POST', body: body === undefined ? undefined : JSON.stringify(body) }),
   put: <T>(path: string, body: unknown) => request<T>(path, { method: 'PUT', body: JSON.stringify(body) }),
   patch: <T>(path: string, body: unknown) => request<T>(path, { method: 'PATCH', body: JSON.stringify(body) }),
+  postForm: <T>(path: string, form: FormData) => request<T>(path, { method: 'POST', body: form }),
   delete: <T>(path: string) => request<T>(path, { method: 'DELETE' }),
 }

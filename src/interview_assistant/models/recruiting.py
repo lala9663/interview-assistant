@@ -70,10 +70,40 @@ class CompetencySet(IdMixin, TimestampMixin, Base):
     )
     version: Mapped[int] = mapped_column(Integer, default=1, nullable=False)
     competencies: Mapped[list[dict[str, Any]]] = mapped_column(JSON, nullable=False)
+    # Id of the interviewer who approved this version (the SSO user id once login exists).
     approved_by: Mapped[str | None] = mapped_column(String(100))
     approved_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
 
     posting: Mapped[JobPosting] = relationship(back_populates="competency_sets")
+    preset_questions: Mapped[list[PresetQuestion]] = relationship(
+        back_populates="competency_set",
+        cascade="all, delete-orphan",
+        order_by="PresetQuestion.position",
+    )
+
+
+class PresetQuestion(IdMixin, TimestampMixin, Base):
+    """사전 질문 (FR-06), written against one competency-set version.
+
+    Tied to the version rather than the posting because each question targets one of that
+    version's competencies. Approving a new version carries over the questions whose competency
+    it keeps.
+    """
+
+    __tablename__ = "preset_questions"
+    __table_args__ = (
+        UniqueConstraint("competency_set_id", "position", name="uq_preset_questions_set_position"),
+    )
+
+    competency_set_id: Mapped[str] = mapped_column(
+        ForeignKey("competency_sets.id", ondelete="CASCADE"), nullable=False
+    )
+    position: Mapped[int] = mapped_column(Integer, nullable=False)
+    competency: Mapped[str] = mapped_column(String(100), nullable=False)
+    question: Mapped[str] = mapped_column(Text, nullable=False)
+    intent: Mapped[str] = mapped_column(String(200), default="", nullable=False)
+
+    competency_set: Mapped[CompetencySet] = relationship(back_populates="preset_questions")
 
 
 class Candidate(IdMixin, TimestampMixin, Base):
@@ -104,6 +134,9 @@ class Application(IdMixin, TimestampMixin, Base):
     posting_id: Mapped[str] = mapped_column(ForeignKey("job_postings.id"), nullable=False)
     source_file_uri: Mapped[str | None] = mapped_column(String(500))
     profile: Mapped[dict[str, Any] | None] = mapped_column(JSON)
+    # What the uploaded file held, as counts only: {format, blocks, hidden_blocks, images_dropped,
+    # replacements}. Hidden blocks are de-identified but kept out of the screening prompt.
+    document_info: Mapped[dict[str, Any] | None] = mapped_column(JSON)
     deleted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
 
     candidate: Mapped[Candidate] = relationship(back_populates="applications")

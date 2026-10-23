@@ -35,6 +35,7 @@ import type {
   SessionStatus,
   SessionSummary,
   TranscriptSegment,
+  UploadResult,
 } from '@/api/types'
 import { summarizeAiScores } from '@/lib/scoring'
 import { addDays, addMinutes, kstDate, kstParts, MINUTE, startOfKstDay, startOfKstWeek } from '@/lib/time'
@@ -111,6 +112,9 @@ export class MockDb {
   audit: AuditLog[] = []
   aiScoring = new Map<string, { status: AiScoringStatus; startedAt: number }>()
   submittedAt = new Map<string, string>()
+  /** interviewer scores are per session (qa_item_id null): score id -> session id */
+  scoreSession = new Map<string, string>()
+  documents = new Map<string, UploadResult['document']>()
   transcripts = new Map<string, TranscriptSegment[]>()
   suggestions = new Map<string, RegisteredSuggestion>()
   genericCursor = new Map<string, number>()
@@ -286,7 +290,51 @@ export class MockDb {
       posting: { id: p.id, title: p.title, job_family: p.job_family },
       screening: this.screeningOf(a.id),
       sessions: this.sessionsOf(a.id).map((s) => this.brief(s)),
+      document: this.documents.get(a.id) ?? null,
     }
+  }
+
+  /** Mock upload: a new candidate with a generic profile, screened as hold (people decide). */
+  addUpload(postingId: string, filename: string): UploadResult {
+    const n = this.candidates.length + 1
+    const now = new Date()
+    const candidate = { id: newId(), pseudonym: pseudonymOf(n), consent_recording: false, consent_at: null, deleted_at: null, created_at: iso(now) }
+    const application = {
+      id: newId(),
+      candidate_id: candidate.id,
+      posting_id: postingId,
+      profile: {
+        summary: '업로드한 서류에서 구조화한 프로필 (모의).',
+        years_experience: 3 + Math.floor(hash01(filename) * 6),
+        skills: ['Python', 'SQL', '데이터 분석'],
+        experience: [{ company: '[회사-1]', role: '엔지니어', period: '2021.03 – 현재', highlights: [] }],
+        education: [{ school: '[학교-1]', degree: '학사', major: '공학' }],
+        projects: [],
+        certifications: [],
+      },
+      deleted_at: null,
+      created_at: iso(now),
+    }
+    const fit = 50 + Math.round(hash01(`${filename}:fit`) * 40)
+    const screening = {
+      id: newId(),
+      application_id: application.id,
+      fit_score: fit,
+      rationale: `서류를 JD와 대조했습니다 (AI 권고: ${fit >= 75 ? '통과' : '보류'})
++ 필수 요건 일부 충족
+- 경력 근거 확인 필요`,
+      status: 'hold' as const,
+      model: SCREENING_MODEL,
+      prompt_version: 'screening-v0.4',
+      created_at: iso(now),
+    }
+    const ext = filename.split('.').pop()?.toLowerCase() ?? ''
+    const document = { format: ext === 'htm' ? 'html' : ext, blocks: 6, hidden_blocks: 0, images_dropped: 0, replacements: 4 }
+    this.candidates.push(candidate)
+    this.applications.push(application)
+    this.screenings.push(screening)
+    this.documents.set(application.id, document)
+    return { application_id: application.id, candidate: { id: candidate.id, pseudonym: candidate.pseudonym }, screening, document }
   }
 
   candidateIndex(): CandidateIndexItem[] {
@@ -378,7 +426,7 @@ export class MockDb {
     const status = this.aiStatus(id)
     const qa = this.qaOf(id)
     const qaIds = new Set(qa.map((q) => q.id))
-    const all = this.scores.filter((x) => qaIds.has(x.qa_item_id))
+    const all = this.scores.filter((x) => (x.qa_item_id ? qaIds.has(x.qa_item_id) : this.scoreSession.get(x.id) === id))
     const ai = status === 'completed' ? all.filter((x) => x.evaluator_type === 'ai') : []
     return {
       session: s,
@@ -680,12 +728,13 @@ function seedSessions(db: MockDb, now: Date, daysAgo: (d: number, h?: number, m?
   }
   db.aiScoring.set(c4, { status: 'running', startedAt: Date.now() })
 
-  const interviewerScores = (sessionId: string, qa: QAItem[], key: string, at: Date, rows: [string, number, string][]) => {
+  const interviewerScores = (sessionId: string, key: string, at: Date, rows: [string, number, string][]) => {
     for (const [competency, score, comment] of rows) {
-      const target = qa.find((q) => db.qaMeta.get(q.id)?.competency === competency) ?? qa[0]!
+      const id = newId()
+      db.scoreSession.set(id, sessionId)
       db.scores.push({
-        id: newId(),
-        qa_item_id: target.id,
+        id,
+        qa_item_id: null,
         competency,
         score,
         evidence: comment,
@@ -699,25 +748,25 @@ function seedSessions(db: MockDb, now: Date, daysAgo: (d: number, h?: number, m?
     }
     db.submittedAt.set(`${sessionId}:${interviewerId(key)}`, iso(at))
   }
-  interviewerScores(c1, c1qa, 'kim', daysAgo(1, 15, 10), [
+  interviewerScores(c1, 'kim', daysAgo(1, 15, 10), [
     ['공정 문제 해결', 4, '실패 원인을 스스로 찾아 검증 절차 개선까지 연결함.'],
     ['데이터 기반 분석', 3, '분석 근거는 있으나 표본 크기에 대한 설명이 부족.'],
     ['공정·장비 이해', 4, '온도와 폴리머 증착의 관계를 정확히 설명.'],
     ['협업과 커뮤니케이션', 4, '생산팀과 합의 후 재조정까지 이어간 과정이 구체적.'],
   ])
-  interviewerScores(c1, c1qa, 'park', daysAgo(1, 15, 40), [
+  interviewerScores(c1, 'park', daysAgo(1, 15, 40), [
     ['공정 문제 해결', 4, '재발 방지 조치까지 확인함.'],
     ['데이터 기반 분석', 4, '이벤트 겹쳐 보기로 원인을 찾은 접근이 좋음.'],
     ['공정·장비 이해', 3, '식각 메커니즘 설명은 좋으나 증착 쪽 깊이는 보통.'],
     ['협업과 커뮤니케이션', 5, '데이터로 이견을 조율하고 결과를 수용하는 태도.'],
   ])
-  interviewerScores(c2, c2qa, 'park', daysAgo(2, 11, 30), [
+  interviewerScores(c2, 'park', daysAgo(2, 11, 30), [
     ['공정 문제 해결', 4, '가설 설정과 DOE 검증이 체계적.'],
     ['데이터 기반 분석', 4, '다변량 분석 이후 판단 기준이 명확.'],
     ['공정·장비 이해', 3, '전후 공정 영향은 설명했으나 근거가 다소 약함.'],
     ['협업과 커뮤니케이션', 3, '장비사 협업 양식 개선은 좋으나 내부 협업 사례 부족.'],
   ])
-  void c3qa
+  void [c1qa, c2qa, c3qa]
 }
 
 /** Weekly availability templates (KST hours), Mon..Fri. */

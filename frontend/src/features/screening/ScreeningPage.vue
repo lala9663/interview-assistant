@@ -1,6 +1,6 @@
 <script setup lang="ts">
-import { FileSearchIcon } from '@lucide/vue'
-import { computed, watchEffect } from 'vue'
+import { FileSearchIcon, UploadIcon } from '@lucide/vue'
+import { computed, ref, watchEffect } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 
 import { useApplications, usePostings } from '@/api/queries'
@@ -9,12 +9,14 @@ import ErrorState from '@/components/common/ErrorState.vue'
 import Page from '@/components/common/Page.vue'
 import PageHeader from '@/components/common/PageHeader.vue'
 import PrivacyNote from '@/components/common/PrivacyNote.vue'
+import { Button } from '@/components/ui/button'
 import { Card } from '@/components/ui/card'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Skeleton } from '@/components/ui/skeleton'
 
 import ApplicationSheet from './ApplicationSheet.vue'
 import ScreeningTable from './ScreeningTable.vue'
+import UploadDialog from './UploadDialog.vue'
 
 const route = useRoute()
 const router = useRouter()
@@ -39,6 +41,7 @@ const close = () => {
 const pick = (v: unknown) => {
   if (typeof v === 'string' && v) void router.push(`/screening/${v}`)
 }
+const uploading = ref(false)
 </script>
 
 <template>
@@ -57,6 +60,10 @@ const pick = (v: unknown) => {
             <SelectItem v-for="p in postings.data ?? []" :key="p.id" :value="p.id">{{ p.title }} · {{ p.counts.applications }}명</SelectItem>
           </SelectContent>
         </Select>
+        <Button variant="outline" :disabled="!posting || posting.status === 'closed'" @click="uploading = true">
+          <UploadIcon />
+          서류 업로드
+        </Button>
       </template>
     </PageHeader>
     <ErrorState v-if="apps.isError" :error="apps.error" @retry="apps.refetch()" />
@@ -78,5 +85,12 @@ const pick = (v: unknown) => {
     <ScreeningTable v-else :rows="apps.data" :selected-id="selected" @open="open" />
     <PrivacyNote class="mt-3" />
     <ApplicationSheet :application-id="selected" :posting-id="postingId" @close="close" />
+    <UploadDialog
+      :open="uploading"
+      :posting-id="postingId"
+      :posting-title="posting?.title ?? ''"
+      @close="uploading = false"
+      @uploaded="(r) => ((uploading = false), open(r.application_id))"
+    />
   </Page>
 </template>

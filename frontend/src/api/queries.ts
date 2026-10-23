@@ -14,6 +14,7 @@ import type {
   ScreeningStatus,
   SessionStatus,
   SubmitInterviewerScoresRequest,
+  UploadApplicationRequest,
 } from './types'
 
 export const qk = {
@@ -171,6 +172,22 @@ export function useUpdateScreening(postingId: MaybeRefOrGetter<string>) {
   )
 }
 
+export function useUploadApplication(postingId: MaybeRefOrGetter<string>) {
+  const qc = useQueryClient()
+  return reactive(
+    useMutation({
+      mutationFn: (body: UploadApplicationRequest) => endpoints.uploadApplication(toValue(postingId), body),
+      onSuccess: () => {
+        void qc.invalidateQueries({ queryKey: qk.applications(toValue(postingId)) })
+        void qc.invalidateQueries({ queryKey: qk.postings })
+        void qc.invalidateQueries({ queryKey: qk.candidates })
+        void qc.invalidateQueries({ queryKey: qk.dashboard })
+        void qc.invalidateQueries({ queryKey: ['activity'] })
+      },
+    }),
+  )
+}
+
 function useInvalidateCompetency(postingId: MaybeRefOrGetter<string>) {
   const qc = useQueryClient()
   return () => {
@@ -283,6 +300,8 @@ export function useCreateSession() {
     useMutation({
       mutationFn: (body: CreateSessionRequest) => endpoints.createSession(body),
       onSuccess: () => {
+        // The server leaves booked interviews out of the slot suggestions.
+        void qc.invalidateQueries({ queryKey: ['schedule-suggestions'] })
         void qc.invalidateQueries({ queryKey: ['sessions'] })
         void qc.invalidateQueries({ queryKey: ['applications'] })
         void qc.invalidateQueries({ queryKey: ['postings'] })

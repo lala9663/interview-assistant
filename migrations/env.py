@@ -44,6 +44,12 @@ def run_migrations_offline() -> None:
 def run_migrations_online() -> None:
     engine = make_engine(_database_url(), poolclass=pool.NullPool)
     with engine.connect() as connection:
+        sqlite = connection.dialect.name == "sqlite"
+        if sqlite:
+            # Batch mode copies a table and drops the original; with foreign keys on, that DROP
+            # would cascade-delete every child row. Integrity is checked once the migration ends.
+            connection.exec_driver_sql("PRAGMA foreign_keys=OFF")
+            connection.commit()
         context.configure(
             connection=connection,
             target_metadata=target_metadata,
@@ -52,6 +58,12 @@ def run_migrations_online() -> None:
         )
         with context.begin_transaction():
             context.run_migrations()
+        if sqlite:
+            broken = connection.exec_driver_sql("PRAGMA foreign_key_check").fetchall()
+            connection.exec_driver_sql("PRAGMA foreign_keys=ON")
+            connection.commit()
+            if broken:
+                raise RuntimeError(f"foreign key check failed after migration: {broken[:5]}")
     engine.dispose()
 
 

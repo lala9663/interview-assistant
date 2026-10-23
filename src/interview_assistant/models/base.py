@@ -35,6 +35,18 @@ def utcnow() -> datetime:
     return datetime.now(timezone.utc)
 
 
+def as_utc(value: datetime) -> datetime:
+    """Aware UTC. SQLite hands DateTime(timezone=True) columns back naive; they are stored as UTC."""
+    if value.tzinfo is None:
+        return value.replace(tzinfo=timezone.utc)
+    return value.astimezone(timezone.utc)
+
+
+def iso_z(value: datetime) -> str:
+    """The API's datetime format: UTC, milliseconds, `Z` (what JavaScript's toISOString gives)."""
+    return as_utc(value).isoformat(timespec="milliseconds").replace("+00:00", "Z")
+
+
 def enum_column(enum_cls: type[enum.Enum], length: int = 20) -> Enum:
     """Portable enum: stored as VARCHAR of the enum *values*, with a CHECK constraint."""
     return Enum(

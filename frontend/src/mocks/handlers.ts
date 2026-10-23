@@ -24,7 +24,7 @@ import { isSameKstDay } from '@/lib/time'
 
 import { ANSWER_BANK, GENERIC_BANK } from './data/banks'
 import { P1, P2 } from './data/postings'
-import { AI_MODEL, getDb, newId, type MockDb, type QAMeta } from './db'
+import { AI_MODEL, getDb, newId, SCREENING_MODEL, type MockDb, type QAMeta } from './db'
 import { followUps, mockConfig, onQuestionAsked, stopStreaming, subscribe } from './live'
 
 const API = '/api'
@@ -208,6 +208,21 @@ export const handlers = [
     const db = getDb()
     if (!db.posting(String(params.id))) return notFound('공고')
     return HttpResponse.json(db.applicationRows(String(params.id)))
+  }),
+
+  http.post(`${API}/postings/:id/applications`, async ({ params, request }) => {
+    await delay(1600 * mockConfig.speed)
+    const db = getDb()
+    const posting = db.posting(String(params.id))
+    if (!posting) return notFound('공고')
+    if (posting.status === 'closed') return conflict('마감된 공고에는 지원서를 올릴 수 없습니다.')
+    const form = await request.formData()
+    const file = form.get('file')
+    if (!(file instanceof File) || file.size === 0) return invalid('file', '빈 파일입니다.')
+    if (!String(form.get('name') ?? '').trim()) return invalid('name', '지원자 이름을 입력하세요. 비식별화에만 쓰입니다.')
+    const result = db.addUpload(posting.id, file.name)
+    db.log({ actor_type: 'ai', action: 'screening.batch_completed', target_type: 'job_posting', target_id: posting.id, model: SCREENING_MODEL, details: { count: 1 } })
+    return HttpResponse.json(result, { status: 201 })
   }),
 
   http.get(`${API}/applications/schedulable`, async () => {
@@ -480,16 +495,15 @@ export const handlers = [
       if (!row) return invalid('scores', `'${name}' 점수가 없습니다.`)
       if (!Number.isInteger(row.score) || row.score < 1 || row.score > 5) return invalid('scores', '점수는 1~5 정수여야 합니다.')
     }
-    const qa = db.qaOf(s.id)
-    if (qa.length === 0) return conflict('기록된 질문이 없어 점수를 저장할 수 없습니다.')
-    const qaIds = new Set(qa.map((q) => q.id))
-    db.scores = db.scores.filter((x) => !(x.evaluator_type === 'interviewer' && x.evaluator_id === interviewerId && qaIds.has(x.qa_item_id)))
+    // Interviewer scores are per session and competency (qa_item_id null); a resubmission replaces them.
+    db.scores = db.scores.filter((x) => !(x.evaluator_type === 'interviewer' && x.evaluator_id === interviewerId && db.scoreSession.get(x.id) === s.id))
     const now = new Date().toISOString()
     for (const row of body.scores) {
-      const target = qa.find((q) => db.qaMeta.get(q.id)?.competency === row.competency) ?? qa[0]!
+      const id = newId()
+      db.scoreSession.set(id, s.id)
       db.scores.push({
-        id: newId(),
-        qa_item_id: target.id,
+        id,
+        qa_item_id: null,
         competency: row.competency,
         score: row.score,
         evidence: row.comment.trim() || null,

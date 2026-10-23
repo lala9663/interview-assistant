@@ -4,10 +4,12 @@ from interview_assistant.models.audit import ActorType, AuditLog
 from interview_assistant.models.base import Base
 from interview_assistant.models.deid import DeidCategory, DeidMapping
 from interview_assistant.models.interview import (
+    AiScoringStatus,
     Availability,
     AvailabilitySource,
     CandidateNote,
     EvaluatorType,
+    FollowUpSuggestion,
     Interviewer,
     InterviewerRole,
     InterviewSession,
@@ -17,6 +19,8 @@ from interview_assistant.models.interview import (
     SessionInterviewer,
     SessionMode,
     SessionStatus,
+    Speaker,
+    TranscriptSegment,
 )
 from interview_assistant.models.recruiting import (
     Application,
@@ -24,12 +28,14 @@ from interview_assistant.models.recruiting import (
     CompetencySet,
     JobPosting,
     PostingStatus,
+    PresetQuestion,
     Screening,
     ScreeningStatus,
 )
 
 __all__ = [
     "ActorType",
+    "AiScoringStatus",
     "Application",
     "AuditLog",
     "Availability",
@@ -41,11 +47,13 @@ __all__ = [
     "DeidCategory",
     "DeidMapping",
     "EvaluatorType",
+    "FollowUpSuggestion",
     "Interviewer",
     "InterviewerRole",
     "InterviewSession",
     "JobPosting",
     "PostingStatus",
+    "PresetQuestion",
     "QAItem",
     "QuestionSource",
     "Score",
@@ -54,4 +62,6 @@ __all__ = [
     "SessionInterviewer",
     "SessionMode",
     "SessionStatus",
+    "Speaker",
+    "TranscriptSegment",
 ]

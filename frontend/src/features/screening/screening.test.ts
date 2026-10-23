@@ -1,10 +1,13 @@
-import { screen, within } from '@testing-library/vue'
+import { screen, waitFor, within } from '@testing-library/vue'
 import userEvent from '@testing-library/user-event'
 import { describe, expect, it, vi } from 'vitest'
 
 import type { ApplicationRow, ScreeningStatus } from '@/api/types'
-import { renderPlain } from '@/test/render'
+import { endpoints } from '@/api/endpoints'
+import { getDb } from '@/mocks/db'
+import { renderPlain, renderRoute } from '@/test/render'
 
+import ScreeningPage from './ScreeningPage.vue'
 import ScreeningTable from './ScreeningTable.vue'
 import { countByStatus, filterRows, sortRows } from './table-logic'
 
@@ -72,5 +75,48 @@ describe('<ScreeningTable>', () => {
     expect(screen.getByText('조건에 맞는 지원자가 없습니다')).toBeInTheDocument()
     await user.click(screen.getByRole('button', { name: '필터 초기화' }))
     expect(screen.getAllByTestId('screening-row')).toHaveLength(5)
+  })
+})
+
+describe('서류 업로드', () => {
+  const pdf = () => new File(['%PDF-1.7'], '지원서.pdf', { type: 'application/pdf' })
+
+  it('sends the file and form fields as multipart (the browser sets the boundary)', async () => {
+    const fetchSpy = vi
+      .spyOn(globalThis, 'fetch')
+      .mockResolvedValue(new Response('{}', { status: 201, headers: { 'Content-Type': 'application/json' } }))
+    await endpoints.uploadApplication('p-1', { file: pdf(), name: '가나다', phone: '010-0000-0000', email: '' })
+    const [url, init] = fetchSpy.mock.calls[0]!
+    expect(String(url)).toMatch(/\/api\/postings\/p-1\/applications$/)
+    expect(init?.method).toBe('POST')
+    const body = init?.body as FormData
+    expect(body).toBeInstanceOf(FormData)
+    expect((body.get('file') as File).name).toBe('지원서.pdf')
+    expect(body.get('name')).toBe('가나다')
+    expect(body.get('phone')).toBe('010-0000-0000')
+    expect(body.get('email')).toBeNull()
+    expect(new Headers(init?.headers).has('Content-Type')).toBe(false)
+  })
+
+  it('uploads from the screening page and opens the new application, pseudonym only', async () => {
+    // jsdom's FormData cannot travel through Node's fetch, so the upload call itself is stubbed here.
+    vi.spyOn(endpoints, 'uploadApplication').mockImplementation(async (postingId, body) => getDb().addUpload(postingId, body.file.name))
+    const user = userEvent.setup()
+    const P2 = 'b1d6a0c2-1f3e-4b8a-9c41-5e2f7a9d0002'
+    await renderRoute(ScreeningPage, { path: '/screening/:postingId', url: `/screening/${P2}` })
+    await screen.findAllByTestId('screening-row')
+
+    await user.click(screen.getByRole('button', { name: '서류 업로드' }))
+    const submit = screen.getByRole('button', { name: '올리고 선별' })
+    expect(submit).toBeDisabled()
+    await user.upload(screen.getByLabelText('지원 서류'), pdf())
+    await user.type(screen.getByLabelText('이름'), '가나다')
+    await user.click(submit)
+
+    await waitFor(() => expect(screen.getAllByTestId('screening-row')).toHaveLength(10))
+    const added = getDb().applications.at(-1)!
+    expect(getDb().screeningOf(added.id)?.status).toBe('hold')
+    expect(screen.getAllByText('CAND-0021').length).toBeGreaterThan(0)
+    expect(screen.queryByText('가나다')).not.toBeInTheDocument()
   })
 })

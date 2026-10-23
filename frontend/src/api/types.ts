@@ -170,10 +170,13 @@ export interface QAItem {
   created_at: string
 }
 
-/** models.Score. AI scores always carry `evidence` (DB check `ai_requires_evidence`). */
+/**
+ * models.Score. AI scores belong to one answer and always carry `evidence` (DB checks
+ * `ai_requires_answer`, `ai_requires_evidence`); interviewer scores are per session (`qa_item_id` null).
+ */
 export interface Score {
   id: string
-  qa_item_id: string
+  qa_item_id: string | null
   competency: string
   score: number
   evidence: string | null
@@ -282,6 +285,15 @@ export interface SessionBrief {
   ended_at: string | null
 }
 
+/** What an uploaded file held, counts only. Hidden blocks were left out of the screening prompt. */
+export interface DocumentInfo {
+  format: string
+  blocks: number
+  hidden_blocks: number
+  images_dropped: number
+  replacements: number
+}
+
 /** GET /api/applications/{id} */
 export interface ApplicationDetail {
   application: Application
@@ -289,6 +301,28 @@ export interface ApplicationDetail {
   posting: Pick<JobPosting, 'id' | 'title' | 'job_family'>
   screening: Screening | null
   sessions: SessionBrief[]
+  /** null for applications that did not come from an upload */
+  document: DocumentInfo | null
+}
+
+/**
+ * POST /api/postings/{id}/applications (multipart). Identity fields are what the application form
+ * says; the server seals them and uses them only to de-identify. Multiple values: one per line.
+ */
+export interface UploadApplicationRequest {
+  file: File
+  name: string
+  /** other spellings of the name (English, Hanja) */
+  aliases?: string
+  phone?: string
+  email?: string
+}
+
+export interface UploadResult {
+  application_id: string
+  candidate: Pick<Candidate, 'id' | 'pseudonym'>
+  screening: Screening
+  document: DocumentInfo
 }
 
 /** GET /api/candidates item: lightweight index for search (command palette). */

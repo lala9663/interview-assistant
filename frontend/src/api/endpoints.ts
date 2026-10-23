@@ -29,6 +29,8 @@ import type {
   SessionSummary,
   SubmitInterviewerScoresRequest,
   TranscriptHistory,
+  UploadApplicationRequest,
+  UploadResult,
 } from './types'
 
 export const endpoints = {
@@ -49,6 +51,15 @@ export const endpoints = {
 
   applications: (postingId: string, signal?: AbortSignal) =>
     api.get<ApplicationRow[]>(`/postings/${postingId}/applications`, signal),
+  uploadApplication: (postingId: string, body: UploadApplicationRequest) => {
+    const form = new FormData()
+    form.append('file', body.file)
+    form.append('name', body.name)
+    if (body.aliases) form.append('aliases', body.aliases)
+    if (body.phone) form.append('phone', body.phone)
+    if (body.email) form.append('email', body.email)
+    return api.postForm<UploadResult>(`/postings/${postingId}/applications`, form)
+  },
   application: (id: string, signal?: AbortSignal) => api.get<ApplicationDetail>(`/applications/${id}`, signal),
   schedulableApplications: (signal?: AbortSignal) => api.get<SchedulableApplication[]>('/applications/schedulable', signal),
   updateScreening: (id: string, status: ScreeningStatus) => api.patch<Screening>(`/screenings/${id}`, { status }),

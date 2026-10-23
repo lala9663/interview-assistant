@@ -18,10 +18,19 @@ src/interview_assistant/
   config.py             # 설정 로더 (env + providers.yaml)
   crypto.py             # 컬럼 암호화 (Fernet, IA_ENCRYPTION_KEY)
   db.py                 # 엔진, 세션 팩토리
-  main.py               # FastAPI 앱
-  models/               # ORM 모델 14개 (업무정의서 6장 13개 + 비식별 역매핑)
+  main.py               # FastAPI 앱 (/health, /api 라우터, 시작 시 멈춘 AI 채점 재개)
+  runtime.py            # 앱이 들고 있는 것: provider, DB, 비식별화, AI 게이트웨이, 전사 허브, 백그라운드 작업
+  models/               # ORM 모델 17개 (업무정의서 6장 13개 + 비식별 역매핑 + 사전 질문·꼬리질문 후보·전사 구간)
+  domain.py             # JSON 컬럼 모양 (역량, 지원자 프로필)
+  interviews.py         # 단계(stage)·집계·세션이 쓰는 역량 사전 규칙
+  schedule.py           # 공통 빈 시간, 슬롯 후보 (프론트 lib/schedule.ts와 같은 규칙 + 잡힌 면접 제외)
+  api/                  # REST·SSE API (docs/api-contract.md). routes/ 기능별 라우터, schemas.py 응답 스키마, views.py ORM → 응답
+  ai/                   # AI 작업: gateway(가드 → provider → 감사 로그), guard, prompts, competency, screening, followups, scoring
+  live/                 # 실시간 전사: hub(STT → 비식별화 → SSE), audio(오디오 소스, 지금은 대본 읽는 가상 지원자)
+  demo/                 # 데모 데이터(프론트 모의 데이터와 같은 가상 데이터)와 시드, 가상 지원자 대본
   deid/                 # 비식별화 (업무정의서 9장)
     deidentifier.py     # 원문 -> 토큰 치환 텍스트. LLM으로 가는 유일한 통로
+    service.py          # 앱용: 설정·사전·탐지기를 한 번 만들고 DB 세션마다 Deidentifier를 준다
     detectors/          # 교체 가능한 탐지기: 본인 정보, 정규식, 사전, 형태 패턴, 호칭 붙은 이름, NER 자리
     store.py            # 토큰 발급과 역매핑 저장 (원래 값은 암호화)
     reidentify.py       # 재식별. 역매핑을 복호화하는 유일한 곳, 호출마다 감사 로그
@@ -35,15 +44,18 @@ src/interview_assistant/
   providers/
     base.py             # LLMProvider, STTProvider, EmbeddingProvider, DiarizationProvider
     registry.py         # impl 이름 -> 구현 클래스
-    fake.py             # 테스트용 구현
+    fake.py             # 자격증명 없이 도는 구현 (speed로 지연 흉내)
+    fake_tasks.py       # fake LLM이 앱 프롬프트에 규칙으로 답하는 부분 (모양만 그럴듯, 품질 아님)
 scripts/
+  seed_demo.py          # 데모 데이터 시드 (공고 3, 지원자 20, 면접관 5, 진행 중 1, 완료 4)
+  export_mock_data.mjs  # 프론트 모의 데이터 → src/interview_assistant/demo/mock_data.json
   check_leaks.py        # 비식별화 누출 검수 (텍스트 샘플 / --documents 파일 샘플 / --report 검토 리포트)
   make_resume_fixtures.py  # 가상 이력서 20건과 정답 목록 생성
 tests/
   fixtures/deid_samples.yaml  # 합성 텍스트 샘플 20건과 정답 목록
   fixtures/resumes/     # 가상 이력서 파일 20건 (PDF 6, DOCX 4, PPTX 3, HTML 4, 스캔 PDF 3)과 manifest.yaml
 docs/
-  api-contract.md       # 프론트 ↔ 백엔드 REST·SSE 계약 (3~8단계 백엔드가 구현)
+  api-contract.md       # 프론트 ↔ 백엔드 REST·SSE 계약, 모델 결정, 남은 과제 (백엔드 구현 완료, fake provider)
 frontend/               # 면접관 UI (Vue 3). 백엔드 없이 모의 API(MSW)로 전 화면 동작
   src/api/              # types.ts(모델과 1:1), endpoints, TanStack Query composable, SSE 파서
   src/mocks/            # 모의 API: 가상 데이터, 핸들러, 실시간 전사·꼬리질문 스트림 흉내
@@ -55,14 +67,39 @@ frontend/               # 면접관 UI (Vue 3). 백엔드 없이 모의 API(MSW)
 ```bash
 uv sync
 cp .env.example .env
+```
+
+`.env`에서 두 가지를 정한다.
+
+- `IA_ENCRYPTION_KEY`: 지원자 신원과 비식별 역매핑을 암호화하는 키. 없으면 업로드·답변·메모처럼 비식별화가 필요한 쓰기가 503으로 거부된다. 만들기: `uv run python -c "from interview_assistant.crypto import FieldCipher as F; print(F.generate_key())"`. 잃어버리면 저장된 신원을 되돌릴 수 없고, 커밋하지 않는다.
+- `IA_PROVIDERS_FILE`: GCP 자격증명이 없으면 `config/providers.fake.yaml`. 모든 AI 기능이 fake provider로 돈다 (아래 "AI" 참조).
+
+DB를 만들고 데모 데이터를 넣은 뒤 서버를 띄운다.
+
+```bash
+uv run alembic upgrade head
+uv run python scripts/seed_demo.py --reset
 uv run uvicorn interview_assistant.main:app --reload
 ```
 
-자격증명 없이 띄우려면 `.env`에서 `IA_PROVIDERS_FILE=config/providers.fake.yaml`.
+- 시드는 프론트 모의 데이터와 같은 가상 데이터를 지금 시각 기준으로 깐다 (진행 중 면접 1, 오늘 일정, 완료 4 중 1건은 AI 채점 중). 다른 날 다시 쓰려면 `--reset`으로 다시 넣는다. 지원자 신원도 지어낸 값(010-0000-xxxx, example.com)을 실제처럼 암호화해 넣는다.
+- 로그인은 아직 없다. `IA_DEV_INTERVIEWER`(사번, 시드의 김서연 = E24017)가 로그인한 면접관이다.
+- 서버는 한 프로세스로 띄운다 (실시간 전사 상태가 메모리에 있다). `--workers`를 쓰지 않는다.
+- API 문서: http://localhost:8000/docs, 계약: [docs/api-contract.md](docs/api-contract.md).
 
 ```bash
 uv run pytest
 ```
+
+테스트는 외부 네트워크 없이 돈다 (API 테스트는 fake provider와 임시 SQLite 사본을 쓴다).
+
+## AI (fake provider로 연결)
+
+서류 선별, 역량 사전 초안, 꼬리질문, 평점은 모두 `ai/gateway.py`를 거쳐 `config/providers.*.yaml`에 적힌 provider를 부른다. 호출 전에 프롬프트를 비식별 필드로만 만들고 가드가 식별 정보를 다시 확인하며, 호출마다 감사 로그를 남긴다. `providers.yaml`의 `impl`만 실제 구현(`anthropic_vertex` 등, 3단계)으로 바꾸면 실제 모델로 바뀐다. `tests/test_api_privacy.py`가 YAML에만 적힌 provider로 모든 호출이 가는지, 프롬프트에 식별 정보가 없는지 검사한다.
+
+- fake LLM은 앱의 프롬프트 태그를 읽어 규칙으로 답한다 (`providers/fake_tasks.py`). 화면과 흐름을 확인하는 용도이고, 내용의 품질은 실제 모델 연결 뒤에 검증한다.
+- 실시간 전사는 실제 오디오(11단계, LiveKit) 전까지 `live/audio.py`의 가상 지원자가 데모 대본을 읽고 fake STT가 받아 적는다. 속도는 `speed`(providers.fake.yaml)와 `IA_DEMO_SPEED`, 1이면 프론트 모의 모드와 비슷하다.
+- 업로드한 원본 서류는 `IA_UPLOADS_DIR`(기본 `uploads/`, git 제외)에 지원서 id 이름으로 저장하고 응답에는 내보내지 않는다.
 
 ## DB
 
@@ -155,12 +192,14 @@ npm run dev          # 모의 API 모드 (백엔드 불필요) → http://localh
 
 모의 모드(`VITE_USE_MOCKS=true`, `.env.development`)에서는 브라우저의 MSW가 `/api` 요청에 답한다. 가상 데이터(공고 3, 지원자 20, 면접관 5, 진행 중 면접 1, 완료 면접 4)는 새로고침하면 처음 상태로 돌아간다. 진행 중 면접 화면을 열면 지원자 답변이 글자 단위로 스트리밍되고, 답변이 끝나면 꼬리질문 후보가 스트리밍된다. 모의 모드에서 `/api`가 모두 502로 실패하면 브라우저가 MSW 서비스 워커를 재시작해 등록이 풀린 것이다. 새로고침하면 된다.
 
-백엔드 연결 모드는 같은 `/api` 경로를 Vite 프록시로 FastAPI(`localhost:8000`)에 보낸다. 대상은 `frontend/.env.api`의 `VITE_API_PROXY_TARGET`. 백엔드는 [docs/api-contract.md](docs/api-contract.md)대로 `/api` 아래에 라우터를 둔다.
+백엔드 연결 모드는 같은 `/api` 경로를 Vite 프록시로 FastAPI(`localhost:8000`)에 보낸다. 대상은 `frontend/.env.api`의 `VITE_API_PROXY_TARGET`. 데이터는 DB에서 오고 새로고침해도 남는다. 위 "실행"대로 마이그레이션·시드를 한 뒤:
 
 ```bash
 uv run uvicorn interview_assistant.main:app --reload   # 저장소 루트에서
-cd frontend && npm run dev:api
+cd frontend && npm run dev:api                         # → http://localhost:5173
 ```
+
+서류 선별 화면의 "서류 업로드"로 PDF·DOCX·PPTX·HTML을 올리면 텍스트 추출 → 비식별화 → 프로필·선별(fake LLM) → 표에 새 가명(CAND-0021 …)으로 들어온다. 이름·연락처는 비식별화에만 쓰인다. 스캔본은 OCR이 없어 거부한다. 테스트용 가상 이력서는 `tests/fixtures/resumes/`에 있다.
 
 검사와 빌드:
 
@@ -174,4 +213,4 @@ npm run build:mock   # 백엔드 없이 띄우는 데모 빌드
 
 ## 진행 순서
 
-[docs/implementation-order.md](docs/implementation-order.md) 참조. 현재 2단계(비식별화) 구현 완료, 사용자 확인(토큰 형식, 사전, 검토 리포트로 20건 수동 검수) 대기. 5단계 서류 파싱 중 텍스트 추출은 2단계 검수용으로 앞당겨 구현했다. 9단계 면접관 UI는 모의 API 기반으로 앞당겨 만들었고(`frontend/`), 실제 연결은 각 백엔드 단계에서 [API 계약](docs/api-contract.md)대로 한다. 다음은 3단계 실제 LLM Provider.
+[docs/implementation-order.md](docs/implementation-order.md) 참조. 현재 2단계(비식별화) 구현 완료, 사용자 확인(토큰 형식, 사전, 검토 리포트로 20건 수동 검수) 대기. 4~8단계의 API·저장 부분과 9단계 화면 연결은 fake provider로 먼저 구현했다(2026-10-23): [API 계약](docs/api-contract.md)의 모든 경로, 업로드, 실시간 전사·꼬리질문 SSE, AI 채점, 시드. 남은 것은 3단계 실제 LLM Provider 연결과 프롬프트별 품질 검증, 10~11단계 오디오, 로그인(계약 문서 5장).

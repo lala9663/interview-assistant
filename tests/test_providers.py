@@ -60,7 +60,7 @@ async def test_fake_embedding_is_unit_norm():
 
 
 def test_health_reports_fake_providers():
-    app = create_app(Settings(providers_file=FAKE))
+    app = create_app(Settings(providers_file=FAKE, database_url="sqlite+pysqlite:///:memory:"))
     with TestClient(app) as client:
         body = client.get("/health").json()
     assert body["status"] == "ok"

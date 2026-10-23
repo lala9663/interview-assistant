@@ -37,6 +37,14 @@ class Settings(BaseSettings):
     deid_file: Path = Path("config/deid.yaml")
     # Fernet key for encrypted columns (candidate identity, de-identification reverse map).
     encryption_key: SecretStr | None = None
+    # Raw zone on disk: uploaded application files and (step 11) recordings. Never served.
+    uploads_dir: Path = Path("uploads")
+    recordings_dir: Path = Path("recordings")
+    # Until SSO (Phase 1): employee number of the interviewer the API treats as signed in.
+    # Empty: the first interviewer created.
+    dev_interviewer: str | None = None
+    # Pace of the simulated candidate in live interviews (1 = like the frontend mock, 0 = instant).
+    demo_speed: float = 1.0
 
 
 def load_providers(path: Path) -> ProvidersConfig:

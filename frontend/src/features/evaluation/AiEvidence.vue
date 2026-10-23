@@ -18,7 +18,7 @@ const blocks = computed(() => {
   return (props.ev.competency_set?.competencies ?? []).map((c) => ({
     name: c.name,
     summary: props.ev.ai.summary.find((s) => s.competency === c.name),
-    items: props.ev.ai.scores.filter((s) => s.competency === c.name).map((s) => ({ s, qa: qaById.get(s.qa_item_id) })),
+    items: props.ev.ai.scores.filter((s) => s.competency === c.name).map((s) => ({ s, qa: s.qa_item_id ? qaById.get(s.qa_item_id) : undefined })),
   }))
 })
 </script>
