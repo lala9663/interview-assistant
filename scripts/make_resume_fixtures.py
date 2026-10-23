@@ -455,7 +455,7 @@ class PdfPlan:
     subject: str = ""
     keywords: str = ""
     header: str = ""  # drawn at the top of every page
-    header_spacing: float = 0  # character spacing, so extraction yields "권 하 린"
+    header_spacing: float = 0  # character spacing (자간); read naively, the text is "권 하 린"
     footer: str = ""  # drawn at the bottom of every page ("{page}" = page number)
     footer_spacing: float = 0
     hidden: tuple[str, ...] = ()  # white text on the white first page
@@ -669,12 +669,17 @@ def pdf_r03(p: Person, truth: Truth, font: Path) -> tuple[bytes, dict]:
 
 def pdf_r04(p: Person, truth: Truth, font: Path) -> tuple[bytes, dict]:
     truth.put("filename", "candidate", p.name)
-    truth.trap("4쪽 문서에 바닥글 반복(이름·전화)", "영문 작성자 메타데이터", "두 자리 연도 생년월일", "학교 약칭(카이스트)", "증명사진")
+    truth.trap("4쪽 문서에 바닥글 반복(이름·전화)", "영문 작성자 메타데이터", "두 자리 연도 생년월일", "학교 약칭(카이스트)", "증명사진",
+               "자간 넓힌 머리글에 지원서에 없는 추천인 이름·전화(추 천 인 정 민 지 박 사 0 1 0 - ...)")  # fmt: skip
     truth.put("metadata", "candidate", p.english)
     truth.put("body", "candidate", p.name)
     truth.put("body", "phone", phone_as(p, "spaces"))
+    ref_phone = truth.put("body", "phone", "010-0374-2281")
+    truth.put("body", "person", p.ref)
+    truth.keep.append("추천인")
     plan = PdfPlan(
         layout=Layout(phone="paren", birth="short"), author=p.english, title="자기소개서 최종",
+        header=f"추천인 {p.ref} {p.ref_title} {ref_phone}", header_spacing=4,
         footer=f"{p.name} / {phone_as(p, 'spaces')} / {{page}}쪽", extra_pages=2,
     )  # fmt: skip
     return build_pdf(p, truth, plan), {}
@@ -856,6 +861,7 @@ class DocxPlan:
     comment: str = ""  # review comment anchored on the name cell
     nested: bool = False  # 연락처 as a table nested in a cell
     page_breaks: int = 0
+    extra: tuple[str, ...] = ()  # paragraphs after the 자기소개서
 
 
 def _hyperlink(paragraph, url: str, text: str) -> None:
@@ -955,6 +961,8 @@ def build_docx(p: Person, truth: Truth, plan: DocxPlan) -> bytes:
     doc.add_heading("자기소개서", level=1)
     for paragraph in intro(p, truth, "body"):
         doc.add_paragraph(paragraph)
+    for paragraph in plan.extra:
+        doc.add_paragraph(paragraph)
     if plan.white or plan.vanish:
         paragraph = doc.add_paragraph("이상입니다.")
         if plan.white:
@@ -1015,13 +1023,17 @@ def docx_r08(p: Person, truth: Truth, font: Path) -> tuple[bytes, dict]:
 def docx_r09(p: Person, truth: Truth, font: Path) -> tuple[bytes, dict]:
     truth.put("filename", "candidate", p.name)
     truth.trap("복성(선우)", "성/이름 칸 분리", "하이픈 영문 이름(Ha-ram Sunwoo)", "표 안의 표(중첩)", "블로그 주소에 영문 이름",
-               "작성자 메타데이터 영문", "증명사진")  # fmt: skip
+               "작성자 메타데이터 영문", "증명사진", "지원서에 없는 추천인 전화·이메일을 글자마다 띄어 씀(0 1 0 - 1 8 ..., s j . y o o n @ ...)")  # fmt: skip
     truth.put("metadata", "candidate", "Haram Sunwoo")
     truth.put("footer", "candidate", "Ha-ram Sunwoo")
     truth.put("footer", "email", p.email)
+    ref_phone = truth.put("body", "phone", "010-1826-4097")
+    ref_email = truth.put("body", "email", "sj.yoon@example.net")
+    truth.keep.append("추천인 연락처:")
     plan = DocxPlan(
         layout=Layout(phone="plain", birth="dots", split_name=True), author="Haram Sunwoo", title="Resume",
         footer=f"Ha-ram Sunwoo · {p.email}", nested=True,
+        extra=(f"추천인 연락처: {' '.join(ref_phone)} / {' '.join(ref_email)}",),
     )  # fmt: skip
     truth.put("table", "email", p.email)
     return build_docx(p, truth, plan), {}
@@ -1251,7 +1263,8 @@ def _html_grid(rows: list[list[str]]) -> str:
 def html_r14(p: Person, truth: Truth, font: Path) -> tuple[bytes, dict]:
     truth.put("filename", "candidate", p.name)
     truth.trap("<title>·<meta author>에 이름", "description 메타에 전화번호", "<header>·<footer> 요소", "mailto·tel 링크",
-               "증명사진(data URI, alt에 이름)", "<br>로 쪼갠 주소")  # fmt: skip
+               "증명사진(data URI, alt에 이름)", "<br>로 쪼갠 주소", "띄어 쓴 미지의 학교명(가 람 대 학 교)",
+               "@·점 앞뒤를 띄운 추천인 이메일(doyoon.nam @ example . com)")  # fmt: skip
     meta = truth.at("metadata")
     tel = "+82" + p.phone_digits[1:]
     rows = profile_rows(p, truth.at("table"), Layout(phone="dash", birth="korean", address_break=True))
@@ -1259,6 +1272,11 @@ def html_r14(p: Person, truth: Truth, font: Path) -> tuple[bytes, dict]:
     truth.put("link", "phone", tel)
     truth.images += 1
     letter = "\n".join(f"<p>{_h(x)}</p>" for x in intro(p, truth, "body"))
+    exchange = " ".join(truth.put("body", "school", "가람대학교"))
+    local, domain = truth.put("body", "email", "doyoon.nam@example.com").split("@")
+    ref_email = f"{local} @ {domain.replace('.', ' . ')}"
+    truth.put("body", "person", p.ref)
+    truth.keep.extend(["교환학생", "추천인"])
     html = f"""<!DOCTYPE html>
 <html lang="ko">
 <head>
@@ -1283,6 +1301,9 @@ def html_r14(p: Person, truth: Truth, font: Path) -> tuple[bytes, dict]:
 {_html_grid(career_rows(p, truth.at("table")))}
 <h2>자기소개서</h2>
 {letter}
+<h2>기타</h2>
+<p>교환학생: {exchange} (2017)</p>
+<p>추천인 {p.ref} {p.ref_title} 메일: {ref_email}</p>
 </main>
 <footer>&copy; 2026 {truth.put('footer', 'candidate', p.name)} · {truth.put('footer', 'email', p.email)}</footer>
 </body>

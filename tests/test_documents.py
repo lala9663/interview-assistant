@@ -6,6 +6,7 @@ import unicodedata
 import zipfile
 
 import pytest
+from pdfplumber.utils import extract_text as pdf_text
 
 from interview_assistant.deid.leaks import leak_pattern, load_document_samples
 from interview_assistant.documents import (
@@ -19,7 +20,7 @@ from interview_assistant.documents import (
     normalize_text,
 )
 from interview_assistant.documents.base import BlockCollector
-from interview_assistant.documents.pdf import unwrap_cell
+from interview_assistant.documents.pdf import close_letter_spacing, unwrap_cell
 from interview_assistant.documents.webpage import decode_html
 
 from .conftest import ROOT
@@ -173,6 +174,70 @@ def test_pdf_tables_keep_wrapped_cells_together(docs):
     profile = texts(docs["R06"], BlockKind.table)
     assert "junho.cha@example.net" in profile  # wrapped e-mail rejoined
     assert "차 준 호" in profile  # one syllable per line, kept as one cell
+
+
+def test_pdf_letter_spacing_is_read_back_into_words(docs):
+    """자간 넓힌 줄 (character spacing 4-5 pt) reads as words; real spaces stay."""
+    r01 = texts(docs["R01"], BlockKind.body)
+    assert "권하린 · 이력서" in r01 and "권 하 린" not in r01  # header
+    assert "권하린 | 010.0211.3344 | 1" in r01  # footer
+    assert "이 력 서" in r01  # the title is typed with spaces: unchanged
+    assert "추천인 정민지 박사 010-0374-2281" in texts(docs["R04"], BlockKind.body)
+
+
+def _glyph(ch: str, x0: float, size: float = 8.0) -> dict:
+    """A synthetic pdfplumber char; a space glyph is 0.35 em wide, letters 1 em."""
+    width = 0.35 * size if ch == " " else size
+    return {
+        "text": ch, "x0": x0, "x1": x0 + width, "top": 10.0, "bottom": 10.0 + size, "doctop": 10.0,
+        "size": size, "upright": True, "height": size, "width": width,
+    }  # fmt: skip
+
+
+def _glyphs(spec: str, *, gap: float, word_gap: float | None = None) -> list[dict]:
+    """One line with `gap` after every glyph. A space in `spec` is a space glyph, or with
+    `word_gap` only a wider gap (text set without space glyphs)."""
+    chars, x = [], 0.0
+    for ch in spec:
+        if ch == " " and word_gap is not None:
+            x += word_gap - gap
+            continue
+        chars.append(_glyph(ch, x))
+        x = chars[-1]["x1"] + gap
+    return chars
+
+
+def _read(chars):
+    return pdf_text(close_letter_spacing(chars))
+
+
+@pytest.mark.parametrize(
+    "spec, gap, expected",
+    [
+        ("권하린 · 이력서", 5.0, "권하린 · 이력서"),
+        ("추천인 정민지 박사 010-0374-2281", 4.0, "추천인 정민지 박사 010-0374-2281"),
+        ("성명 권하린", 6.0, "성명 권하린"),  # two-letter word closed: the line has a longer run
+    ],
+)
+def test_close_letter_spacing(spec, gap, expected):
+    chars = _glyphs(spec, gap=gap)
+    assert pdf_text(chars) != expected  # pdfplumber alone splits every letter
+    assert _read(chars) == expected
+
+
+def test_close_letter_spacing_leaves_ordinary_text_alone():
+    plain = _glyphs("안녕하세요 저는 백엔드 개발자입니다", gap=0.0)
+    assert close_letter_spacing(plain) is plain
+    # Words apart only by a gap (no space glyph), single-letter words among them.
+    no_space_glyphs = _glyphs("이번 그 외 다른 일", gap=0.0, word_gap=3.6)
+    assert _read(no_space_glyphs) == pdf_text(no_space_glyphs) == "이번 그 외 다른 일"
+    # A lone two-letter label proves nothing: left as is.
+    label = _glyphs("성명", gap=6.0)
+    assert _read(label) == "성 명"
+    # Gaps wider than one em are columns, uneven gaps are not letter spacing.
+    assert _read(_glyphs("가나다", gap=12.0)) == "가 나 다"
+    uneven = [_glyph("가", 0), _glyph("나", 12), _glyph("다", 29), _glyph("라", 42)]  # gaps 4, 9, 5
+    assert _read(uneven) == "가 나 다 라"
 
 
 @pytest.mark.parametrize(

@@ -119,7 +119,7 @@ samples:
   file: 백승우-자기소개서-최종_v3.pdf
   format: pdf
   scanned: false
-  traps: [4쪽 문서에 바닥글 반복(이름·전화), 영문 작성자 메타데이터, 두 자리 연도 생년월일, 학교 약칭(카이스트), 증명사진]
+  traps: [4쪽 문서에 바닥글 반복(이름·전화), 영문 작성자 메타데이터, 두 자리 연도 생년월일, 학교 약칭(카이스트), 증명사진, 자간 넓힌 머리글에 지원서에 없는 추천인 이름·전화(추 천 인 정 민 지 박 사 0 1 0 - ...), 머리글·바닥글 반복]
   identity:
     name: 백승우
     aliases: [Seungwoo Baek]
@@ -133,6 +133,8 @@ samples:
   - {category: candidate, value: 백승우, where: [filename, body, table]}
   - {category: candidate, value: Seungwoo Baek, where: [metadata, table, body]}
   - {category: phone, value: 010 1588 0921, where: [body]}
+  - {category: phone, value: 010-0374-2281, where: [body]}
+  - {category: person, value: 정민지, where: [body]}
   - {category: birthdate, value: 91.02.28, where: [table]}
   - {category: phone, value: (010) 1588-0921, where: [table]}
   - {category: email, value: swbaek@example.com, where: [table]}
@@ -142,8 +144,7 @@ samples:
   - {category: school, value: 한국과학기술원, where: [table]}
   - {category: company, value: 새봄테크, where: [table, body]}
   - {category: school, value: 카이스트, where: [body]}
-  - {category: person, value: 정민지, where: [body]}
-  keep: [사용자 문제를, 고객 문의를 분류하는, 작게 만들고 빨리 확인합니다, 현장의 목소리를, 머신러닝 엔지니어, 머신러닝]
+  keep: [추천인, 사용자 문제를, 고객 문의를 분류하는, 작게 만들고 빨리 확인합니다, 현장의 목소리를, 머신러닝 엔지니어, 머신러닝]
   images: 1
 - id: R05
   file: 황보은채 이력서.pdf
@@ -268,7 +269,7 @@ samples:
   file: 선우하람_Resume.docx
   format: docx
   scanned: false
-  traps: [복성(선우), 성/이름 칸 분리, 하이픈 영문 이름(Ha-ram Sunwoo), 표 안의 표(중첩), 블로그 주소에 영문 이름, 작성자 메타데이터 영문, 증명사진]
+  traps: [복성(선우), 성/이름 칸 분리, 하이픈 영문 이름(Ha-ram Sunwoo), 표 안의 표(중첩), 블로그 주소에 영문 이름, 작성자 메타데이터 영문, 증명사진, '지원서에 없는 추천인 전화·이메일을 글자마다 띄어 씀(0 1 0 - 1 8 ..., s j . y o o n @ ...)']
   identity:
     name: 선우하람
     aliases: [Ha-ram Sunwoo]
@@ -283,6 +284,8 @@ samples:
   - {category: candidate, value: Haram Sunwoo, where: [metadata]}
   - {category: candidate, value: Ha-ram Sunwoo, where: [footer, table]}
   - {category: email, value: haram.sunwoo@example.net, where: [footer, table, body]}
+  - {category: phone, value: 010-1826-4097, where: [body]}
+  - {category: email, value: sj.yoon@example.net, where: [body]}
   - {category: candidate, value: 하람, where: [table, body]}
   - {category: birthdate, value: 1999.03.03, where: [table]}
   - {category: phone, value: 01003698812, where: [table]}
@@ -293,7 +296,7 @@ samples:
   - {category: company, value: 푸른솔시스템즈, where: [table, body]}
   - {category: school, value: 경북대, where: [body]}
   - {category: person, value: 윤서준, where: [body]}
-  keep: [직무에 지원한, 전공하며, 업무를 맡아, 입사 후 포부, QA 엔지니어, 품질 보증]
+  keep: ['추천인 연락처:', 직무에 지원한, 전공하며, 업무를 맡아, 입사 후 포부, QA 엔지니어, 품질 보증]
   images: 1
 - id: R10
   file: 이력서_문태오.docx
@@ -421,7 +424,8 @@ samples:
   file: 육지안_이력서.html
   format: html
   scanned: false
-  traps: [<title>·<meta author>에 이름, description 메타에 전화번호, <header>·<footer> 요소, mailto·tel 링크, '증명사진(data URI, alt에 이름)', <br>로 쪼갠 주소]
+  traps: [<title>·<meta author>에 이름, description 메타에 전화번호, <header>·<footer> 요소, mailto·tel 링크, '증명사진(data URI, alt에 이름)', <br>로 쪼갠 주소, 띄어 쓴 미지의 학교명(가 람 대 학 교), '@·점 앞뒤를 띄운 추천인 이메일(doyoon.nam @ example
+      . com)']
   identity:
     name: 육지안
     aliases: [Jian Yuk]
@@ -443,9 +447,11 @@ samples:
   - {category: school, value: 서울대, where: [body]}
   - {category: company, value: 토스, where: [body]}
   - {category: person, value: 남도윤, where: [body]}
+  - {category: school, value: 가람대학교, where: [body]}
+  - {category: email, value: doyoon.nam@example.com, where: [body]}
   - {category: school, value: 서울대학교, where: [table]}
   - {category: company, value: 비바리퍼블리카, where: [table]}
-  keep: [고장 난 물건을, 재직 중, 기록하는 습관, 오래 쓰이는 제품, 보안 엔지니어, 정보 보안]
+  keep: [고장 난 물건을, 재직 중, 기록하는 습관, 오래 쓰이는 제품, 보안 엔지니어, 정보 보안, 교환학생, 추천인]
   images: 1
 - id: R15
   file: jegal_yunho_resume.html

@@ -47,13 +47,17 @@ COMPANY_SUFFIX = re.compile(
 
 
 def organization_detector() -> RegexDetector:
+    # Also run without letter spacing ("누 리 대 학 교"). The copy keeps the spaces between
+    # ordinary words, so only letter-spaced stretches can merge into one name.
     return RegexDetector(
         "pattern",
         priority=3,
         rules=[
-            PatternRule(DeidCategory.school, SCHOOL),
-            PatternRule(DeidCategory.company, COMPANY_MARKER_BEFORE, strip_particle=True),
-            PatternRule(DeidCategory.company, COMPANY_MARKER_AFTER),
-            PatternRule(DeidCategory.company, COMPANY_SUFFIX),
+            PatternRule(DeidCategory.school, SCHOOL, spaced=True),
+            PatternRule(
+                DeidCategory.company, COMPANY_MARKER_BEFORE, strip_particle=True, spaced=True
+            ),
+            PatternRule(DeidCategory.company, COMPANY_MARKER_AFTER, spaced=True),
+            PatternRule(DeidCategory.company, COMPANY_SUFFIX, spaced=True),
         ],
     )

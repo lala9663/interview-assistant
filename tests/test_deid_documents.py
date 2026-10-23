@@ -23,7 +23,13 @@ from interview_assistant.deid.leaks import (
     run_document_leak_check,
 )
 from interview_assistant.deid.review import render_review_report
-from interview_assistant.documents import BlockKind, ExtractedDocument, TextBlock, extract_document
+from interview_assistant.documents import (
+    BlockKind,
+    ExtractedDocument,
+    TextBlock,
+    extract_document,
+    normalize_text,
+)
 from interview_assistant.models import DeidCategory
 
 from .conftest import ROOT
@@ -83,13 +89,22 @@ def test_checker_sees_every_block_when_nothing_is_replaced(samples, deid_config)
 
 
 def test_one_token_per_value_across_blocks(reports):
-    """Each resume has one phone number and one e-mail address, written in many ways and places."""
+    """The applicant's phone number and e-mail address are written in many ways and places, yet
+    get one token each; a referee's (R04, R09, R14) gets its own."""
     for i, r in reports.items():
         if r.status != CHECKED:
             continue
         text = r.deidentified.text
-        assert len(set(re.findall(r"\[전화-\d+\]", text))) == 1, i
-        assert len(set(re.findall(r"\[이메일-\d+\]", text))) == 1, i
+        expected = r.sample.expected
+        # Last ten digits: "+82 (0)10 ...", "+82-10-..." and "010-..." are the same number.
+        phones = {
+            re.sub(r"\D", "", normalize_text(e.value))[-10:]
+            for e in expected
+            if e.category is DeidCategory.phone
+        }
+        emails = {e.value.lower() for e in expected if e.category is DeidCategory.email}
+        assert len(set(re.findall(r"\[전화-\d+\]", text))) == len(phones), i
+        assert len(set(re.findall(r"\[이메일-\d+\]", text))) == len(emails), i
 
 
 def test_replacements_are_relative_to_each_block(reports):

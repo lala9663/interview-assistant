@@ -103,9 +103,10 @@ def _name_patterns(name: str, include_given: bool) -> list[str]:
     name = name.strip()
     if not re.fullmatch(rf"[{H}]{{2,5}}", name):
         return [_alias_pattern(name)]
-    # Optional single space between syllables: "김도윤", "김 도윤". No right boundary, because a
-    # name can carry any particle or ending ("김도윤입니다", "도윤아").
-    patterns = [LEFT + r"\s?".join(name)]
+    # Any whitespace between syllables: "김도윤", "김 도윤", letter-spaced "권  하  린", one
+    # syllable per line in a narrow cell. No right boundary, because a name can carry any
+    # particle or ending ("김도윤입니다", "도윤아").
+    patterns = [LEFT + r"\s*".join(name)]
     surname_len = 2 if len(name) >= 4 and name[:2] in _DOUBLE_SURNAMES else 1
     given = name[surname_len:]
     if include_given and len(given) >= 2:

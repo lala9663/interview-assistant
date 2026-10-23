@@ -3,8 +3,9 @@
 A sample is a text plus its ground truth: every identifying value that appears in it. After
 de-identification none of them may remain, in any spacing or separator variant. A residual scan
 also flags anything still shaped like a phone number, e-mail or 주민번호 even if it is not in
-the ground truth. Optional `keep` phrases guard the other direction: words that are not
-identifying must survive, so over-eager patterns do not garble what the LLM reads.
+the ground truth, letter-spaced or not. Optional `keep` phrases guard the other direction:
+words that are not identifying must survive, so over-eager patterns do not garble what the LLM
+reads.
 
 The document check runs the same comparison on files: extract (PDF, DOCX, PPTX, HTML), then
 de-identify every block including the file name and properties, then look for each
@@ -36,7 +37,7 @@ from interview_assistant.deid.detectors.contact import EMAIL, PHONE, RRN
 from interview_assistant.deid.documents import DeidentifiedDocument, deidentify_document
 from interview_assistant.deid.identity import open_identity, seal_identity
 from interview_assistant.deid.store import SqlTokenStore
-from interview_assistant.deid.text import parse_date
+from interview_assistant.deid.text import parse_date, without_spaces
 from interview_assistant.deid.types import DeidCategory, KnownIdentity
 from interview_assistant.documents import (
     DocumentExtractor,
@@ -142,10 +143,24 @@ def find_leaks(output: str, expected: Sequence[ExpectedValue]) -> list[ExpectedV
 
 
 def residual_scan(output: str) -> list[tuple[str, str]]:
+    """Anything still shaped like a 주민번호, phone number or e-mail, also with every space
+    removed ("0 1 0 - 1 2 3 4 - 5 6 7 8", "john @ example . com"). Stricter than the
+    detectors, which only remove letter spacing: the check must not share their blind spots."""
     output = normalize_text(output)
-    found = []
+    spaceless = without_spaces(output)
+    found: list[tuple[str, str]] = []
+    seen: list[tuple[int, int]] = []
     for kind, pattern in (("rrn", RRN), ("phone", PHONE), ("email", EMAIL)):
-        found.extend((kind, m.group()) for m in pattern.finditer(output))
+        spans = [m.span() for m in pattern.finditer(output)]
+        spans += [
+            spaceless.source_span(*m.span())
+            for m in pattern.finditer(spaceless.text)
+            if spaceless.dropped_inside(*m.span())
+        ]
+        for start, end in spans:
+            if not any(start < e and s < end for s, e in seen):
+                seen.append((start, end))
+                found.append((kind, output[start:end]))
     return found
 
 

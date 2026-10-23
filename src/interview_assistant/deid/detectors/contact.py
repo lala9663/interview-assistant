@@ -79,13 +79,16 @@ ADDRESS_NO_SIDO = re.compile(rf"{LEFT}{_DISTRICT}(?:\s*{_PART})+{_TAIL}")
 
 
 def contact_detector() -> RegexDetector:
+    # Phone, e-mail and 주민번호 are also looked for with letter spacing removed
+    # ("0 1 0 - 1 2 3 4 - 5 6 7 8", "john @ example . com"): their structure (prefix and digit
+    # count, @ and domain, a valid date) does not depend on word boundaries.
     return RegexDetector(
         "regex",
         priority=1,
         rules=[
-            PatternRule(DeidCategory.rrn, RRN),
-            PatternRule(DeidCategory.phone, PHONE),
-            PatternRule(DeidCategory.email, EMAIL),
+            PatternRule(DeidCategory.rrn, RRN, spaced=True),
+            PatternRule(DeidCategory.phone, PHONE, spaced=True),
+            PatternRule(DeidCategory.email, EMAIL, spaced=True),
             PatternRule(DeidCategory.birthdate, DATE, accept=_is_birthdate),
             PatternRule(DeidCategory.address, ADDRESS_WITH_SIDO),
             PatternRule(DeidCategory.address, ADDRESS_NO_SIDO),

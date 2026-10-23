@@ -87,13 +87,14 @@ result = build_deidentifier(config, store).deidentify(text, candidate_id=cid, kn
 - 토큰 형식, 사전 파일, 켤 탐지기, 치환 예외는 `config/deid.yaml`에서 바꾼다. 토큰 형식은 아직 초안이다.
 - 학교·회사 사전은 `config/deid/*.txt` (한 줄에 `정식명 | 별칭 | ...`). 사내 목록은 파일을 추가하고 `deid.yaml`에 나열한다.
 - 한국어 NER은 `deid/detectors/ner.py`의 `EntityRecognizer`를 구현해 붙인다. 지금은 모델 없이 규칙 기반이다.
+- 글자 사이에 공백이 들어간 값(자간, "0 1 0 - 1 2 3 4 - 5 6 7 8", "john @ example . com", "누 리 대 학 교")도 지원서에 없는 값까지 규칙으로 잡는다. 전화·이메일·주민번호 정규식과 학교·회사 형태 패턴은 원문과 함께 공백을 뺀 사본(`deid/text.py`의 `without_letter_spacing`, 사본→원문 위치 대응표)에도 돌리고, 찾은 구간을 원문 위치로 되돌려 띄어 쓴 원문 전체를 치환한다. 사본에서 빼는 공백은 한 글자끼리 사이(그중 가장 좁은 간격)와 @ . - _ 앞뒤뿐이라 "있는 대학교" 같은 일반 단어는 붙지 않고, 전화는 010·지역번호 접두와 자릿수, 이메일은 @와 도메인, 주민번호는 유효한 날짜가 그대로 필요하다. 이름처럼 단어 경계가 필요한 탐지는 원문에서만 하며, 지원서 이름은 글자 사이 공백 여러 칸("권  하  린")까지 허용한다. 남은 한계: 지원서에 없는 띄어 쓴 제3자 이름·영문 이름·생년월일·주소, 사전에만 있고 형태로는 안 보이는 기관명("카 카 오")은 못 잡는다. 글자마다 띄어 쓴 문장은 학교·회사 이름으로 과잉 치환될 수 있다.
 - 누출 검수 (합성 샘플 20건, 네트워크 없이 실행):
 
 ```bash
 uv run python scripts/check_leaks.py
 ```
 
-실제 샘플로 검수할 때는 같은 형식의 YAML을 만들어 `--samples`로 넘긴다. 리포트는 값을 가려서 출력한다 (`--show-values`로 해제).
+실제 샘플로 검수할 때는 같은 형식의 YAML을 만들어 `--samples`로 넘긴다. 리포트는 값을 가려서 출력한다 (`--show-values`로 해제). 정답 목록에 없어도 전화·이메일·주민번호 형태가 남으면 실패이며, 이 검사는 공백을 전부 뺀 사본도 보므로 띄어 쓴 값이 남아도 드러난다.
 
 ### 서류 파일
 
@@ -106,6 +107,7 @@ prompt_text = result.text   # 파일명·문서 속성·본문·표·머리글·
 ```
 
 - 추출 결과는 블록 단위(`documents/types.py`의 `BlockKind`)다. 흰 글씨, 0.5pt 글자, 슬라이드 밖 도형, `display:none`처럼 보이지 않는 텍스트는 `hidden` 블록으로 따로 둔다.
+- PDF의 자간 넓힌 줄은 글자 좌표로 되돌린다(`documents/pdf.py`의 `close_letter_spacing`). 공백 글자 없이 고른 간격으로 이어진 세 글자 이상(같은 줄이면 두 글자 단어도)은 붙이고, 공백 글자나 더 넓은 간격은 단어 사이로 남긴다: "권 하 린 · 이 력 서" → "권하린 · 이력서". 보통 텍스트와 실제 공백으로 띄운 글자("이 력 서" 제목)는 바뀌지 않는다.
 - 텍스트 레이어가 없는 쪽(스캔본)이 하나라도 있으면 `needs_ocr`이고, `deidentify_document`가 `OcrRequired`로 거부한다. OCR은 아직 없으므로 문서 전체를 보류한다.
 - HWP/HWPX와 구형 .doc/.ppt는 `UnsupportedFormat`으로 거부한다.
 - 추출기 교체: `extract_document(..., extractors={"pdf": MyPdfExtractor()})`. 구현은 `DocumentExtractor`를 따른다.

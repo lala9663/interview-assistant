@@ -4,7 +4,8 @@ Per page: running text outside tables, each table cell by cell (so a value wrapp
 narrow cell stays together instead of interleaving with the neighbouring cell's lines), text a
 viewer cannot see (white on a white page, sub-point size, off the page) in a separate hidden
 block, link targets and annotation contents. Document properties come from the Info dictionary
-and the XMP packet.
+and the XMP packet. Letter-spaced lines (자간을 넓힌 머리글 "권 하 린") are read from the glyph
+positions back into words ("권하린") before the text goes anywhere.
 
 A page whose content is an image with (almost) no text layer is marked as needing OCR. No
 text is produced for it: the PoC has no OCR, and the document is held back as a whole.
@@ -15,10 +16,13 @@ from __future__ import annotations
 import io
 import re
 from collections.abc import Callable, Sequence
+from itertools import pairwise
+from operator import itemgetter
 from typing import Any
 
 import pdfplumber
 from pdfminer.pdftypes import resolve1
+from pdfplumber.utils import cluster_objects, extract_text
 
 from interview_assistant.documents.base import (
     BlockCollector,
@@ -71,13 +75,13 @@ class PdfExtractor(DocumentExtractor):
         body = visible
         for table in tables:
             body = body.outside_bbox(table.bbox)
-        out.add(BlockKind.body, f"{n}쪽", body.extract_text() or "")
+        out.add(BlockKind.body, f"{n}쪽", _text(body.chars))
         for i, table in enumerate(tables, start=1):
-            rows = [" | ".join(collapse(unwrap_cell(cell or "")) for cell in row) for row in table.extract()]
+            rows = [" | ".join(collapse(unwrap_cell(cell)) for cell in row) for row in _cells(table)]
             out.add(BlockKind.table, f"{n}쪽 표 {i}", "\n".join(r for r in rows if r.strip(" |")))
         if hidden_ids:
             hidden = page.filter(lambda o: id(o) in hidden_ids)
-            out.add(BlockKind.hidden, f"{n}쪽 숨은 텍스트", hidden.extract_text() or "")
+            out.add(BlockKind.hidden, f"{n}쪽 숨은 텍스트", _text(hidden.chars))
 
         annots: list[Obj] = page.annots
         out.add_links(f"{n}쪽 링크", (a.get("uri") or "" for a in annots))
@@ -100,6 +104,110 @@ class PdfExtractor(DocumentExtractor):
             out.warnings.append(f"{n}쪽: 텍스트 레이어 없음, OCR 필요")
         elif unmapped:
             out.warnings.append(f"{n}쪽: 유니코드 매핑 없는 글자 {unmapped}개 제외")
+
+
+def _text(chars: list[Obj]) -> str:
+    return extract_text(close_letter_spacing(chars)) or ""
+
+
+def _cells(table: Any) -> list[list[str]]:
+    """`table.extract()`, with each cell read through `close_letter_spacing` on its own (so
+    closing a gap in one cell never moves text into the next)."""
+    chars: list[Obj] = table.page.chars
+    rows = []
+    for row in table.rows:
+        in_row = [c for c in chars if _centre_in(c, row.bbox)]
+        cells = [[c for c in in_row if _centre_in(c, cell)] if cell else [] for cell in row.cells]
+        rows.append([_text(cell_chars) for cell_chars in cells])
+    return rows
+
+
+def _centre_in(char: Obj, bbox: tuple[float, float, float, float]) -> bool:
+    x0, top, x1, bottom = bbox  # same test as pdfplumber's Table.extract
+    x = (char["x0"] + char["x1"]) / 2
+    y = (char["top"] + char["bottom"]) / 2
+    return x0 <= x < x1 and top <= y < bottom
+
+
+# pdfplumber's default tolerances: a gap wider than _X_TOLERANCE starts a new word, chars whose
+# tops are within _Y_TOLERANCE are one line.
+_X_TOLERANCE = 3.0
+_Y_TOLERANCE = 3.0
+
+
+def close_letter_spacing(chars: list[Obj]) -> list[Obj]:
+    """Close the gaps of letter-spaced (자간 넓힌) text so it reads as words again.
+
+    A heading drawn with extra character spacing comes out as "권 하 린 · 이 력 서", because
+    every gap is wider than the word tolerance. Per line, a run of at least three glyphs with
+    no space glyph between them and even gaps (each wider than the tolerance, at most one em,
+    all within 15% of each other) is letter spacing, provided the run is not glued to a
+    neighbouring glyph; so is a two-glyph run with the same spacing on such a line. Their gaps
+    are closed by moving the rest of the line left. Space glyphs and wider gaps stay word
+    breaks, so the line reads "권하린 · 이력서".
+
+    Ordinary text has no such runs and comes back as the same objects; text set without space
+    glyphs (words apart only by a gap) is not touched either, because a run must not touch a
+    tightly set word.
+    """
+    moved: dict[int, Obj] = {}
+    upright = [c for c in chars if c.get("upright", True)]
+    for line in cluster_objects(upright, itemgetter("top"), _Y_TOLERANCE):
+        line = sorted(line, key=itemgetter("x0"))
+        closing = _letter_gaps(line)
+        shift = 0.0
+        for i, char in enumerate(line):
+            if i in closing:
+                shift += char["x0"] - line[i - 1]["x1"]
+            if shift:
+                moved[id(char)] = {**char, "x0": char["x0"] - shift, "x1": char["x1"] - shift}
+    return [moved.get(id(c), c) for c in chars] if moved else chars
+
+
+def _letter_gaps(line: list[Obj]) -> set[int]:
+    """Indices of glyphs whose gap to the previous glyph is letter spacing (see above)."""
+    gaps: list[float] = [b["x0"] - a["x1"] for a, b in pairwise(line)]
+    spaced = [
+        not a["text"].isspace()
+        and not b["text"].isspace()
+        and abs(a["size"] - b["size"]) < 0.5
+        and _X_TOLERANCE < gap <= a["size"]
+        for (a, b), gap in zip(pairwise(line), gaps, strict=True)
+    ]
+
+    def tight(k: int) -> bool:  # gap k (glyph k to k + 1) glues two glyphs into one word
+        if not 0 <= k < len(gaps) or gaps[k] > _X_TOLERANCE:
+            return False
+        return not (line[k]["text"].isspace() or line[k + 1]["text"].isspace())
+
+    runs: list[tuple[int, int, float, float]] = []  # gaps i..j (glyphs i..j + 1), their range
+    i = 0
+    while i < len(gaps):
+        if not spaced[i]:
+            i += 1
+            continue
+        j, low, high = i, gaps[i], gaps[i]
+        while j + 1 < len(gaps) and spaced[j + 1]:
+            lo, hi = min(low, gaps[j + 1]), max(high, gaps[j + 1])
+            if not _even(lo, hi):
+                break
+            j, low, high = j + 1, lo, hi
+        if not tight(i - 1) and not tight(j + 1):
+            runs.append((i, j, low, high))
+        i = j + 1
+
+    # Three glyphs or more prove the line is letter-spaced; then a two-letter word with the
+    # same spacing ("박 사") is closed too. A lone pair is left alone.
+    proven = [(low, high) for i, j, low, high in runs if j > i]
+    closing: set[int] = set()
+    for i, j, low, high in runs:
+        if j > i or any(_even(min(low, lo), max(high, hi)) for lo, hi in proven):
+            closing.update(range(i + 1, j + 2))
+    return closing
+
+
+def _even(low: float, high: float) -> bool:
+    return high - low <= max(0.5, 0.15 * low)
 
 
 _COMPLETE_EMAIL = re.compile(r"[A-Za-z0-9._%+-]+@[A-Za-z0-9-]+(?:\.[A-Za-z0-9-]+)*\.[A-Za-z]{2,}$")
