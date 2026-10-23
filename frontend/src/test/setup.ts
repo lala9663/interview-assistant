@@ -1,13 +1,13 @@
 import '@testing-library/jest-dom/vitest'
 
-import { cleanup } from '@testing-library/react'
+import { cleanup } from '@testing-library/vue'
 import { afterAll, afterEach, beforeAll, vi } from 'vitest'
 
 import { resetDb } from '@/mocks/db'
 import { mockConfig, resetLive } from '@/mocks/live'
 import { server } from '@/mocks/node'
 
-// jsdom gaps used by Radix, recharts and the transcript view.
+// jsdom gaps used by Reka UI, Chart.js and the transcript view.
 class ResizeObserverStub {
   observe() {}
   unobserve() {}
@@ -22,8 +22,11 @@ Element.prototype.releasePointerCapture ??= () => {}
 mockConfig.speed = 0.001
 
 beforeAll(() => server.listen({ onUnhandledFrame: 'error' }))
-afterEach(() => {
+afterEach(async () => {
   cleanup()
+  // Let the mock engine's scaled-down timers settle first (a recorded question starts its scripted answer
+  // ~1ms later); otherwise that answer starts after resetLive() and occupies the next test's session.
+  await new Promise((r) => setTimeout(r, 20))
   server.resetHandlers()
   resetLive()
   resetDb()

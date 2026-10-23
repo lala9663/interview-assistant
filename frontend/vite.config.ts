@@ -1,14 +1,14 @@
 import { fileURLToPath, URL } from 'node:url'
 
 import tailwindcss from '@tailwindcss/vite'
-import react from '@vitejs/plugin-react'
+import vue from '@vitejs/plugin-vue'
 import { loadEnv } from 'vite'
 import { defineConfig } from 'vitest/config'
 
 export default defineConfig(({ mode }) => {
   const env = loadEnv(mode, process.cwd(), '')
   return {
-    plugins: [react(), tailwindcss()],
+    plugins: [vue(), tailwindcss()],
     resolve: {
       alias: { '@': fileURLToPath(new URL('./src', import.meta.url)) },
     },
@@ -21,6 +21,11 @@ export default defineConfig(({ mode }) => {
           changeOrigin: true,
         },
       },
+    },
+    // The chart is only imported by the lazy evaluation page; pre-bundle it at startup so the dev server
+    // does not reload mid-session (which would also reset the mock data) the first time that page opens.
+    optimizeDeps: {
+      include: ['chart.js', 'vue-chartjs'],
     },
     build: {
       chunkSizeWarningLimit: 900,

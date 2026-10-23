@@ -1,9 +1,10 @@
-import { BriefcaseBusinessIcon, CalendarDaysIcon, FileSearchIcon, LayoutDashboardIcon, MicIcon, type LucideIcon } from 'lucide-react'
+import { BriefcaseBusinessIcon, CalendarDaysIcon, FileSearchIcon, LayoutDashboardIcon, MicIcon } from '@lucide/vue'
+import type { Component } from 'vue'
 
 export interface NavItem {
   to: string
   label: string
-  icon: LucideIcon
+  icon: Component
   /** FR ids the screen covers (shown in the command palette) */
   fr?: string
   keywords?: string

@@ -110,7 +110,7 @@ Phase 1 PoC(6주 추정)를 13단계로 나눈다. 오디오 없는 텍스트 �
 
 백엔드 API가 없어도 화면과 흐름을 먼저 검토할 수 있게, 면접관 UI 전체를 모의 API(MSW) 위에 만들었다. 실제 연결은 각 백엔드 단계에서 한다.
 
-- [x] `frontend/`: Vite + React + TypeScript(strict), Tailwind v4 + shadcn/ui 방식(Radix), TanStack Query, React Router, MSW, Recharts, cmdk, sonner, motion. Pretendard 자체 호스팅, 다크 기본·라이트 전환, Ctrl/⌘+K 명령 팔레트
+- [x] `frontend/`: Vite + Vue 3 + TypeScript(strict, vue-tsc), Tailwind v4 + shadcn-vue 방식(Reka UI), TanStack Query(vue-query), Vue Router, MSW, Chart.js(vue-chartjs), vue-sonner, Vue Transition. Pretendard 자체 호스팅, 다크 기본·라이트 전환, Ctrl/⌘+K 명령 팔레트. React 버전(`93a1780`)에서 화면·동작·디자인·모의 API·API 계약을 그대로 두고 이식(2026-10-23)
 - [x] 화면: 대시보드, 공고·역량 사전(FR-02, 버전·확정·AI 초안), 서류 선별(FR-01·03, 필터·정렬·상세 패널, 실명 미표시), 면접 목록, 실시간 면접(FR-04~08: 녹음 동의 단계, 부분/확정 전사 스트리밍, 꼬리질문 스트리밍·선택·수정·직접 입력, Q&A 기록, 메모, 녹음·전사 상태, 수기 모드), 평가(FR-07·08: AI·면접관 점수 나란히·합산 없음, 근거 인용·신뢰도, 면접관 점수 입력), 면접관 스케줄(FR-09: 주간 그리드, 공통 빈 시간, 후보 시간, 면접 잡기)
 - [x] API 계약 [api-contract.md](api-contract.md): REST 경로·요청·응답, 전사·꼬리질문 스트리밍은 SSE(이유 포함), 모델에 아직 없는 항목 목록(사전 질문, 꼬리질문 후보 저장, 전사 구간, 면접관 제출 시각 등)
 - [x] 타입 `frontend/src/api/types.ts`는 models/와 필드·enum 동일. 비식별 원칙: 실명·원본 경로·원문 답변은 응답에 없음

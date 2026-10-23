@@ -1,7 +1,8 @@
-import { useCallback, useEffect, useReducer, useRef } from 'react'
+import { onScopeDispose, shallowRef } from 'vue'
 
 import { streamEvents } from '@/api/sse'
 import type { FollowUpEvent } from '@/api/types'
+import { frameBatch } from '@/lib/frame'
 
 export interface Suggestion {
   id: string
@@ -96,36 +97,41 @@ export function followUpReducer(state: FollowUpState, action: FollowUpAction): F
 
 /** Streams follow-up suggestions (POST /api/sessions/{id}/follow-ups, SSE). */
 export function useFollowUps(sessionId: string) {
-  const [state, dispatch] = useReducer(followUpReducer, initialFollowUps)
-  const abortRef = useRef<AbortController | null>(null)
+  // `current` is always up to date (the reducer filters stale batches with it); `state` renders once per frame.
+  let current = initialFollowUps
+  const state = shallowRef<FollowUpState>(current)
+  const frame = frameBatch(() => (state.value = current))
+  const dispatch = (action: FollowUpAction) => {
+    current = followUpReducer(current, action)
+    if (action.type === 'event') frame.schedule()
+    else frame.flush()
+  }
+  let abort: AbortController | null = null
 
-  const request = useCallback(
-    async (qaItemId: string) => {
-      abortRef.current?.abort()
-      const ctrl = new AbortController()
-      abortRef.current = ctrl
-      dispatch({ type: 'request', qaItemId })
-      try {
-        for await (const event of streamEvents<FollowUpEvent>(`/sessions/${sessionId}/follow-ups`, {
-          method: 'POST',
-          body: JSON.stringify({ qa_item_id: qaItemId }),
-          signal: ctrl.signal,
-        })) {
-          dispatch({ type: 'event', event })
-        }
-      } catch (err) {
-        if (ctrl.signal.aborted) return
-        dispatch({ type: 'failed', message: err instanceof Error ? err.message : '제안을 불러오지 못했습니다.' })
+  async function request(qaItemId: string) {
+    abort?.abort()
+    const ctrl = new AbortController()
+    abort = ctrl
+    dispatch({ type: 'request', qaItemId })
+    try {
+      for await (const event of streamEvents<FollowUpEvent>(`/sessions/${sessionId}/follow-ups`, {
+        method: 'POST',
+        body: JSON.stringify({ qa_item_id: qaItemId }),
+        signal: ctrl.signal,
+      })) {
+        dispatch({ type: 'event', event })
       }
-    },
-    [sessionId],
-  )
+    } catch (err) {
+      if (ctrl.signal.aborted) return
+      dispatch({ type: 'failed', message: err instanceof Error ? err.message : '제안을 불러오지 못했습니다.' })
+    }
+  }
 
-  const markUsed = useCallback((suggestionId: string, seq: number, edited: boolean) => {
+  function markUsed(suggestionId: string, seq: number, edited: boolean) {
     dispatch({ type: 'used', suggestionId, seq, edited })
-  }, [])
+  }
 
-  useEffect(() => () => abortRef.current?.abort(), [])
+  onScopeDispose(() => abort?.abort())
 
   return { state, request, markUsed }
 }

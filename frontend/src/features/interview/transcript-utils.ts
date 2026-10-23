@@ -1,5 +1,3 @@
-import type { KeyboardEvent } from 'react'
-
 import type { TranscriptSegment } from '@/api/types'
 
 export interface Turn {
@@ -11,7 +9,7 @@ export interface Turn {
 }
 
 /** Group consecutive segments of the same speaker and question into turns. */
-export function buildTurns(segments: TranscriptSegment[], partial: TranscriptSegment | null): Turn[] {
+export function buildTurns(segments: readonly TranscriptSegment[], partial: TranscriptSegment | null): Turn[] {
   const all = partial ? [...segments, partial] : segments
   const turns: Turn[] = []
   for (const s of all) {
@@ -26,10 +24,17 @@ export function buildTurns(segments: TranscriptSegment[], partial: TranscriptSeg
 }
 
 /** Enter submits, Shift+Enter breaks the line; never submit mid-IME composition (Korean input). */
-export function submitOnEnter(e: KeyboardEvent<HTMLTextAreaElement>, submit: () => void) {
-  if (e.key === 'Enter' && !e.shiftKey && !e.nativeEvent.isComposing && e.keyCode !== 229) {
+export function submitOnEnter(e: KeyboardEvent, submit: () => void) {
+  if (e.key === 'Enter' && !e.shiftKey && !e.isComposing && e.keyCode !== 229) {
     e.preventDefault()
     submit()
   }
 }
 
+/** Ctrl/⌘+Enter submits (multi-line notes and manual answers); ignored mid-IME composition. */
+export function submitOnModEnter(e: KeyboardEvent, submit: () => void) {
+  if (e.key === 'Enter' && (e.metaKey || e.ctrlKey) && !e.isComposing) {
+    e.preventDefault()
+    submit()
+  }
+}

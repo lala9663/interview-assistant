@@ -1,4 +1,9 @@
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
+/**
+ * TanStack Query composables, one per endpoint. Each returns a `reactive()` result, so components read
+ * `q.data` / `q.isPending` directly in script and template. Parameters may be refs or getters.
+ */
+import { keepPreviousData, useMutation, useQuery, useQueryClient } from '@tanstack/vue-query'
+import { reactive, toValue, type MaybeRefOrGetter } from 'vue'
 
 import { endpoints } from './endpoints'
 import type {
@@ -32,111 +37,174 @@ export const qk = {
 
 // ----- queries -------------------------------------------------------------------------------------
 
-export const useMe = () => useQuery({ queryKey: qk.me, queryFn: ({ signal }) => endpoints.me(signal), staleTime: Infinity })
+export const useMe = () =>
+  reactive(useQuery({ queryKey: qk.me, queryFn: ({ signal }) => endpoints.me(signal), staleTime: Infinity }))
 
 export const useDashboard = () =>
-  useQuery({ queryKey: qk.dashboard, queryFn: ({ signal }) => endpoints.dashboard(signal), refetchInterval: 15_000 })
+  reactive(useQuery({ queryKey: qk.dashboard, queryFn: ({ signal }) => endpoints.dashboard(signal), refetchInterval: 15_000 }))
 
 export const useActivity = (limit = 12) =>
-  useQuery({ queryKey: qk.activity(limit), queryFn: ({ signal }) => endpoints.activity(limit, signal), refetchInterval: 15_000 })
+  reactive(
+    useQuery({ queryKey: qk.activity(limit), queryFn: ({ signal }) => endpoints.activity(limit, signal), refetchInterval: 15_000 }),
+  )
 
-export const usePostings = () => useQuery({ queryKey: qk.postings, queryFn: ({ signal }) => endpoints.postings(signal) })
+export const usePostings = () => reactive(useQuery({ queryKey: qk.postings, queryFn: ({ signal }) => endpoints.postings(signal) }))
 
-export const usePosting = (id: string) =>
-  useQuery({ queryKey: qk.posting(id), queryFn: ({ signal }) => endpoints.posting(id, signal), enabled: Boolean(id) })
+export const usePosting = (id: MaybeRefOrGetter<string>) =>
+  reactive(
+    useQuery(() => {
+      const v = toValue(id)
+      return { queryKey: qk.posting(v), queryFn: ({ signal }) => endpoints.posting(v, signal), enabled: Boolean(v) }
+    }),
+  )
 
-export const useCompetencySets = (postingId: string) =>
-  useQuery({
-    queryKey: qk.competencySets(postingId),
-    queryFn: ({ signal }) => endpoints.competencySets(postingId, signal),
-    enabled: Boolean(postingId),
-  })
+export const useCompetencySets = (postingId: MaybeRefOrGetter<string>) =>
+  reactive(
+    useQuery(() => {
+      const v = toValue(postingId)
+      return { queryKey: qk.competencySets(v), queryFn: ({ signal }) => endpoints.competencySets(v, signal), enabled: Boolean(v) }
+    }),
+  )
 
-export const useApplications = (postingId: string | undefined) =>
-  useQuery({
-    queryKey: qk.applications(postingId ?? ''),
-    queryFn: ({ signal }) => endpoints.applications(postingId!, signal),
-    enabled: Boolean(postingId),
-  })
+export const useApplications = (postingId: MaybeRefOrGetter<string | undefined>) =>
+  reactive(
+    useQuery(() => {
+      const v = toValue(postingId) ?? ''
+      return { queryKey: qk.applications(v), queryFn: ({ signal }) => endpoints.applications(v, signal), enabled: Boolean(v) }
+    }),
+  )
 
-export const useApplication = (id: string | null) =>
-  useQuery({ queryKey: qk.application(id ?? ''), queryFn: ({ signal }) => endpoints.application(id!, signal), enabled: Boolean(id) })
+export const useApplication = (id: MaybeRefOrGetter<string | null>) =>
+  reactive(
+    useQuery(() => {
+      const v = toValue(id) ?? ''
+      return { queryKey: qk.application(v), queryFn: ({ signal }) => endpoints.application(v, signal), enabled: Boolean(v) }
+    }),
+  )
 
-export const useSchedulable = (enabled = true) =>
-  useQuery({ queryKey: qk.schedulable, queryFn: ({ signal }) => endpoints.schedulableApplications(signal), enabled })
+export const useSchedulable = (enabled: MaybeRefOrGetter<boolean> = true) =>
+  reactive(
+    useQuery(() => ({
+      queryKey: qk.schedulable,
+      queryFn: ({ signal }) => endpoints.schedulableApplications(signal),
+      enabled: toValue(enabled),
+    })),
+  )
 
-export const useCandidateIndex = (enabled = true) =>
-  useQuery({ queryKey: qk.candidates, queryFn: ({ signal }) => endpoints.candidates(signal), enabled, staleTime: 60_000 })
+export const useCandidateIndex = (enabled: MaybeRefOrGetter<boolean> = true) =>
+  reactive(
+    useQuery(() => ({
+      queryKey: qk.candidates,
+      queryFn: ({ signal }) => endpoints.candidates(signal),
+      enabled: toValue(enabled),
+      staleTime: 60_000,
+    })),
+  )
 
 export const useSessions = (status?: SessionStatus) =>
-  useQuery({ queryKey: qk.sessions(status), queryFn: ({ signal }) => endpoints.sessions(status, signal) })
+  reactive(useQuery({ queryKey: qk.sessions(status), queryFn: ({ signal }) => endpoints.sessions(status, signal) }))
 
-export const useSession = (id: string) =>
-  useQuery({ queryKey: qk.session(id), queryFn: ({ signal }) => endpoints.session(id, signal), enabled: Boolean(id) })
+export const useSession = (id: MaybeRefOrGetter<string>) =>
+  reactive(
+    useQuery(() => {
+      const v = toValue(id)
+      return { queryKey: qk.session(v), queryFn: ({ signal }) => endpoints.session(v, signal), enabled: Boolean(v) }
+    }),
+  )
 
-export const useEvaluation = (id: string) =>
-  useQuery({
-    queryKey: qk.evaluation(id),
-    queryFn: ({ signal }) => endpoints.evaluation(id, signal),
-    enabled: Boolean(id),
-    // Poll while AI scoring runs (FR-07: 면접 종료 후 10분 이내).
-    refetchInterval: (q) => (q.state.data?.ai.status === 'running' ? 2000 : false),
-  })
+export const useEvaluation = (id: MaybeRefOrGetter<string>) =>
+  reactive(
+    useQuery(() => {
+      const v = toValue(id)
+      return {
+        queryKey: qk.evaluation(v),
+        queryFn: ({ signal }) => endpoints.evaluation(v, signal),
+        enabled: Boolean(v),
+        // Poll while AI scoring runs (FR-07: 면접 종료 후 10분 이내).
+        refetchInterval: (q) => (q.state.data?.ai.status === 'running' ? 2000 : false),
+      }
+    }),
+  )
 
 export const useInterviewers = () =>
-  useQuery({ queryKey: qk.interviewers, queryFn: ({ signal }) => endpoints.interviewers(signal), staleTime: 5 * 60_000 })
+  reactive(useQuery({ queryKey: qk.interviewers, queryFn: ({ signal }) => endpoints.interviewers(signal), staleTime: 5 * 60_000 }))
 
-export const useAvailabilities = (from: string, to: string) =>
-  useQuery({ queryKey: qk.availabilities(from, to), queryFn: ({ signal }) => endpoints.availabilities(from, to, signal) })
+export const useAvailabilities = (from: MaybeRefOrGetter<string>, to: MaybeRefOrGetter<string>) =>
+  reactive(
+    useQuery(() => {
+      const f = toValue(from)
+      const t = toValue(to)
+      return { queryKey: qk.availabilities(f, t), queryFn: ({ signal }) => endpoints.availabilities(f, t, signal) }
+    }),
+  )
+
+export const useScheduleSuggestions = (body: MaybeRefOrGetter<ScheduleSuggestionRequest>) =>
+  reactive(
+    useQuery(() => {
+      const b = toValue(body)
+      return {
+        queryKey: ['schedule-suggestions', b] as const,
+        queryFn: () => endpoints.scheduleSuggestions(b),
+        enabled: b.interviewer_ids.length > 0,
+        placeholderData: keepPreviousData,
+      }
+    }),
+  )
 
 // ----- mutations -----------------------------------------------------------------------------------
 
-export function useUpdateScreening(postingId: string) {
+export function useUpdateScreening(postingId: MaybeRefOrGetter<string>) {
   const qc = useQueryClient()
-  return useMutation({
-    mutationFn: ({ screeningId, status }: { screeningId: string; status: ScreeningStatus }) =>
-      endpoints.updateScreening(screeningId, status),
-    onSuccess: () => {
-      void qc.invalidateQueries({ queryKey: qk.applications(postingId) })
-      void qc.invalidateQueries({ queryKey: ['applications'] })
-      void qc.invalidateQueries({ queryKey: qk.postings })
-      void qc.invalidateQueries({ queryKey: qk.candidates })
-      void qc.invalidateQueries({ queryKey: qk.dashboard })
-      void qc.invalidateQueries({ queryKey: ['activity'] })
-    },
-  })
+  return reactive(
+    useMutation({
+      mutationFn: ({ screeningId, status }: { screeningId: string; status: ScreeningStatus }) =>
+        endpoints.updateScreening(screeningId, status),
+      onSuccess: () => {
+        void qc.invalidateQueries({ queryKey: qk.applications(toValue(postingId)) })
+        void qc.invalidateQueries({ queryKey: ['applications'] })
+        void qc.invalidateQueries({ queryKey: qk.postings })
+        void qc.invalidateQueries({ queryKey: qk.candidates })
+        void qc.invalidateQueries({ queryKey: qk.dashboard })
+        void qc.invalidateQueries({ queryKey: ['activity'] })
+      },
+    }),
+  )
 }
 
-function useInvalidateCompetency(postingId: string) {
+function useInvalidateCompetency(postingId: MaybeRefOrGetter<string>) {
   const qc = useQueryClient()
   return () => {
-    void qc.invalidateQueries({ queryKey: qk.competencySets(postingId) })
+    void qc.invalidateQueries({ queryKey: qk.competencySets(toValue(postingId)) })
     void qc.invalidateQueries({ queryKey: qk.postings })
     void qc.invalidateQueries({ queryKey: ['activity'] })
   }
 }
 
-export function useCreateCompetencySet(postingId: string) {
+export function useCreateCompetencySet(postingId: MaybeRefOrGetter<string>) {
   const invalidate = useInvalidateCompetency(postingId)
-  return useMutation({ mutationFn: (c: Competency[]) => endpoints.createCompetencySet(postingId, c), onSuccess: invalidate })
+  return reactive(
+    useMutation({ mutationFn: (c: Competency[]) => endpoints.createCompetencySet(toValue(postingId), c), onSuccess: invalidate }),
+  )
 }
 
-export function useGenerateCompetencySet(postingId: string) {
+export function useGenerateCompetencySet(postingId: MaybeRefOrGetter<string>) {
   const invalidate = useInvalidateCompetency(postingId)
-  return useMutation({ mutationFn: () => endpoints.generateCompetencySet(postingId), onSuccess: invalidate })
+  return reactive(useMutation({ mutationFn: () => endpoints.generateCompetencySet(toValue(postingId)), onSuccess: invalidate }))
 }
 
-export function useUpdateCompetencySet(postingId: string) {
+export function useUpdateCompetencySet(postingId: MaybeRefOrGetter<string>) {
   const invalidate = useInvalidateCompetency(postingId)
-  return useMutation({
-    mutationFn: ({ id, competencies }: { id: string; competencies: Competency[] }) => endpoints.updateCompetencySet(id, competencies),
-    onSuccess: invalidate,
-  })
+  return reactive(
+    useMutation({
+      mutationFn: ({ id, competencies }: { id: string; competencies: Competency[] }) => endpoints.updateCompetencySet(id, competencies),
+      onSuccess: invalidate,
+    }),
+  )
 }
 
-export function useApproveCompetencySet(postingId: string) {
+export function useApproveCompetencySet(postingId: MaybeRefOrGetter<string>) {
   const invalidate = useInvalidateCompetency(postingId)
-  return useMutation({ mutationFn: (id: string) => endpoints.approveCompetencySet(id), onSuccess: invalidate })
+  return reactive(useMutation({ mutationFn: (id: string) => endpoints.approveCompetencySet(id), onSuccess: invalidate }))
 }
 
 function useInvalidateSession(sessionId: string) {
@@ -157,80 +225,79 @@ export function useSessionLifecycle(sessionId: string) {
     invalidate()
   }
   return {
-    consent: useMutation({ mutationFn: (consent: boolean) => endpoints.recordConsent(sessionId, consent), onSuccess: setDetail }),
-    start: useMutation({ mutationFn: () => endpoints.startSession(sessionId), onSuccess: setDetail }),
-    end: useMutation({
-      mutationFn: () => endpoints.endSession(sessionId),
-      onSuccess: (d) => {
-        setDetail(d)
-        void qc.invalidateQueries({ queryKey: qk.evaluation(sessionId) })
-        void qc.invalidateQueries({ queryKey: ['postings'] })
-      },
-    }),
+    consent: reactive(useMutation({ mutationFn: (consent: boolean) => endpoints.recordConsent(sessionId, consent), onSuccess: setDetail })),
+    start: reactive(useMutation({ mutationFn: () => endpoints.startSession(sessionId), onSuccess: setDetail })),
+    end: reactive(
+      useMutation({
+        mutationFn: () => endpoints.endSession(sessionId),
+        onSuccess: (d) => {
+          setDetail(d)
+          void qc.invalidateQueries({ queryKey: qk.evaluation(sessionId) })
+          void qc.invalidateQueries({ queryKey: ['postings'] })
+        },
+      }),
+    ),
   }
 }
 
 export function useCreateQA(sessionId: string) {
   const invalidate = useInvalidateSession(sessionId)
-  return useMutation({ mutationFn: (body: CreateQARequest) => endpoints.createQA(sessionId, body), onSuccess: invalidate })
+  return reactive(useMutation({ mutationFn: (body: CreateQARequest) => endpoints.createQA(sessionId, body), onSuccess: invalidate }))
 }
 
 export function useAnswerQA(sessionId: string) {
   const invalidate = useInvalidateSession(sessionId)
-  return useMutation({
-    mutationFn: ({ qaId, answer }: { qaId: string; answer: string }) => endpoints.answerQA(qaId, answer),
-    onSuccess: invalidate,
-  })
+  return reactive(
+    useMutation({
+      mutationFn: ({ qaId, answer }: { qaId: string; answer: string }) => endpoints.answerQA(qaId, answer),
+      onSuccess: invalidate,
+    }),
+  )
 }
 
 export function useCreateNote(sessionId: string) {
   const invalidate = useInvalidateSession(sessionId)
-  return useMutation({ mutationFn: (content: string) => endpoints.createNote(sessionId, content), onSuccess: invalidate })
+  return reactive(useMutation({ mutationFn: (content: string) => endpoints.createNote(sessionId, content), onSuccess: invalidate }))
 }
 
 export function useSubmitScores(sessionId: string) {
   const qc = useQueryClient()
-  return useMutation({
-    mutationFn: ({ interviewerId, body }: { interviewerId: string; body: SubmitInterviewerScoresRequest }) =>
-      endpoints.submitScores(sessionId, interviewerId, body),
-    onSuccess: (ev) => {
-      qc.setQueryData(qk.evaluation(sessionId), ev)
-      void qc.invalidateQueries({ queryKey: ['sessions', 'list'] })
-      void qc.invalidateQueries({ queryKey: qk.dashboard })
-      void qc.invalidateQueries({ queryKey: ['postings'] })
-      void qc.invalidateQueries({ queryKey: ['activity'] })
-    },
-  })
+  return reactive(
+    useMutation({
+      mutationFn: ({ interviewerId, body }: { interviewerId: string; body: SubmitInterviewerScoresRequest }) =>
+        endpoints.submitScores(sessionId, interviewerId, body),
+      onSuccess: (ev) => {
+        qc.setQueryData(qk.evaluation(sessionId), ev)
+        void qc.invalidateQueries({ queryKey: ['sessions', 'list'] })
+        void qc.invalidateQueries({ queryKey: qk.dashboard })
+        void qc.invalidateQueries({ queryKey: ['postings'] })
+        void qc.invalidateQueries({ queryKey: ['activity'] })
+      },
+    }),
+  )
 }
 
 export function useCreateSession() {
   const qc = useQueryClient()
-  return useMutation({
-    mutationFn: (body: CreateSessionRequest) => endpoints.createSession(body),
-    onSuccess: () => {
-      void qc.invalidateQueries({ queryKey: ['sessions'] })
-      void qc.invalidateQueries({ queryKey: ['applications'] })
-      void qc.invalidateQueries({ queryKey: ['postings'] })
-      void qc.invalidateQueries({ queryKey: qk.dashboard })
-      void qc.invalidateQueries({ queryKey: ['activity'] })
-    },
-  })
+  return reactive(
+    useMutation({
+      mutationFn: (body: CreateSessionRequest) => endpoints.createSession(body),
+      onSuccess: () => {
+        void qc.invalidateQueries({ queryKey: ['sessions'] })
+        void qc.invalidateQueries({ queryKey: ['applications'] })
+        void qc.invalidateQueries({ queryKey: ['postings'] })
+        void qc.invalidateQueries({ queryKey: qk.dashboard })
+        void qc.invalidateQueries({ queryKey: ['activity'] })
+      },
+    }),
+  )
 }
 
 export function useAvailabilityMutations() {
   const qc = useQueryClient()
   const invalidate = () => void qc.invalidateQueries({ queryKey: ['availabilities'] })
   return {
-    create: useMutation({ mutationFn: endpoints.createAvailability, onSuccess: invalidate }),
-    remove: useMutation({ mutationFn: endpoints.deleteAvailability, onSuccess: invalidate }),
+    create: reactive(useMutation({ mutationFn: endpoints.createAvailability, onSuccess: invalidate })),
+    remove: reactive(useMutation({ mutationFn: endpoints.deleteAvailability, onSuccess: invalidate })),
   }
-}
-
-export function useScheduleSuggestions(body: ScheduleSuggestionRequest) {
-  return useQuery({
-    queryKey: ['schedule-suggestions', body],
-    queryFn: () => endpoints.scheduleSuggestions(body),
-    enabled: body.interviewer_ids.length > 0,
-    placeholderData: (prev) => prev,
-  })
 }
