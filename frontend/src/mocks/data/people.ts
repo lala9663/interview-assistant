@@ -1,0 +1,437 @@
+/**
+ * Fictional interviewers and candidates. Candidate data is de-identified as the backend would
+ * store it: pseudonym only, schools/companies as tokens. No real names anywhere.
+ */
+import type { CandidateProfile, ScreeningStatus } from '@/api/types'
+
+export interface InterviewerSeed {
+  key: string
+  id: string
+  employee_no: string
+  name: string
+  job_family: string
+  department: string
+}
+
+export const INTERVIEWERS: InterviewerSeed[] = [
+  { key: 'kim', id: 'a7c1e2f0-0000-4000-8000-00000000000a', employee_no: 'E24017', name: '김서연', job_family: '공정개발', department: '메모리 공정개발팀' },
+  { key: 'park', id: 'a7c1e2f0-0000-4000-8000-00000000000b', employee_no: 'E19233', name: '박준호', job_family: '공정개발', department: '수율혁신그룹' },
+  { key: 'lee', id: 'a7c1e2f0-0000-4000-8000-00000000000c', employee_no: 'E21108', name: '이하은', job_family: 'SW개발', department: 'AI 플랫폼팀' },
+  { key: 'jung', id: 'a7c1e2f0-0000-4000-8000-00000000000d', employee_no: 'E20451', name: '정민재', job_family: 'SW개발', department: '클라우드인프라그룹' },
+  { key: 'choi', id: 'a7c1e2f0-0000-4000-8000-00000000000e', employee_no: 'E22790', name: '최유진', job_family: '디자인', department: 'UX디자인그룹' },
+]
+
+/** The signed-in interviewer in mock mode. */
+export const ME_KEY = 'kim'
+
+export interface CandidateSeed {
+  n: number
+  posting: 'P1' | 'P2'
+  fit: number
+  status: ScreeningStatus
+  appliedDaysAgo: number
+  profile: CandidateProfile
+  summaryLine: string
+  strengths: string[]
+  concerns: string[]
+}
+
+const exp = (company: string, role: string, period: string, ...highlights: string[]) => ({ company, role, period, highlights })
+const edu = (school: string, degree: string, major: string) => ({ school, degree, major })
+const prj = (name: string, description: string, ...tech: string[]) => ({ name, description, tech })
+
+export const CANDIDATES: CandidateSeed[] = [
+  // ----- P1 메모리 공정개발 (11) -------------------------------------------------------------
+  {
+    n: 1,
+    posting: 'P1',
+    fit: 91,
+    status: 'passed',
+    appliedDaysAgo: 12,
+    summaryLine: '식각·증착 양쪽 경험과 수율 개선 리딩 이력이 JD 필수·우대 요건 대부분과 맞습니다.',
+    strengths: ['식각 4년 + 증착 3년, 필수 요건(3년 이상) 충족', 'NAND 채널홀 식각 수율 개선 TF 리딩 (우대 충족)', '가상 계측 모델 개발 경험 (우대: ML)'],
+    concerns: ['최근 2년은 관리 업무 비중이 높아 실무 깊이 확인 필요'],
+    profile: {
+      summary: 'NAND 식각·증착 7년. 채널홀 식각 수율 개선 TF 리딩, 가상 계측 모델 개발.',
+      years_experience: 7,
+      skills: ['건식 식각', 'ALD', '가상 계측', 'Python', 'JMP', 'DOE'],
+      experience: [
+        exp('[회사-1]', '공정개발 책임', '2021.01 – 현재', '채널홀 식각 수율 개선 TF 리딩 (수율 +3.4%p)', '가상 계측 모델로 측정 샘플링 40% 절감'),
+        exp('[회사-2]', '증착 공정 엔지니어', '2018.03 – 2020.12', 'ALD 막 균일도 개선'),
+      ],
+      education: [edu('[학교-1]', '석사', '전자공학')],
+      projects: [prj('가상 계측 모델', '챔버 센서 데이터로 식각 후 CD를 예측', 'Python', 'XGBoost')],
+      certifications: [],
+    },
+  },
+  {
+    n: 2,
+    posting: 'P1',
+    fit: 68,
+    status: 'hold',
+    appliedDaysAgo: 11,
+    summaryLine: '포토 공정 경험은 충분하나 데이터 분석 도구 활용 근거가 약해 보류합니다.',
+    strengths: ['포토 공정 5년, 필수 요건 충족', '오버레이 개선 경험'],
+    concerns: ['Python·JMP 등 분석 도구 활용 근거 없음', 'DOE 활용 사례가 서류에 없음'],
+    profile: {
+      summary: '포토 공정 5년. 오버레이 보정 레시피 최적화.',
+      years_experience: 5,
+      skills: ['포토리소그래피', '오버레이', 'SPC'],
+      experience: [exp('[회사-1]', '포토 공정 엔지니어', '2020.07 – 현재', '오버레이 보정 레시피 최적화')],
+      education: [edu('[학교-1]', '학사', '물리학')],
+      projects: [],
+      certifications: ['반도체설계기사'],
+    },
+  },
+  {
+    n: 3,
+    posting: 'P1',
+    fit: 86,
+    status: 'passed',
+    appliedDaysAgo: 14,
+    summaryLine: '증착 공정 경력과 SPC·DOE 활용 근거가 명확합니다.',
+    strengths: ['CVD 증착 5년, 필수 요건 충족', 'DOE로 막 두께 균일도 1.6%→0.9% 개선', 'Spotfire 대시보드 구축'],
+    concerns: ['식각 공정 경험 없음 (JD 주력 공정)'],
+    profile: {
+      summary: 'CVD 증착 5년. DOE 기반 균일도 개선, 공정 모니터링 대시보드 구축.',
+      years_experience: 5,
+      skills: ['CVD', 'SPC', 'DOE', 'Spotfire', 'Python'],
+      experience: [exp('[회사-1]', '증착 공정 엔지니어', '2020.02 – 현재', '막 두께 균일도 1.6% → 0.9%', '공정 모니터링 대시보드 구축')],
+      education: [edu('[학교-1]', '석사', '화학공학')],
+      projects: [prj('공정 모니터링 대시보드', 'SPC 관리도 자동 생성과 이상 알림', 'Spotfire', 'SQL')],
+      certifications: ['품질경영기사'],
+    },
+  },
+  {
+    n: 4,
+    posting: 'P1',
+    fit: 47,
+    status: 'rejected',
+    appliedDaysAgo: 10,
+    summaryLine: '반도체 공정 경력이 필수 요건(3년)에 못 미칩니다.',
+    strengths: ['디스플레이 공정 2년'],
+    concerns: ['반도체 단위공정 경력 없음', '통계·DOE 활용 근거 없음'],
+    profile: {
+      summary: '디스플레이 증착 공정 2년.',
+      years_experience: 2,
+      skills: ['디스플레이 공정', 'Excel'],
+      experience: [exp('[회사-1]', '공정 엔지니어', '2023.01 – 현재', '증착 장비 조건 관리')],
+      education: [edu('[학교-1]', '학사', '신소재공학')],
+      projects: [],
+      certifications: [],
+    },
+  },
+  {
+    n: 5,
+    posting: 'P1',
+    fit: 79,
+    status: 'passed',
+    appliedDaysAgo: 13,
+    summaryLine: '식각 공정 경력과 데이터 분석 역량이 JD와 맞고, 협업 근거가 다소 약합니다.',
+    strengths: ['식각 공정 4년, 필수 요건 충족', 'Python으로 FDC 이상 탐지 스크립트 개발'],
+    concerns: ['양산 이관·부서 협업 사례가 서류에 적음'],
+    profile: {
+      summary: '메모리 식각 공정 4년. FDC 데이터 기반 이상 탐지 자동화.',
+      years_experience: 4,
+      skills: ['건식 식각', 'FDC', 'Python', 'pandas'],
+      experience: [exp('[회사-1]', '식각 공정 엔지니어', '2021.08 – 현재', 'FDC 이상 탐지 자동화 (오탐 30% 감소)')],
+      education: [edu('[학교-1]', '석사', '재료공학')],
+      projects: [prj('FDC 이상 탐지 자동화', '센서 데이터 규칙 기반 탐지를 통계 기반으로 전환', 'Python', 'pandas')],
+      certifications: [],
+    },
+  },
+  {
+    n: 6,
+    posting: 'P1',
+    fit: 62,
+    status: 'hold',
+    appliedDaysAgo: 9,
+    summaryLine: '경력 요건은 충족하나 최근 경력이 장비 유지보수 중심이라 보류합니다.',
+    strengths: ['식각 장비 6년'],
+    concerns: ['공정 개발보다 장비 PM 중심 경력', '수율 개선 사례 없음'],
+    profile: {
+      summary: '식각 장비 엔지니어 6년. PM 표준화.',
+      years_experience: 6,
+      skills: ['장비 PM', '건식 식각', 'SPC'],
+      experience: [exp('[회사-1]', '장비 엔지니어', '2019.01 – 현재', 'PM 표준 작업서 개정')],
+      education: [edu('[학교-1]', '학사', '기계공학')],
+      projects: [],
+      certifications: ['일반기계기사'],
+    },
+  },
+  {
+    n: 7,
+    posting: 'P1',
+    fit: 89,
+    status: 'passed',
+    appliedDaysAgo: 15,
+    summaryLine: '식각 단위공정 6년 경력과 수율 개선 리딩 경험이 JD 필수·우대 요건과 잘 맞습니다.',
+    strengths: ['식각 공정 경력 6년, 필수 요건(3년 이상) 충족', '엣지 CD 산포 개선으로 수율 2.1%p 개선 (우대: 수율 개선 리딩)', 'FDC 기반 이상 탐지 PoC (우대: ML 이상 탐지)'],
+    concerns: ['증착·포토 공정 경험은 서류에 없음', '해외 장비사 협업 근거 부족'],
+    profile: {
+      summary: 'DRAM 식각 공정 6년. 엣지 CD 산포 개선으로 가장자리 수율 2.1%p 개선, FDC 기반 이상 탐지 도입.',
+      years_experience: 6,
+      skills: ['건식 식각', 'FDC', 'SPC', 'DOE', 'Python', 'JMP'],
+      experience: [
+        exp('[회사-1]', '식각 공정 엔지니어', '2020.03 – 현재', '커패시터 식각 엣지 CD 산포 개선 (가장자리 수율 +2.1%p)', 'RF 시간 기반 부품 교체 기준 수립'),
+        exp('[회사-2]', '장비 엔지니어', '2018.07 – 2020.02', '식각 장비 셋업·PM 표준서 작성'),
+      ],
+      education: [edu('[학교-1]', '석사', '재료공학')],
+      projects: [prj('FDC 이상 탐지 파일럿', '챔버 센서 데이터로 이상 웨이퍼를 사전 탐지하는 모델 PoC', 'Python', 'scikit-learn')],
+      certifications: ['품질경영기사'],
+    },
+  },
+  {
+    n: 8,
+    posting: 'P1',
+    fit: 38,
+    status: 'rejected',
+    appliedDaysAgo: 8,
+    summaryLine: '공정 개발 경력이 없고 JD 직무와 거리가 있습니다.',
+    strengths: ['반도체 품질 검사 3년'],
+    concerns: ['단위공정 개발 경력 없음', '분석 도구 활용 근거 없음'],
+    profile: {
+      summary: '반도체 출하 품질 검사 3년.',
+      years_experience: 3,
+      skills: ['품질 검사', 'Excel'],
+      experience: [exp('[회사-1]', '품질 엔지니어', '2022.03 – 현재', '출하 검사 기준 관리')],
+      education: [edu('[학교-1]', '학사', '산업공학')],
+      projects: [],
+      certifications: [],
+    },
+  },
+  {
+    n: 9,
+    posting: 'P1',
+    fit: 81,
+    status: 'passed',
+    appliedDaysAgo: 12,
+    summaryLine: '증착·식각 통합 공정 경험과 해외 장비사 협업 근거가 있습니다.',
+    strengths: ['통합 공정 5년, 필수 요건 충족', '해외 장비사와 신규 챔버 셋업 (우대 충족)'],
+    concerns: ['수치화된 개선 성과가 적음'],
+    profile: {
+      summary: '통합 공정 5년. 신규 챔버 셋업과 장비사 협업.',
+      years_experience: 5,
+      skills: ['통합 공정', '건식 식각', 'CVD', '영어 기술 문서'],
+      experience: [exp('[회사-1]', '통합 공정 엔지니어', '2020.09 – 현재', '신규 식각 챔버 셋업 (해외 장비사 협업)')],
+      education: [edu('[학교-1]', '석사', '전자공학')],
+      projects: [],
+      certifications: [],
+    },
+  },
+  {
+    n: 10,
+    posting: 'P1',
+    fit: 41,
+    status: 'rejected',
+    appliedDaysAgo: 7,
+    summaryLine: '경력 기간이 필수 요건에 못 미치고 공정 개발 근거가 부족합니다.',
+    strengths: ['인턴십에서 식각 공정 보조'],
+    concerns: ['정규 경력 1년', 'DOE·SPC 경험 없음'],
+    profile: {
+      summary: '식각 공정 보조 1년.',
+      years_experience: 1,
+      skills: ['건식 식각', 'Python'],
+      experience: [exp('[회사-1]', '연구원', '2025.01 – 현재', '식각 조건 테스트 보조')],
+      education: [edu('[학교-1]', '석사', '전자공학')],
+      projects: [],
+      certifications: [],
+    },
+  },
+  {
+    n: 11,
+    posting: 'P1',
+    fit: 77,
+    status: 'passed',
+    appliedDaysAgo: 10,
+    summaryLine: '식각 공정 경력과 머신러닝 프로젝트 경험이 우대 요건과 맞습니다.',
+    strengths: ['식각 3년, 필수 요건 충족', '이상 탐지 모델 사내 경진대회 수상 (우대: ML)'],
+    concerns: ['경력이 필수 요건 하한', '협업 사례가 적음'],
+    profile: {
+      summary: '식각 공정 3년. 이상 탐지 모델 개발.',
+      years_experience: 3,
+      skills: ['건식 식각', 'Python', 'PyTorch', 'SPC'],
+      experience: [exp('[회사-1]', '식각 공정 엔지니어', '2022.07 – 현재', '이상 탐지 모델 사내 경진대회 1위')],
+      education: [edu('[학교-1]', '석사', '산업공학')],
+      projects: [prj('이상 탐지 모델', '오토인코더로 챔버 이상 상태 탐지', 'PyTorch')],
+      certifications: [],
+    },
+  },
+  // ----- P2 AI 플랫폼 백엔드 (9) --------------------------------------------------------------
+  {
+    n: 12,
+    posting: 'P2',
+    fit: 87,
+    status: 'passed',
+    appliedDaysAgo: 9,
+    summaryLine: '대규모 트래픽 백엔드 설계와 GPU 추론 서빙 경험이 JD와 잘 맞습니다.',
+    strengths: ['백엔드 7년, 필수 요건 충족', 'vLLM 기반 추론 게이트웨이 구축 (우대 충족)', 'Kubernetes 운영'],
+    concerns: ['RDBMS 튜닝 사례가 서류에 적음'],
+    profile: {
+      summary: '백엔드 7년. LLM 추론 게이트웨이 구축, Kubernetes 운영.',
+      years_experience: 7,
+      skills: ['Python', 'Go', 'Kubernetes', 'vLLM', 'Kafka', 'PostgreSQL'],
+      experience: [
+        exp('[회사-1]', '시니어 백엔드 엔지니어', '2022.01 – 현재', 'vLLM 기반 추론 게이트웨이 구축 (p95 40% 감소)'),
+        exp('[회사-2]', '백엔드 엔지니어', '2019.03 – 2021.12', '주문 API 마이크로서비스 전환'),
+      ],
+      education: [edu('[학교-1]', '학사', '컴퓨터공학')],
+      projects: [prj('추론 게이트웨이', '모델별 큐와 동적 배치로 GPU 사용률 개선', 'Go', 'vLLM', 'Redis')],
+      certifications: [],
+    },
+  },
+  {
+    n: 13,
+    posting: 'P2',
+    fit: 58,
+    status: 'hold',
+    appliedDaysAgo: 8,
+    summaryLine: '백엔드 경력은 충분하나 분산 시스템 운영 근거가 약해 보류합니다.',
+    strengths: ['백엔드 5년, 필수 요건 충족', 'RDBMS 모델링 경험'],
+    concerns: ['Kubernetes·메시지 큐 운영 근거 없음', '장애 대응 사례 없음'],
+    profile: {
+      summary: '백엔드 5년. 사내 관리 시스템 개발.',
+      years_experience: 5,
+      skills: ['Java', 'Spring', 'MySQL'],
+      experience: [exp('[회사-1]', '백엔드 개발자', '2020.05 – 현재', '사내 정산 시스템 DB 모델링')],
+      education: [edu('[학교-1]', '학사', '정보통신공학')],
+      projects: [],
+      certifications: ['정보처리기사'],
+    },
+  },
+  {
+    n: 14,
+    posting: 'P2',
+    fit: 83,
+    status: 'passed',
+    appliedDaysAgo: 11,
+    summaryLine: 'SLO 정의와 장애 회고 경험이 구체적이고 분산 시스템 운영 경력이 충분합니다.',
+    strengths: ['백엔드 6년, 필수 요건 충족', 'SLO·에러 버짓 도입 (우대 충족)', 'Kafka 기반 이벤트 파이프라인 운영'],
+    concerns: ['GPU 추론 서빙 경험 없음'],
+    profile: {
+      summary: '백엔드 6년. SLO 체계 도입, 이벤트 파이프라인 운영.',
+      years_experience: 6,
+      skills: ['Python', 'Kafka', 'Kubernetes', 'PostgreSQL', 'Prometheus'],
+      experience: [exp('[회사-1]', '백엔드 엔지니어', '2019.10 – 현재', 'SLO·에러 버짓 도입 (장애 건수 45% 감소)', '이벤트 파이프라인 운영')],
+      education: [edu('[학교-1]', '석사', '컴퓨터공학')],
+      projects: [prj('관측성 개선', '트레이싱 도입과 알림 정비', 'OpenTelemetry', 'Grafana')],
+      certifications: [],
+    },
+  },
+  {
+    n: 15,
+    posting: 'P2',
+    fit: 35,
+    status: 'rejected',
+    appliedDaysAgo: 6,
+    summaryLine: '경력 요건(4년)에 못 미치고 백엔드 설계 경험이 부족합니다.',
+    strengths: ['프론트엔드 2년'],
+    concerns: ['백엔드 경력 1년', '분산 시스템 경험 없음'],
+    profile: {
+      summary: '프론트엔드 2년, 백엔드 1년.',
+      years_experience: 3,
+      skills: ['TypeScript', 'Node.js'],
+      experience: [exp('[회사-1]', '웹 개발자', '2022.09 – 현재', '관리자 페이지 개발')],
+      education: [edu('[학교-1]', '학사', '경영학')],
+      projects: [],
+      certifications: [],
+    },
+  },
+  {
+    n: 16,
+    posting: 'P2',
+    fit: 80,
+    status: 'passed',
+    appliedDaysAgo: 10,
+    summaryLine: '대용량 API 설계와 DB 성능 튜닝 사례가 구체적입니다.',
+    strengths: ['백엔드 5년, 필수 요건 충족', '쿼리 튜닝으로 응답 시간 60% 단축'],
+    concerns: ['추론 서빙 경험 없음'],
+    profile: {
+      summary: '백엔드 5년. 대용량 API 설계, DB 성능 튜닝.',
+      years_experience: 5,
+      skills: ['Go', 'PostgreSQL', 'Redis', 'Kubernetes'],
+      experience: [exp('[회사-1]', '백엔드 엔지니어', '2020.04 – 현재', '추천 API 응답 시간 60% 단축')],
+      education: [edu('[학교-1]', '학사', '컴퓨터공학')],
+      projects: [],
+      certifications: [],
+    },
+  },
+  {
+    n: 17,
+    posting: 'P2',
+    fit: 72,
+    status: 'hold',
+    appliedDaysAgo: 7,
+    summaryLine: '역량은 맞지만 동일 직무 지원자 대비 근거가 약해 보류합니다.',
+    strengths: ['백엔드 4년, 필수 요건 충족', '오픈소스 기여 (우대 충족)'],
+    concerns: ['트래픽 규모가 작은 서비스 위주'],
+    profile: {
+      summary: '백엔드 4년. 오픈소스 HTTP 라이브러리 기여.',
+      years_experience: 4,
+      skills: ['Python', 'FastAPI', 'PostgreSQL'],
+      experience: [exp('[회사-1]', '백엔드 엔지니어', '2021.06 – 현재', '사내 API 플랫폼 개발')],
+      education: [edu('[학교-1]', '학사', '컴퓨터공학')],
+      projects: [prj('오픈소스 기여', 'HTTP 클라이언트 라이브러리 재시도 로직 개선', 'Python')],
+      certifications: [],
+    },
+  },
+  {
+    n: 18,
+    posting: 'P2',
+    fit: 85,
+    status: 'passed',
+    appliedDaysAgo: 9,
+    summaryLine: '추론 서버 운영과 관측성 구축 경험이 JD와 잘 맞습니다.',
+    strengths: ['백엔드 6년, 필수 요건 충족', 'Triton 추론 서버 운영 (우대 충족)'],
+    concerns: ['팀 간 협업 사례가 서류에 적음'],
+    profile: {
+      summary: '백엔드 6년. Triton 추론 서버 운영, 관측성 구축.',
+      years_experience: 6,
+      skills: ['Python', 'Triton', 'Kubernetes', 'Prometheus', 'gRPC'],
+      experience: [exp('[회사-1]', 'ML 플랫폼 엔지니어', '2019.12 – 현재', 'Triton 추론 서버 운영', '모델 배포 파이프라인 구축')],
+      education: [edu('[학교-1]', '석사', '컴퓨터공학')],
+      projects: [],
+      certifications: [],
+    },
+  },
+  {
+    n: 19,
+    posting: 'P2',
+    fit: 44,
+    status: 'rejected',
+    appliedDaysAgo: 5,
+    summaryLine: '데이터 분석 직무 중심 경력으로 백엔드 요건과 맞지 않습니다.',
+    strengths: ['SQL 활용'],
+    concerns: ['백엔드 개발 경력 없음'],
+    profile: {
+      summary: '데이터 분석 4년.',
+      years_experience: 4,
+      skills: ['SQL', 'Python', 'Tableau'],
+      experience: [exp('[회사-1]', '데이터 분석가', '2021.01 – 현재', '매출 대시보드 구축')],
+      education: [edu('[학교-1]', '학사', '통계학')],
+      projects: [],
+      certifications: [],
+    },
+  },
+  {
+    n: 20,
+    posting: 'P2',
+    fit: 76,
+    status: 'passed',
+    appliedDaysAgo: 8,
+    summaryLine: '메시지 큐 기반 분산 처리 경험이 있고 장애 회고 문화를 주도했습니다.',
+    strengths: ['백엔드 5년, 필수 요건 충족', '장애 회고 프로세스 도입'],
+    concerns: ['GPU 추론 경험 없음', '설계 리딩 근거가 적음'],
+    profile: {
+      summary: '백엔드 5년. 메시지 큐 기반 정산 처리, 장애 회고 도입.',
+      years_experience: 5,
+      skills: ['Java', 'Kafka', 'Kubernetes', 'MySQL'],
+      experience: [exp('[회사-1]', '백엔드 엔지니어', '2020.08 – 현재', 'Kafka 기반 정산 배치 전환', '장애 회고 프로세스 도입')],
+      education: [edu('[학교-1]', '학사', '컴퓨터공학')],
+      projects: [],
+      certifications: [],
+    },
+  },
+]
+
+export const pseudonymOf = (n: number) => `CAND-${String(n).padStart(4, '0')}`

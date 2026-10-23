@@ -1,0 +1,27 @@
+<!doctype html>
+<html lang="ko" class="dark">
+  <head>
+    <meta charset="UTF-8" />
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="color-scheme" content="dark light" />
+    <title>면접 어시스턴트</title>
+    <script>
+      // Apply the saved theme before first paint (no light flash). Default: follow the system, dark when unknown.
+      ;(function () {
+        var pref = 'system'
+        try {
+          pref = localStorage.getItem('ia-theme') || 'system'
+        } catch (e) {}
+        var light = pref === 'light' || (pref === 'system' && window.matchMedia && window.matchMedia('(prefers-color-scheme: light)').matches)
+        var root = document.documentElement
+        root.classList.toggle('dark', !light)
+        root.style.colorScheme = light ? 'light' : 'dark'
+      })()
+    </script>
+  </head>
+  <body>
+    <div id="root"></div>
+    <script type="module" src="/src/main.tsx"></script>
+  </body>
+</html>

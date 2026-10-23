@@ -1,0 +1,246 @@
+@import 'tailwindcss';
+@import 'tw-animate-css';
+/* Pretendard (OFL-1.1), self-hosted from the npm package: no external CDN. */
+@import 'pretendard/dist/web/variable/pretendardvariable-dynamic-subset.css';
+
+@custom-variant dark (&:where(.dark, .dark *));
+
+/*
+ * Tokens. Neutral (slightly cool) base + one accent (blue). Status colors are semantic and always
+ * ship with an icon + label. Chart series follow the validated dataviz reference palette
+ * (slot 1 blue = AI, slots 2-6 = interviewers), stepped separately for light and dark.
+ */
+:root {
+  --radius: 0.625rem;
+
+  --background: oklch(0.985 0.002 260);
+  --foreground: oklch(0.2 0.008 265);
+  --card: oklch(1 0 0);
+  --card-foreground: var(--foreground);
+  --popover: oklch(1 0 0);
+  --popover-foreground: var(--foreground);
+  --muted: oklch(0.962 0.004 265);
+  --muted-foreground: oklch(0.5 0.012 265);
+  --subtle: oklch(0.975 0.003 265);
+  --accent: oklch(0.955 0.005 265);
+  --accent-foreground: var(--foreground);
+  --border: oklch(0.915 0.005 265);
+  --input: oklch(0.885 0.006 265);
+  --ring: #2a78d6;
+
+  --primary: #256abf;
+  --primary-foreground: #ffffff;
+  --secondary: oklch(0.955 0.005 265);
+  --secondary-foreground: var(--foreground);
+  --brand: #1c5cab;
+  --brand-soft: color-mix(in oklch, #2a78d6 9%, transparent);
+  --brand-border: color-mix(in oklch, #2a78d6 32%, transparent);
+
+  --success: #0b7a0b;
+  --warning: #9a6400;
+  --danger: #c4312f;
+  --destructive: #c4312f;
+  --destructive-foreground: #ffffff;
+  --live: #e5484d;
+
+  --series-1: #2a78d6;
+  --series-2: #eb6834;
+  --series-3: #1baf7a;
+  --series-4: #eda100;
+  --series-5: #e87ba4;
+  --series-6: #008300;
+  --funnel-1: #86b6ef;
+  --funnel-2: #5598e7;
+  --funnel-3: #2a78d6;
+  --funnel-4: #1c5cab;
+  --chart-grid: #e6e6ea;
+  --chart-axis: #8a8a93;
+
+  --sidebar: oklch(0.975 0.003 265);
+  --shadow-color: 220 15% 20%;
+}
+
+.dark {
+  --background: oklch(0.155 0.004 265);
+  --foreground: oklch(0.955 0.003 265);
+  --card: oklch(0.185 0.005 265);
+  --card-foreground: var(--foreground);
+  --popover: oklch(0.2 0.006 265);
+  --popover-foreground: var(--foreground);
+  --muted: oklch(0.235 0.006 265);
+  --muted-foreground: oklch(0.69 0.012 265);
+  --subtle: oklch(0.2 0.005 265);
+  --accent: oklch(0.255 0.007 265);
+  --accent-foreground: var(--foreground);
+  --border: oklch(1 0 0 / 8.5%);
+  --input: oklch(1 0 0 / 13%);
+  --ring: #3987e5;
+
+  --primary: #2a72cc;
+  --primary-foreground: #ffffff;
+  --secondary: oklch(0.255 0.007 265);
+  --secondary-foreground: var(--foreground);
+  --brand: #7cb0ef;
+  --brand-soft: color-mix(in oklch, #3987e5 13%, transparent);
+  --brand-border: color-mix(in oklch, #3987e5 38%, transparent);
+
+  --success: #43c463;
+  --warning: #f5b32e;
+  --danger: #f2726f;
+  --destructive: #d2423f;
+  --destructive-foreground: #ffffff;
+  --live: #ff5c61;
+
+  --series-1: #3987e5;
+  --series-2: #d95926;
+  --series-3: #199e70;
+  --series-4: #c98500;
+  --series-5: #d55181;
+  --series-6: #008300;
+  --funnel-1: #184f95;
+  --funnel-2: #256abf;
+  --funnel-3: #3987e5;
+  --funnel-4: #6da7ec;
+  --chart-grid: #2a2b30;
+  --chart-axis: #8a8a93;
+
+  --sidebar: oklch(0.14 0.004 265);
+  --shadow-color: 0 0% 0%;
+}
+
+@theme inline {
+  --font-sans:
+    'Pretendard Variable', Pretendard, -apple-system, BlinkMacSystemFont, system-ui, 'Segoe UI', 'Apple SD Gothic Neo',
+    'Malgun Gothic', sans-serif;
+  --font-mono: ui-monospace, 'SF Mono', 'JetBrains Mono', 'Cascadia Code', Consolas, monospace;
+
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-card: var(--card);
+  --color-card-foreground: var(--card-foreground);
+  --color-popover: var(--popover);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-subtle: var(--subtle);
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-border: var(--border);
+  --color-input: var(--input);
+  --color-ring: var(--ring);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-secondary: var(--secondary);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-brand: var(--brand);
+  --color-brand-soft: var(--brand-soft);
+  --color-brand-border: var(--brand-border);
+  --color-success: var(--success);
+  --color-warning: var(--warning);
+  --color-danger: var(--danger);
+  --color-destructive: var(--destructive);
+  --color-destructive-foreground: var(--destructive-foreground);
+  --color-live: var(--live);
+  --color-sidebar: var(--sidebar);
+  --color-series-1: var(--series-1);
+  --color-series-2: var(--series-2);
+  --color-series-3: var(--series-3);
+  --color-series-4: var(--series-4);
+  --color-series-5: var(--series-5);
+  --color-series-6: var(--series-6);
+
+  --radius-sm: calc(var(--radius) - 4px);
+  --radius-md: calc(var(--radius) - 2px);
+  --radius-lg: var(--radius);
+  --radius-xl: calc(var(--radius) + 4px);
+
+  --animate-caret: caret 1s steps(1) infinite;
+  --animate-live: live 1.6s ease-out infinite;
+  --animate-shimmer: shimmer 1.6s linear infinite;
+
+  @keyframes caret {
+    50% {
+      opacity: 0;
+    }
+  }
+  @keyframes live {
+    0% {
+      box-shadow: 0 0 0 0 color-mix(in oklch, var(--live) 55%, transparent);
+    }
+    70%,
+    100% {
+      box-shadow: 0 0 0 6px transparent;
+    }
+  }
+  @keyframes shimmer {
+    from {
+      background-position: 200% 0;
+    }
+    to {
+      background-position: -200% 0;
+    }
+  }
+}
+
+@layer base {
+  * {
+    @apply border-border outline-ring/50;
+  }
+  html {
+    color-scheme: light;
+  }
+  html.dark {
+    color-scheme: dark;
+  }
+  body {
+    @apply bg-background text-foreground font-sans antialiased;
+    font-feature-settings: 'ss06';
+    letter-spacing: -0.005em;
+    word-break: keep-all;
+  }
+  ::selection {
+    background: color-mix(in oklch, var(--ring) 30%, transparent);
+  }
+  :focus-visible {
+    outline: 2px solid var(--ring);
+    outline-offset: 2px;
+  }
+}
+
+@layer utilities {
+  .tabular {
+    font-variant-numeric: tabular-nums;
+  }
+  .scrollbar-thin {
+    scrollbar-width: thin;
+    scrollbar-color: color-mix(in oklch, var(--foreground) 18%, transparent) transparent;
+  }
+  .shadow-soft {
+    box-shadow:
+      0 1px 2px hsl(var(--shadow-color) / 0.06),
+      0 4px 16px -4px hsl(var(--shadow-color) / 0.1);
+  }
+  .dark .shadow-soft {
+    box-shadow:
+      0 1px 0 0 oklch(1 0 0 / 4%) inset,
+      0 8px 24px -8px hsl(var(--shadow-color) / 0.6);
+  }
+  .bg-dots {
+    background-image: radial-gradient(color-mix(in oklch, var(--foreground) 9%, transparent) 1px, transparent 1px);
+    background-size: 14px 14px;
+  }
+  .ai-dashed {
+    background-image: linear-gradient(var(--card), var(--card));
+    border: 1px dashed var(--brand-border);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}

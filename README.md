@@ -42,6 +42,12 @@ scripts/
 tests/
   fixtures/deid_samples.yaml  # 합성 텍스트 샘플 20건과 정답 목록
   fixtures/resumes/     # 가상 이력서 파일 20건 (PDF 6, DOCX 4, PPTX 3, HTML 4, 스캔 PDF 3)과 manifest.yaml
+docs/
+  api-contract.md       # 프론트 ↔ 백엔드 REST·SSE 계약 (3~8단계 백엔드가 구현)
+frontend/               # 면접관 UI (React). 백엔드 없이 모의 API(MSW)로 전 화면 동작
+  src/api/              # types.ts(모델과 1:1), endpoints, TanStack Query 훅, SSE 파서
+  src/mocks/            # 모의 API: 가상 데이터, 핸들러, 실시간 전사·꼬리질문 스트림 흉내
+  src/features/         # 화면: dashboard, postings, screening, sessions, interview(실시간), evaluation, schedule
 ```
 
 ## 실행
@@ -135,6 +141,37 @@ uv run python scripts/make_resume_fixtures.py --font C:/Windows/Fonts/malgun.ttf
 
 같은 폰트면 결과 파일이 바이트 단위로 같고, `manifest.yaml`(정답 목록)은 파일을 그리면서 기록한 값으로 쓴다.
 
+## 프론트엔드 (면접관 UI)
+
+`frontend/`. Vite + React 19 + TypeScript(strict), Tailwind CSS v4 + shadcn/ui 방식 컴포넌트(Radix), TanStack Query, React Router, MSW, Recharts, cmdk, sonner, motion. 폰트는 Pretendard(OFL)를 npm 패키지에서 자체 호스팅한다. Node 24 이상.
+
+화면: 대시보드, 공고·역량 사전(FR-02), 서류 선별(FR-01·03), 면접 목록, 실시간 면접(FR-04~08), 평가 결과(FR-07·08), 면접관 스케줄(FR-09). 다크 모드 기본(시스템 설정 따름), Ctrl/⌘+K 명령 팔레트.
+
+```bash
+cd frontend
+npm ci
+npm run dev          # 모의 API 모드 (백엔드 불필요) → http://localhost:5173
+```
+
+모의 모드(`VITE_USE_MOCKS=true`, `.env.development`)에서는 브라우저의 MSW가 `/api` 요청에 답한다. 가상 데이터(공고 3, 지원자 20, 면접관 5, 진행 중 면접 1, 완료 면접 4)는 새로고침하면 처음 상태로 돌아간다. 진행 중 면접 화면을 열면 지원자 답변이 글자 단위로 스트리밍되고, 답변이 끝나면 꼬리질문 후보가 스트리밍된다.
+
+백엔드 연결 모드는 같은 `/api` 경로를 Vite 프록시로 FastAPI(`localhost:8000`)에 보낸다. 대상은 `frontend/.env.api`의 `VITE_API_PROXY_TARGET`. 백엔드는 [docs/api-contract.md](docs/api-contract.md)대로 `/api` 아래에 라우터를 둔다.
+
+```bash
+uv run uvicorn interview_assistant.main:app --reload   # 저장소 루트에서
+cd frontend && npm run dev:api
+```
+
+검사와 빌드:
+
+```bash
+npm run check        # 타입 검사 + 린트 + 테스트(Vitest) + 빌드
+npm run build        # dist/ (실제 API용, VITE_USE_MOCKS=false)
+npm run build:mock   # 백엔드 없이 띄우는 데모 빌드
+```
+
+의존성 버전은 `package.json`에 정확히 고정하고 `package-lock.json`을 커밋한다 (공개 후 2주 이상 지난 버전). 번들에 들어가는 라이브러리는 MIT·ISC·Apache-2.0·BSD 계열이고 폰트는 OFL-1.1이다. 개발 의존성 중 lightningcss(MPL-2.0, Tailwind v4와 Vite의 CSS 처리)와 caniuse-lite(CC-BY-4.0, 브라우저 지원 데이터)는 빌드할 때만 쓰고 번들에 들어가지 않는다.
+
 ## 진행 순서
 
-[docs/implementation-order.md](docs/implementation-order.md) 참조. 현재 2단계(비식별화) 구현 완료, 사용자 확인(토큰 형식, 사전, 검토 리포트로 20건 수동 검수) 대기. 5단계 서류 파싱 중 텍스트 추출은 2단계 검수용으로 앞당겨 구현했다. 다음은 3단계 실제 LLM Provider.
+[docs/implementation-order.md](docs/implementation-order.md) 참조. 현재 2단계(비식별화) 구현 완료, 사용자 확인(토큰 형식, 사전, 검토 리포트로 20건 수동 검수) 대기. 5단계 서류 파싱 중 텍스트 추출은 2단계 검수용으로 앞당겨 구현했다. 9단계 면접관 UI는 모의 API 기반으로 앞당겨 만들었고(`frontend/`), 실제 연결은 각 백엔드 단계에서 [API 계약](docs/api-contract.md)대로 한다. 다음은 3단계 실제 LLM Provider.
