@@ -64,6 +64,7 @@ tests/
 docs/
   api-contract.md       # 프론트 ↔ 백엔드 REST·SSE 계약, 모델 결정, 남은 과제
   whisper-benchmark.md  # 로컬 Whisper 측정 결과 (이 노트북, CPU)
+  model-selection.md    # 모델 선택 기준·선택지·회사 확인 항목·미룬 결정
 weights/                # 내려받은 모델 가중치 (git 제외, IA_WEIGHTS_DIR)
 frontend/               # 면접관 UI (Vue 3). 백엔드 없이 모의 API(MSW)로 전 화면 동작
   src/api/              # types.ts(모델과 1:1), endpoints, TanStack Query composable, SSE 파서
@@ -130,7 +131,7 @@ OpenAI Whisper를 이 PC의 CPU에서 돌린다(faster-whisper, CTranslate2 int8
 4. 연결 테스트: "내장 샘플"(FLEURS 한국어 11.5초, 정답과 비교한 CER), "마이크로 테스트"(브라우저 녹음 5~10초), "파일". 마이크는 Chrome·Edge에서 http://localhost:5173 을 열고 마이크 권한을 허용해야 한다(Claude 앱의 브라우저 창은 마이크를 막는다).
 5. 사유를 적고 적용. 되돌리려면 변경 이력의 "되돌리기".
 
-측정(이 노트북, i7-1360P, GPU 없음, 배터리 상태): [docs/whisper-benchmark.md](docs/whisper-benchmark.md). 요약: 정확도는 medium 이상이 충분하고 small은 한국어에서 눈에 띄게 틀린다. Whisper는 호출마다 30초 창을 통째로 인코딩해 짧은 발화도 같은 비용이 들어서, 이 CPU로는 실시간 전사가 발화 끝 뒤 수 초~십여 초 늦다. 화면의 권장(실시간 medium, 사후 large-v3)은 정확도 기준이다.
+측정(이 노트북, i7-1360P, GPU 없음): [docs/whisper-benchmark.md](docs/whisper-benchmark.md). 역할별 기준, 답변 → 꼬리질문 간격 예상, 스트리밍 STT 선택지(Chirp, CLOVA), 회사에 확인할 것은 [docs/model-selection.md](docs/model-selection.md). 요약: 정확도는 medium 이상이 충분하고 small은 한국어에서 눈에 띄게 틀린다. Whisper는 호출마다 30초 창을 통째로 인코딩해 짧은 발화도 같은 비용이 들어서, 이 CPU로는 실시간 전사가 발화 끝 뒤 수 초~십여 초 늦다. 화면의 권장(실시간 medium, 사후 large-v3)은 정확도 기준이다.
 
 지금 실시간 면접 화면의 음성은 가상 지원자 대본(텍스트)이라 fake STT만 받아 적는다. STT 실시간을 Whisper로 바꾸면 새로 시작하는 면접은 수기 답변 입력으로 바뀐다(감사 로그 `transcript.unsupported_audio`). 마이크·WebRTC 입력(`live/audio.AudioSource`가 16kHz PCM을 내는 구현)이 붙으면 같은 설정이 그대로 쓰인다.
 
