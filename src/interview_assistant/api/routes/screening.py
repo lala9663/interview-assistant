@@ -147,6 +147,7 @@ async def upload_application(
         schools=_lines(schools),
         companies=_lines(companies),
     )
+    models = runtime.models.active  # this upload is read and screened with these settings
     try:
         outcome = await process_application(
             db,
@@ -157,9 +158,10 @@ async def upload_application(
                 attachments=(Attachment(filename=file.filename or "upload", data=data),),
                 actor=me,
             ),
-            ai=runtime.ai,
+            ai=models.ai,
             deid=runtime.deid,
             uploads_dir=runtime.uploads_dir,
+            reader=models.reader,
         )
     except IntakeRefused as exc:
         if exc.code == "ai_failed":

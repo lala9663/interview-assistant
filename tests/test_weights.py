@@ -149,3 +149,43 @@ def test_cancel_stops_and_removes_the_partial_files(tmp_path, no_network):
     assert not weights.path(tmp_path).with_name("test.partial").exists()
     assert not is_complete(weights, tmp_path)
     assert threading.active_count() >= 1  # the download thread has ended (joined in cancel)
+
+
+def test_a_bundle_gathers_files_from_several_sources_into_sub_folders(tmp_path, no_network):
+    """PaddleOCR: detection and recognition from two Hugging Face repos; Tesseract data from a
+    pinned GitHub URL. The HF token goes to the HF endpoint only."""
+    log: list = []
+
+    def open_(request):
+        log.append((request.full_url, request.headers.get("Authorization")))
+        return Response(BLOBS["config.json"] if request.full_url.endswith(".json") else BLOBS["model.bin"])
+
+    bundle = WeightSet(
+        "paddleocr/test",
+        "Org/det",
+        "aaa",
+        (
+            WeightFile("det/inference.json", len(BLOBS["config.json"]), remote="inference.json"),
+            WeightFile("rec/inference.json", len(BLOBS["config.json"]), None, "Org/rec", "bbb", "inference.json"),
+            WeightFile("kor.traineddata", len(BLOBS["model.bin"]), url="https://raw.example/tessdata/ccc/kor.traineddata"),
+        ),
+    )
+    manager = DownloadManager(tmp_path, endpoint="https://hf.example", token="secret", opener=open_)
+    manager.start(bundle)
+    assert manager.wait(bundle, 5).status == "done" and is_complete(bundle, tmp_path)
+    assert (bundle.path(tmp_path) / "rec" / "inference.json").read_bytes() == BLOBS["config.json"]
+    assert log == [
+        ("https://hf.example/Org/det/resolve/aaa/inference.json", "Bearer secret"),
+        ("https://hf.example/Org/rec/resolve/bbb/inference.json", "Bearer secret"),
+        ("https://raw.example/tessdata/ccc/kor.traineddata", None),
+    ]
+
+
+def test_pinned_ocr_bundles():
+    from interview_assistant.providers.weights import PADDLEOCR, TESSDATA
+
+    for bundle in (*PADDLEOCR.values(), *TESSDATA.values()):
+        assert all(f.sha256 and len(f.sha256) == 64 for f in bundle.files), bundle.key
+    mobile = {f.name for f in PADDLEOCR["ppocrv5-mobile"].files}
+    assert {"det/inference.pdiparams", "rec/inference.pdiparams", "textline_ori/inference.yml"} <= mobile
+    assert all(f.url and "/tessdata_best/e12c65a9" in f.url for f in TESSDATA["best"].files)

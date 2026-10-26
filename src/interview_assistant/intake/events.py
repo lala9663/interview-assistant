@@ -26,14 +26,13 @@ import shutil
 from collections.abc import Callable
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from pydantic import ValidationError
 from sqlalchemy import func, select, update
 from sqlalchemy.orm import Session, sessionmaker
 
 from interview_assistant.ai import AiOutputInvalid
-from interview_assistant.ai.gateway import AiGateway
 from interview_assistant.ai.guard import IdentifierInPrompt
 from interview_assistant.deid.service import DeidService
 from interview_assistant.intake.service import (
@@ -65,11 +64,18 @@ from interview_assistant.models import (
 from interview_assistant.models.base import iso_z, utcnow
 from interview_assistant.providers.base import ProviderUnavailable
 
+if TYPE_CHECKING:
+    from interview_assistant.ai_models.manager import ProviderSet
+
 log = logging.getLogger(__name__)
 
-# Failure codes whose cause can go away on our side (link the posting, reopen it, OCR arrives,
-# the model recovers): worth "다시 처리". Others need the site to send something else.
-RETRIABLE = frozenset({"unknown_posting", "posting_closed", "ocr_required", "ai_failed", "internal_error"})
+# Failure codes whose cause can go away on our side (link the posting, reopen it, switch the
+# reading mode or fix the OCR engine, install the converter, the model recovers): worth "다시 처리".
+# Others need the site to send something else.
+RETRIABLE = frozenset({
+    "unknown_posting", "posting_closed", "ocr_required", "ocr_unavailable", "converter_missing",
+    "reader_unavailable", "ai_failed", "internal_error",
+})  # fmt: skip
 
 
 @dataclass
@@ -261,12 +267,13 @@ def _drop_payload(event: IntakeEvent, uploads_dir: Path) -> None:
 
 @dataclass
 class IntakeContext:
-    """What applying needs from the running app. `ai` is read per event: the active models."""
+    """What applying needs from the running app. `models` is read per event: the active
+    snapshot, whose AI gateway and document reader the whole event then uses."""
 
     session_factory: sessionmaker[Session]
     deid: DeidService
     uploads_dir: Path
-    ai: Callable[[], AiGateway]
+    models: Callable[[], ProviderSet]
 
 
 async def apply_event(ctx: IntakeContext, row_id: str, *, withdrawn: Callable[[str], bool]) -> None:
@@ -364,13 +371,15 @@ async def _apply_locked(db: Session, ctx: IntakeContext, event: IntakeEvent) -> 
     site_event = SiteEvent.model_validate(payload)
     folder = staging_dir(ctx.uploads_dir, event.id)
     files = {a.part: (folder / a.part).read_bytes() for a in site_event.attachments}
+    models = ctx.models()
     try:
         outcome = await process_application(
             db,
             application_input(site_event, files),
-            ai=ctx.ai(),
+            ai=models.ai,
             deid=ctx.deid,
             uploads_dir=ctx.uploads_dir,
+            reader=models.reader,
         )
     except IntakeRefused as exc:
         _finish(event, IntakeStatus.failed, exc.code, exc.message, [exc.field] if exc.field else None)

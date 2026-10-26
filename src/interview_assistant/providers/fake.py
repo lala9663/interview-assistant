@@ -29,6 +29,9 @@ from interview_assistant.providers.base import (
     EmbeddingProvider,
     LLMProvider,
     LLMResult,
+    OCRProvider,
+    OcrLine,
+    OcrResult,
     SpeakerTurn,
     STTProvider,
     TranscriptSegment,
@@ -210,6 +213,34 @@ class FakeEmbedding(EmbeddingProvider):
             norm = math.sqrt(sum(v * v for v in raw)) or 1.0
             vectors.append([v / norm for v in raw])
         return vectors
+
+
+class FakeOCR(OCRProvider):
+    """Reads nothing: answers every page with the lines it was given (tests), or one placeholder
+    line that says the page was not read, so a fake setup never invents applicant text."""
+
+    def __init__(
+        self,
+        model: str = "fake-ocr",
+        lines: Sequence[str] = (),
+        confidence: float = 0.5,
+        **_: Any,
+    ) -> None:
+        self.model = model
+        self.version = "fake OCR"
+        self.lines = tuple(lines)
+        self.confidence = confidence
+        self.calls = 0
+
+    def recognize(self, image: Any) -> OcrResult:
+        self.calls += 1
+        width, height = getattr(image, "size", (0, 0))
+        texts = self.lines or (f"[fake OCR] {width}×{height} 그림 (fake OCR은 글자를 읽지 않습니다)",)
+        lines = tuple(
+            OcrLine(text, self.confidence, (0.0, i * 20.0, float(width), i * 20.0 + 18))
+            for i, text in enumerate(texts)
+        )
+        return OcrResult(lines, self.model, 0)
 
 
 class FakeDiarization(DiarizationProvider):

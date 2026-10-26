@@ -15,13 +15,14 @@ from __future__ import annotations
 
 import re
 from collections.abc import Iterator
+from typing import Any
 
 from bs4 import BeautifulSoup, NavigableString, Tag
 from bs4.element import Comment, Declaration, Doctype, ProcessingInstruction
 
 from interview_assistant.documents.base import BlockCollector, DocumentExtractor
 from interview_assistant.documents.normalize import collapse
-from interview_assistant.documents.types import BlockKind, ExtractedDocument, PageInfo
+from interview_assistant.documents.types import BlockKind, ExtractedDocument, PageInfo, ReadMethod
 
 _CHARSET = re.compile(rb"""<meta[^>]+charset\s*=\s*["']?\s*([A-Za-z0-9_\-]+)""", re.I)
 _KOREAN_LEGACY = {"euc-kr", "euc_kr", "ks_c_5601-1987", "ksc5601", "x-windows-949", "windows-949", "cp949", "uhc"}
@@ -54,9 +55,12 @@ class HtmlExtractor(DocumentExtractor):
     format = "html"
 
     def __init__(self, *, min_text_chars: int = 30) -> None:
-        self.min_text_chars = min_text_chars
+        from interview_assistant.documents.reading import package_version
 
-    def extract(self, data: bytes, filename: str) -> ExtractedDocument:
+        self.min_text_chars = min_text_chars
+        self.tool = package_version("beautifulsoup4")
+
+    def extract(self, data: bytes, filename: str, *, reading: Any = None) -> ExtractedDocument:
         out = BlockCollector(filename, self.format)
         soup = BeautifulSoup(decode_html(data), "html.parser")
 
@@ -80,6 +84,7 @@ class HtmlExtractor(DocumentExtractor):
             + len(soup.find_all(style=_BG_IMAGE))
             + len(soup.find_all("input", attrs={"type": "image"}))
         )
+        pictures = _data_pictures(soup) if reading is not None else []
         for tag in soup.find_all([*_IMAGE_TAGS, "map"]):
             if not tag.decomposed:
                 tag.decompose()
@@ -112,10 +117,40 @@ class HtmlExtractor(DocumentExtractor):
             visible_chars += len("".join(text.split()))
 
         needs_ocr = visible_chars < self.min_text_chars and out.images > 0
-        out.pages.append(PageInfo(1, visible_chars, 0.0, needs_ocr))
+        if reading is not None and (pictures or not needs_ocr):
+            from interview_assistant.documents.hwpx import read_pictures
+
+            read_pictures(out, reading, pictures, picture_only=needs_ocr, chars=visible_chars, tool=self.tool)
+            return out.build()
+        reason = "그림이 외부 주소에 있어 읽지 않음" if reading is not None else ""
+        out.pages.append(
+            PageInfo(1, visible_chars, 0.0, needs_ocr, ReadMethod.held if needs_ocr else ReadMethod.text, reason)
+        )
         if needs_ocr:
             out.warnings.append("본문 텍스트 없이 그림만 있음, OCR 필요")
         return out.build()
+
+
+_DATA_URI = re.compile(r"^data:image/(?:png|jpe?g);base64,", re.I)
+
+
+def _data_pictures(soup: BeautifulSoup) -> list[tuple[str, bytes, float | None]]:
+    """Pictures embedded in the page itself (data: URIs). Linked pictures are never fetched."""
+    import base64
+    import binascii
+
+    out: list[tuple[str, bytes, float | None]] = []
+    for tag in soup.find_all("img"):
+        src = str(tag.get("src") or "").strip()
+        match = _DATA_URI.match(src)
+        if not match:
+            continue
+        try:
+            blob = base64.b64decode(src[match.end() :], validate=False)
+        except (binascii.Error, ValueError):
+            continue
+        out.append((f"그림 {len(out) + 1}", blob, None))
+    return out
 
 
 def decode_html(data: bytes) -> str:

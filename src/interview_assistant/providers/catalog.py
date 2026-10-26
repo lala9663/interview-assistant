@@ -18,7 +18,8 @@ from pathlib import Path
 from typing import Any, Literal
 
 from interview_assistant.providers import registry
-from interview_assistant.providers.weights import WHISPER, WeightSet, is_complete
+from interview_assistant.providers.programs import JAVA, LIBREOFFICE, TESSERACT, Program
+from interview_assistant.providers.weights import PADDLEOCR, TESSDATA, WHISPER, WeightSet, is_complete
 
 
 class DataLocation(str, enum.Enum):
@@ -30,9 +31,10 @@ class DataLocation(str, enum.Enum):
 @dataclass(frozen=True)
 class Role:
     key: str  # "llm.primary"; also the settings table key
-    kind: str  # registry kind: llm, stt, embedding, diarization
+    kind: str  # registry kind: llm, stt, embedding, diarization, ocr, pdf_reader ...
     label: str
     description: str
+    group: str = "ai"  # "ai" (AI 모델) or "documents" (서류 읽기): a heading on the screen
 
 
 ROLES: tuple[Role, ...] = (
@@ -42,6 +44,11 @@ ROLES: tuple[Role, ...] = (
     Role("stt.batch", "stt", "STT 사후", "녹음 파일 전사 (10단계)"),
     Role("embedding", "embedding", "임베딩", "검색·유사도 (후순위)"),
     Role("diarization", "diarization", "화자분리", "대면 면접 화자 구분 (10단계)"),
+    Role("document.reading", "reading", "읽기 방식", "텍스트 층과 OCR 중 무엇으로 읽을지, 문서 속 그림", "documents"),
+    Role("document.ocr", "ocr", "OCR 엔진", "스캔본·사진·그림 속 글자 읽기", "documents"),
+    Role("document.pdf", "pdf_reader", "PDF 텍스트 추출", "PDF의 텍스트 층 읽기", "documents"),
+    Role("document.hwp", "hwp_reader", "HWP·HWPX 읽기", "한글 문서 (HWP 5.x, HWPX)", "documents"),
+    Role("document.legacy", "office_converter", "구형 오피스 변환", ".doc·.ppt를 .docx·.pptx로 바꿔 읽기", "documents"),
 )
 ROLE_BY_KEY: dict[str, Role] = {r.key: r for r in ROLES}
 
@@ -101,6 +108,7 @@ class ImplInfo:
     weights: Mapping[str, WeightSet] = field(default_factory=dict)  # "model" option value -> files
     role_defaults: Mapping[str, Mapping[str, Any]] = field(default_factory=dict)
     role_notes: Mapping[str, str] = field(default_factory=dict)
+    programs: tuple[Program, ...] = ()  # system programs that must be installed (Tesseract ...)
 
     def field(self, key: str) -> OptionField | None:
         return next((f for f in self.options if f.key == key), None)
@@ -166,6 +174,233 @@ _WHISPER_MODELS = (
         WHISPER["large-v3-turbo"].size_bytes,
     ),
 )
+
+_LOCAL_FILES = "서류와 그림은 이 PC 밖으로 나가지 않습니다."
+_NO_LLM_IMAGES = "그림은 OCR로 글자만 읽고 버립니다. LLM에는 그림을 보내지 않습니다."
+
+
+def _document_impls() -> tuple[ImplInfo, ...]:
+    """서류 읽기: OCR engines, the readers per format, the converter and the reading mode."""
+    paddle_models = (
+        Choice(
+            "ppocrv5-mobile",
+            "PP-OCRv5 mobile + 한국어 인식",
+            "권장. 이 노트북 CPU에서 A4 한 쪽 2~7초, 메모리 최대 약 1.6GB.",
+            PADDLEOCR["ppocrv5-mobile"].size_bytes,
+            ("document.ocr",),
+        ),
+        Choice(
+            "ppocrv5-server",
+            "PP-OCRv5 server + 한국어 인식",
+            "검출 모델이 큽니다. 이 노트북 CPU에서 한 쪽 30초 이상, 메모리 약 2.9GB. GPU 서버용.",
+            PADDLEOCR["ppocrv5-server"].size_bytes,
+        ),
+    )
+    tessdata = (
+        Choice("best", "tessdata_best (kor+eng)", "정확도 우선 LSTM 모델.", TESSDATA["best"].size_bytes),
+        Choice("fast", "tessdata_fast (kor+eng)", "빠르고 작은 모델. 한국어 정확도는 더 낮습니다.", TESSDATA["fast"].size_bytes),
+    )
+    return (
+        ImplInfo(
+            "reading",
+            "standard",
+            "읽기 방식",
+            "페이지(슬라이드)마다 텍스트 층을 쓸지 OCR로 읽을지 정합니다. 깨진 텍스트 층은 보내지 않습니다.",
+            DataLocation.local,
+            "설정입니다. 데이터를 보내지 않습니다.",
+            "프로젝트 코드",
+            ("document.reading",),
+            options=(
+                OptionField(
+                    "mode",
+                    "읽기 방식",
+                    "select",
+                    "auto",
+                    "자동: 텍스트 층이 있으면 텍스트, 없거나 깨졌으면 OCR. 항상 OCR: PDF 쪽과 그림을 모두 OCR "
+                    "(문서 속성·숨은 텍스트·링크는 그대로 읽음). 텍스트만: OCR 없이, 텍스트 층 없는 쪽이 있으면 보류.",
+                    choices=(
+                        Choice("auto", "자동 (텍스트 우선, 없거나 깨지면 OCR)", recommended_for=("document.reading",)),
+                        Choice("always_ocr", "항상 OCR"),
+                        Choice("text_only", "텍스트만 (OCR 안 함)"),
+                    ),
+                ),
+                OptionField(
+                    "embedded_images",
+                    "문서 속 그림 OCR",
+                    "boolean",
+                    True,
+                    "DOCX·PPTX·HWP·PDF 안의 그림(자격증 사본, 캡처 화면)을 OCR로 읽습니다. 증명사진으로 보이는 "
+                    "그림은 이 설정과 관계없이 읽지 않고 버립니다.",
+                ),
+                OptionField(
+                    "sensitivity",
+                    "깨짐 판정 민감도",
+                    "select",
+                    "medium",
+                    "텍스트 층이 깨졌다고(글꼴 매핑 문제로 'ÀÌ·Â¼­'처럼 나옴) 볼 기준. 깨진 쪽은 OCR로 다시 읽습니다.",
+                    choices=(
+                        Choice("low", "낮음 (의심 글자 30% 이상)"),
+                        Choice("medium", "보통 (15% 이상 또는 3글자 연속)", recommended_for=("document.reading",)),
+                        Choice("high", "높음 (5% 이상 또는 2글자 연속)"),
+                    ),
+                ),
+                OptionField("dpi", "OCR 해상도 (dpi)", "integer", 200, "PDF 쪽을 그림으로 바꿀 해상도.", 100, 400),
+                OptionField(
+                    "low_confidence",
+                    "OCR 신뢰도 경고 기준",
+                    "number",
+                    0.8,
+                    "OCR 평균 신뢰도가 이보다 낮은 쪽은 검토 리포트에 경고로 남깁니다 (0~1).",
+                    minimum=0,
+                    maximum=1,
+                ),
+            ),
+        ),
+        ImplInfo(
+            "ocr",
+            "fake",
+            "Fake OCR",
+            "글자를 읽지 않고 자리 표시 한 줄만 돌려줍니다. 화면과 흐름 확인용입니다.",
+            DataLocation.local,
+            "외부 호출이 없습니다.",
+            "프로젝트 코드",
+            ("document.ocr",),
+        ),
+        ImplInfo(
+            "ocr",
+            "paddleocr",
+            "PaddleOCR (로컬, PP-OCRv5 한국어)",
+            "이 PC의 CPU에서 PP-OCRv5로 읽습니다. 무료, 오프라인. 한국어·영문·숫자.",
+            DataLocation.local,
+            f"{_LOCAL_FILES} 모델 파일만 Hugging Face에서 한 번 내려받습니다. {_NO_LLM_IMAGES}",
+            "Apache-2.0 (PaddleOCR, PaddlePaddle, PP-OCRv5 모델)",
+            ("document.ocr",),
+            options=(
+                OptionField("model", "모델", "select", "ppocrv5-mobile", choices=paddle_models),
+                OptionField(
+                    "textline_orientation",
+                    "줄 방향 보정",
+                    "boolean",
+                    False,
+                    "뒤집힌 줄을 바로 세웁니다. 바로 선 스캔에서 멀쩡한 줄을 뒤집어 망치는 일이 있어 기본은 끔.",
+                ),
+                OptionField(
+                    "doc_orientation",
+                    "쪽 방향 보정",
+                    "boolean",
+                    False,
+                    "90°·180° 돌아간 사진을 바로 세웁니다. 옆으로 찍은 휴대폰 사진이 많으면 켭니다.",
+                ),
+                OptionField("max_side", "그림 긴 변 제한 (px)", "integer", 2400, "큰 사진은 줄여서 읽습니다.", 1200, 4000),
+                OptionField("cpu_threads", "CPU 스레드", "integer", 0, "0이면 자동 (코어 수 - 4).", 0, 32),
+            ),
+            packages=(("paddleocr", "uv sync --extra ocr"), ("paddle", "uv sync --extra ocr")),
+            weights=PADDLEOCR,
+        ),
+        ImplInfo(
+            "ocr",
+            "tesseract",
+            "Tesseract (로컬, 비교용)",
+            "이 PC의 Tesseract 5로 읽습니다. 가볍고 빠르지만 한국어는 음절을 띄어 읽는 등 PaddleOCR보다 부정확합니다.",
+            DataLocation.local,
+            f"{_LOCAL_FILES} 언어 데이터만 GitHub에서 한 번 내려받습니다. {_NO_LLM_IMAGES}",
+            "Apache-2.0 (Tesseract, tessdata)",
+            ("document.ocr",),
+            options=(
+                OptionField("model", "언어 데이터", "select", "best", choices=tessdata),
+                OptionField("psm", "페이지 분할 방식 (psm)", "integer", 3, "3 자동, 4 한 단, 6 한 덩어리 글.", 3, 13),
+            ),
+            weights=TESSDATA,
+            programs=(TESSERACT,),
+        ),
+        ImplInfo(
+            "ocr",
+            "google_document_ai",
+            "Google Document AI (사내 GCP)",
+            "사내 GCP 프로젝트의 Document AI OCR. 구현 전이며 비교 대상입니다. 처리 위치는 프로세서의 리전(us·eu)입니다.",
+            DataLocation.gcp,
+            "서류 그림을 사내 GCP 프로젝트의 Document AI로 보냅니다. 회사 밖 API로는 보내지 않습니다.",
+            "상용 (GCP 과금)",
+            ("document.ocr",),
+            options=(
+                OptionField("processor_id", "프로세서 ID", "string", "ocr-processor", "Document AI OCR 프로세서."),
+                OptionField("location", "위치", "string", "us", "프로세서 리전 (us 또는 eu)."),
+            ),
+            packages=(("google.cloud.documentai", "uv sync --extra gcp"),),
+            env=("GOOGLE_CLOUD_PROJECT", "DOCUMENT_AI_PROCESSOR_ID"),
+            gcp_credentials=True,
+        ),
+        ImplInfo(
+            "ocr",
+            "clova_ocr",
+            "Naver CLOVA OCR (외부)",
+            "네이버 클라우드의 CLOVA OCR. 구현 전이며 비교 대상입니다.",
+            DataLocation.external,
+            "서류 그림(이름·연락처가 그대로 보이는 원본 쪽)을 회사 밖 네이버 클라우드로 보냅니다.",
+            "상용 (네이버 클라우드 과금)",
+            ("document.ocr",),
+            env=("CLOVA_OCR_INVOKE_URL", "CLOVA_OCR_SECRET"),
+        ),
+        ImplInfo(
+            "pdf_reader",
+            "pdfplumber",
+            "pdfplumber",
+            "본문·표·숨은 텍스트·주석·링크·속성을 읽고 자간을 되돌립니다. 텍스트 층 없는 쪽과 깨진 쪽을 가려냅니다.",
+            DataLocation.local,
+            _LOCAL_FILES,
+            "MIT (pdfplumber, pdfminer.six), Apache-2.0/BSD-3 (pypdfium2)",
+            ("document.pdf",),
+            options=(
+                OptionField(
+                    "min_text_chars",
+                    "텍스트 층 최소 글자 수",
+                    "integer",
+                    30,
+                    "한 쪽의 글자가 이보다 적고 그림이 쪽 대부분을 덮으면 텍스트 층이 없는 쪽(스캔)으로 봅니다.",
+                    5,
+                    500,
+                ),
+            ),
+            packages=(("pdfplumber", "uv sync"),),
+        ),
+        ImplInfo(
+            "hwp_reader",
+            "syhwp",
+            "syhwp + OWPML (파이썬)",
+            "HWP 5.x는 syhwp(MIT)로 열고 머리글·각주·숨은 설명을 나눠 읽습니다. HWPX는 자체 OWPML 읽기. "
+            "문서 정보·미리보기 텍스트·흰 글씨(HWPX)까지 읽고, 암호 걸린 문서는 거부합니다.",
+            DataLocation.local,
+            _LOCAL_FILES,
+            "MIT (syhwp), BSD (olefile)",
+            ("document.hwp",),
+            packages=(("syhwp", "uv sync"), ("olefile", "uv sync")),
+        ),
+        ImplInfo(
+            "hwp_reader",
+            "hwplib",
+            "hwplib (Java)",
+            "neolord0의 hwplib·hwpxlib(Apache-2.0)으로 읽는 대안 경로. 구현 전입니다. 실제 한글 샘플에서 syhwp가 "
+            "부족하면 검토합니다.",
+            DataLocation.local,
+            _LOCAL_FILES,
+            "Apache-2.0 (hwplib, hwpxlib)",
+            ("document.hwp",),
+            programs=(JAVA,),
+        ),
+        ImplInfo(
+            "office_converter",
+            "libreoffice",
+            "LibreOffice (헤드리스)",
+            "구형 .doc·.ppt를 .docx·.pptx로 바꾼 뒤 같은 방식으로 읽습니다. 매번 임시 프로필로 돌리고 매크로는 실행하지 않습니다.",
+            DataLocation.local,
+            _LOCAL_FILES,
+            "MPL-2.0 (LibreOffice, 별도 프로그램으로 실행)",
+            ("document.legacy",),
+            options=(OptionField("timeout", "변환 제한 시간 (초)", "integer", 120, minimum=30, maximum=600),),
+            programs=(LIBREOFFICE,),
+        ),
+    )
+
 
 CATALOG: tuple[ImplInfo, ...] = (
     ImplInfo(
@@ -386,6 +621,7 @@ CATALOG: tuple[ImplInfo, ...] = (
         env=("GOOGLE_CLOUD_PROJECT",),
         gcp_credentials=True,
     ),
+    *_document_impls(),
 )
 
 # Implementations registered only at run time (tests) are looked up here as well.
@@ -497,6 +733,18 @@ def requirements(
                 if ok
                 else "서비스 계정 키(GOOGLE_APPLICATION_CREDENTIALS)나 Secret Manager로 서버에만 둡니다. "
                 "화면에서는 입력받지 않습니다.",
+            )
+        )
+    for program in info.programs:
+        path = program.find()
+        version = program.version() if path else None
+        found.append(
+            Requirement(
+                program.key,
+                program.label,
+                path is not None,
+                (version or "설치되어 있습니다.") if path else "설치되어 있지 않습니다.",
+                None if path else program.install,
             )
         )
     weights = info.weights.get(str(options.get("model", "")))

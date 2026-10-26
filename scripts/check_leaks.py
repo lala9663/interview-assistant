@@ -9,13 +9,20 @@ Text mode (default): a sample fails when any value from its ground-truth list (o
 shaped like a phone number, e-mail or 주민번호) remains after de-identification, or when a `keep`
 phrase (ordinary words next to identifiers) was swallowed by a replacement.
 
-Document mode (--documents [MANIFEST]): every file is extracted (PDF, DOCX, PPTX, HTML),
-de-identified block by block including its file name and properties, and checked the same way.
-It also fails when a planted value was not extracted from where it was planted, when images
-were not dropped, or when a scanned file is not classified as needing OCR. Scanned files are
-held ("OCR 필요, 처리 보류") and reported apart from the leak count. --report [PATH] also writes
-the HTML review report (default reports/deid-review.html), which contains the raw extracted
-text: keep it local.
+Document mode (--documents [MANIFEST]): every file is read the way the app reads it
+(documents/reading.py: PDF, DOCX, PPTX, HTML, HWP/HWPX, JPG/PNG, legacy .doc/.ppt through
+LibreOffice), de-identified block by block including its file name and properties, and checked
+the same way. It also fails when a planted value was not extracted from where it was planted,
+when images were not dropped, or when a page is not classified as needing OCR when it should be
+(scan, picture, garbled text layer). With --ocr paddleocr|tesseract those pages are read by OCR
+and checked like the rest, also for values OCR misread by a character or two ("near" leaks);
+without OCR they are held ("OCR 필요, 처리 보류") and reported apart from the leak count. The
+OCR character error rate is printed per sample. --report [PATH] also writes the HTML review
+report (default reports/deid-review.html), which contains the raw extracted text: keep it
+local.
+
+    uv run python scripts/check_leaks.py --documents --ocr paddleocr
+    uv run python scripts/check_leaks.py --documents --ocr tesseract --ocr-model fast
 
 Values and file names are masked in the console unless --show-values is given, so the script is
 safe to run on real samples. Exit code 1 when any sample fails. Runs fully offline: in-memory
@@ -34,6 +41,8 @@ from interview_assistant.deid.leaks import (
     CHECKED,
     ERROR,
     OCR_HOLD,
+    REFUSED,
+    SKIPPED,
     DocumentReport,
     SampleReport,
     load_document_samples,
@@ -62,6 +71,14 @@ def main(argv: list[str] | None = None) -> int:
         "--report", type=Path, nargs="?", const=REPORT, metavar="PATH",
         help=f"write the HTML review report (default {REPORT.relative_to(ROOT)}); implies --documents",
     )  # fmt: skip
+    parser.add_argument(
+        "--ocr", choices=("none", "paddleocr", "tesseract"), default="none",
+        help="OCR engine for pages and pictures without text (models from --weights)",
+    )  # fmt: skip
+    parser.add_argument("--ocr-model", help="paddleocr: ppocrv5-mobile (default) | ppocrv5-server; tesseract: best | fast")
+    parser.add_argument("--weights", type=Path, help="model folder (default IA_WEIGHTS_DIR or weights/)")
+    parser.add_argument("--mode", choices=("auto", "always_ocr", "text_only"), default="auto")
+    parser.add_argument("--no-convert", action="store_true", help="do not convert .doc/.ppt with LibreOffice")
     parser.add_argument("--show-output", action="store_true", help="print de-identified text")
     parser.add_argument("--show-values", action="store_true", help="do not mask leaked values")
     args = parser.parse_args(argv)
@@ -109,16 +126,40 @@ def _print_report(report: SampleReport, show, show_output: bool) -> None:
         print(f"    output    {report.output}")
 
 
+def _reader(args):
+    """The app's reader (documents/reading.py) with the OCR engine and mode asked for."""
+    import os
+
+    from interview_assistant.documents.legacy import LibreOfficeConverter
+    from interview_assistant.documents.reading import DocumentReader, ReadingPolicy
+
+    weights = args.weights or Path(os.environ.get("IA_WEIGHTS_DIR") or ROOT / "weights")
+    ocr = None
+    if args.ocr == "paddleocr":
+        from interview_assistant.providers.ocr.paddle import PaddleOCRProvider
+
+        ocr = PaddleOCRProvider(model=args.ocr_model or "ppocrv5-mobile", weights_dir=weights)
+    elif args.ocr == "tesseract":
+        from interview_assistant.providers.ocr.tesseract import TesseractOCR
+
+        ocr = TesseractOCR(model=args.ocr_model or "best", weights_dir=weights)
+    converter = None if args.no_convert else LibreOfficeConverter()
+    return DocumentReader(policy=ReadingPolicy(mode=args.mode), ocr=ocr, converter=converter)
+
+
 def _documents(args, config, show) -> int:
     manifest = args.documents or MANIFEST
-    reports = run_document_leak_check(load_document_samples(manifest), config)
+    reports = run_document_leak_check(load_document_samples(manifest), config, reader=_reader(args))
     for report in reports:
         _print_document(report, show, args.show_output)
 
     checked = [r for r in reports if r.status == CHECKED]
     held = [r for r in reports if r.status == OCR_HOLD]
+    refused = [r for r in reports if r.status == REFUSED]
+    skipped = [r for r in reports if r.status == SKIPPED]
     errors = [r for r in reports if r.status == ERROR]
     failed = [r for r in reports if not r.ok]
+    read_by_ocr = [r for r in checked if r.document is not None and r.document.ocr_used]
     print()
     print(
         f"documents checked {len(checked)}, failed {sum(1 for r in checked if not r.ok)}, "
@@ -127,9 +168,19 @@ def _documents(args, config, show) -> int:
     )
     print(
         f"ocr hold {len(held)}, misclassified {sum(1 for r in reports if _misclassified(r))}"
+        + (f", refused {len(refused)}" if refused else "")
+        + (f", skipped {len(skipped)}" if skipped else "")
         + (f", errors {len(errors)}" if errors else "")
         + (f": {', '.join(r.sample.id for r in held)}" if held else "")
     )
+    if read_by_ocr:
+        rates = [r.cer for r in read_by_ocr if r.cer is not None]
+        pages = [p for r in read_by_ocr for p in r.document.pages if p.elapsed_ms is not None]
+        print(
+            f"read with OCR {len(read_by_ocr)} ({args.ocr}): near leaks {sum(len(r.near) for r in read_by_ocr)}"
+            + (f", CER mean {sum(rates) / len(rates):.2%} max {max(rates):.2%}" if rates else "")
+            + (f", {sum(p.elapsed_ms for p in pages) / len(pages) / 1000:.1f} s per OCR page" if pages else "")
+        )
 
     if args.report is not None:
         args.report.parent.mkdir(parents=True, exist_ok=True)
@@ -154,6 +205,10 @@ def _print_document(report: DocumentReport, show, show_output: bool) -> None:
     if report.status == ERROR:
         print(f"[FAIL] {s.id} {s.format:<4} {name}: {report.error}")
         return
+    if report.status in (REFUSED, SKIPPED):
+        tag = "REFU" if report.status == REFUSED else "SKIP"
+        print(f"[{tag}] {s.id} {s.format:<4} {report.error}  {name}")
+        return
     if report.status == OCR_HOLD:
         tag = "HOLD" if report.ok else "FAIL"
         print(
@@ -167,10 +222,21 @@ def _print_document(report: DocumentReport, show, show_output: bool) -> None:
             f"replaced {report.deidentified.replacements}, images dropped {doc.images_dropped}, "
             f"hidden blocks {len(doc.blocks_of(BlockKind.hidden))}  {name}"
         )
+    for p in doc.pages if doc is not None else ():
+        if p.method.value != "text":
+            confidence = f", 신뢰도 {p.confidence:.0%}" if p.confidence is not None else ""
+            seconds = f", {p.elapsed_ms / 1000:.1f}s" if p.elapsed_ms is not None else ""
+            print(f"    page {p.number:<4} {p.method.value} ({p.reason}{confidence}{seconds})")
+    if report.cer is not None:
+        print(f"    ocr cer   {report.cer:.2%}")
     for problem in report.problems:
         print(f"    problem   {problem}")
     for e, label in report.leaks:
         print(f"    leak      {e.category.value:<10} {show(e.value)}  ({label})")
+    for e, surface, label in report.near:
+        print(f"    near      {e.category.value:<10} {show(e.value)} as {show(surface)}  ({label})")
+    for value in report.ocr_missed:
+        print(f"    ocr miss  {show(value)} (only in a picture, not read)")
     for kind, surface, label in report.residual:
         print(f"    residual  {kind:<10} {show(surface)}  ({label})")
     for phrase in report.lost:

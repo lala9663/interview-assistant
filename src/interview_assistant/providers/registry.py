@@ -31,6 +31,21 @@ _IMPLS: dict[str, dict[str, str]] = {
         "fake": "interview_assistant.providers.fake:FakeDiarization",
         "google_stt_v2": "interview_assistant.providers.diarization.google_stt_v2:GoogleDiarization",
     },
+    # 서류 읽기 (documents/reading.py puts them together for each application)
+    "ocr": {
+        "fake": "interview_assistant.providers.fake:FakeOCR",
+        "paddleocr": "interview_assistant.providers.ocr.paddle:PaddleOCRProvider",
+        "tesseract": "interview_assistant.providers.ocr.tesseract:TesseractOCR",
+        "google_document_ai": "interview_assistant.providers.ocr.google_document_ai:DocumentAIOCR",
+        "clova_ocr": "interview_assistant.providers.ocr.clova:ClovaOCR",
+    },
+    "pdf_reader": {"pdfplumber": "interview_assistant.documents.pdf:PdfExtractor"},
+    "hwp_reader": {
+        "syhwp": "interview_assistant.documents.hwp:HwpReader",
+        "hwplib": "interview_assistant.documents.hwplib:HwplibReader",
+    },
+    "office_converter": {"libreoffice": "interview_assistant.documents.legacy:LibreOfficeConverter"},
+    "reading": {"standard": "interview_assistant.documents.reading:ReadingPolicyProvider"},
 }
 
 

@@ -7,7 +7,9 @@ the identity typed into the form), the recruiting site (form fields, essays, att
 later, an archive import. The steps are the same for all of them:
 
 1. find the posting, by id or by the site's posting number. Unknown or closed: refused
-2. read the attachments (documents/: PDF, DOCX, PPTX, HTML). HWP, corrupt files, scans: refused
+2. read the attachments with the 서류 읽기 settings taken at the start (documents/reading.py:
+   PDF, DOCX, PPTX, HTML, HWP/HWPX, JPG/PNG, .doc/.ppt through LibreOffice; text layer or OCR
+   page by page). Unsupported, encrypted, unreadable, or pages left unread: refused
 3. find the candidate by the site's applicant number (keyed hash) or create one with a pseudonym
 4. de-identify everything: form fields, essays, every block of every attachment
 5. profile: form fields are already structured and become the profile as they are; without them
@@ -56,6 +58,8 @@ from interview_assistant.documents import (
     extract_document,
     render_blocks,
 )
+from interview_assistant.documents.base import ConverterMissing, EncryptedDocument
+from interview_assistant.documents.reading import DocumentReader
 from interview_assistant.intake.forms import FormFields, build_profile, text_blocks, with_texts
 from interview_assistant.interviews import approved_set
 from interview_assistant.models import (
@@ -77,7 +81,10 @@ from interview_assistant.providers.base import ProviderUnavailable
 log = logging.getLogger(__name__)
 
 MAX_ATTACHMENT_BYTES = 10 * 1024 * 1024
-EXTENSIONS = {"pdf": ".pdf", "docx": ".docx", "pptx": ".pptx", "html": ".html"}
+EXTENSIONS = {
+    "pdf": ".pdf", "docx": ".docx", "pptx": ".pptx", "html": ".html", "hwp": ".hwp", "hwpx": ".hwpx",
+    "doc": ".doc", "ppt": ".ppt",
+}  # fmt: skip
 ATTACHMENT_KIND_LABEL = {"resume": "이력서", "portfolio": "포트폴리오", "certificate": "증빙", "other": "기타"}
 
 T = TypeVar("T")
@@ -248,8 +255,18 @@ def _where(inp: ApplicationInput, index: int, attachment: Attachment) -> tuple[s
     return f"첨부 {index + 1}({label}): ", f"attachments[{index}]"
 
 
-def read_attachments(inp: ApplicationInput) -> list[ExtractedDocument]:
-    """Text of every attachment, or the reason one cannot be used. No database."""
+def read_attachments(
+    inp: ApplicationInput, reader: DocumentReader | None = None
+) -> list[ExtractedDocument]:
+    """Text of every attachment, or the reason one cannot be used. No database.
+
+    `reader` carries the 서류 읽기 settings the application is processed with (taken once, at the
+    start); without it nothing is OCR'd. Codes: unsupported_attachment (format), encrypted_attachment
+    (password), converter_missing (.doc/.ppt without LibreOffice), unreadable_attachment (broken),
+    reader_unavailable (the reader configured for the format cannot run), ocr_required (a page
+    needs OCR and the setting is text only), ocr_unavailable (OCR could not read it: no engine,
+    model files missing, a failure). The last four can be retried once an admin has fixed it.
+    """
     documents = []
     for i, attachment in enumerate(inp.attachments):
         prefix, field = _where(inp, i, attachment)
@@ -257,22 +274,38 @@ def read_attachments(inp: ApplicationInput) -> list[ExtractedDocument]:
             raise IntakeRefused("invalid_field", f"{prefix}빈 파일입니다.", field=field)
         if len(attachment.data) > MAX_ATTACHMENT_BYTES:
             raise IntakeRefused("invalid_field", f"{prefix}파일이 너무 큽니다 (최대 10MB).", field=field)
+        name = attachment.filename or "upload"
         try:
-            document = extract_document(attachment.data, attachment.filename or "upload")
+            document = reader.read(attachment.data, name) if reader else extract_document(attachment.data, name)
         except UnsupportedFormat as exc:
             raise IntakeRefused("unsupported_attachment", f"{prefix}{exc}", field=field) from exc
+        except EncryptedDocument as exc:
+            raise IntakeRefused("encrypted_attachment", f"{prefix}{exc}", field=field) from exc
+        except ConverterMissing as exc:
+            raise IntakeRefused("converter_missing", f"{prefix}{exc}", field=field, retriable=True) from exc
         except ExtractionError as exc:
             raise IntakeRefused(
                 "unreadable_attachment",
                 f"{prefix}파일을 읽을 수 없습니다. 손상되었거나 암호가 걸린 파일입니다.",
                 field=field,
             ) from exc
+        except ProviderUnavailable as exc:
+            raise IntakeRefused("reader_unavailable", f"{prefix}{exc}", field=field, retriable=True) from exc
         if document.needs_ocr:
-            pages = ", ".join(map(str, document.ocr_pages))
+            held = [p for p in document.pages if p.needs_ocr]
+            pages = ", ".join(str(p.number) for p in held)
+            if any("텍스트만" in p.reason for p in held) or reader is None:
+                raise IntakeRefused(
+                    "ocr_required",
+                    f"{prefix}텍스트 층이 없는 쪽이 있어 OCR이 필요합니다 ({pages}쪽). 읽기 방식이 "
+                    "'텍스트만'이면 관리자가 '자동'으로 바꾼 뒤 다시 처리합니다.",
+                    field=field,
+                    retriable=True,
+                )
             raise IntakeRefused(
-                "ocr_required",
-                f"{prefix}스캔본이라 글자를 읽을 수 없습니다 (OCR 필요, {pages}쪽). 텍스트가 있는 "
-                "PDF·DOCX로 올려 주세요.",
+                "ocr_unavailable",
+                f"{prefix}OCR로 읽지 못했습니다 ({pages}쪽: {held[0].reason}). 관리자 > 모델 설정에서 "
+                "OCR 엔진을 확인한 뒤 다시 처리합니다.",
                 field=field,
                 retriable=True,
             )
@@ -396,12 +429,51 @@ def _document_info(
     else:
         fmt = "+".join([inp.channel.value, *formats])
     blocks = [*form_blocks, *(b for group in attachment_blocks for b in group)]
-    return {
+    info: dict[str, Any] = {
         "format": fmt,
         "blocks": len(blocks),
         "hidden_blocks": sum(b.kind is BlockKind.hidden for b in blocks),
         "images_dropped": sum(d.images_dropped for d in documents),
         "replacements": replacements,
+    }
+    readings = [d for d in documents if d.reading is not None]
+    if readings:
+        info["reading"] = reading_summary(readings)
+    return info
+
+
+def reading_summary(documents: list[ExtractedDocument]) -> dict[str, Any]:
+    """How the attachments were read, kept with the application: the settings revision, mode,
+    tools with versions, and per file the pages read by OCR with their confidence. Labels and
+    numbers only, nothing from the files."""
+    first = documents[0].reading
+    assert first is not None
+    files = []
+    for d in documents:
+        ocr = [p for p in d.pages if p.method.value == "ocr"]
+        files.append(
+            {
+                "format": d.format,
+                "converted_from": d.reading.converted_from if d.reading else None,
+                "pages": len(d.pages),
+                "ocr_pages": [p.number for p in ocr],
+                "ocr_confidence": (
+                    round(min(p.confidence for p in ocr if p.confidence is not None), 3)
+                    if any(p.confidence is not None for p in ocr)
+                    else None
+                ),
+                "pictures_read": sum(1 for i in d.images if i.decision == "ocr"),
+                "photos_dropped": sum(1 for i in d.images if i.decision == "photo"),
+                "garbled_pages": [p.number for p in d.pages if p.garbled is not None and "깨짐" in p.reason],
+            }
+        )
+    return {
+        "revision": first.revision,
+        "mode": first.mode,
+        "embedded_images": first.embedded_images,
+        "sensitivity": first.sensitivity,
+        "tools": list(dict.fromkeys(t for d in documents if d.reading for t in d.reading.tools)),
+        "files": files,
     }
 
 
@@ -423,15 +495,21 @@ def _store_files(
     base = uploads_dir / candidate_id
     if inp.channel is ApplicationChannel.upload and len(inp.attachments) == 1:
         base.mkdir(parents=True, exist_ok=True)
-        path = base / f"{application_id}{EXTENSIONS.get(documents[0].format, '')}"
+        path = base / f"{application_id}{_extension(documents[0], inp.attachments[0].data)}"
         path.write_bytes(inp.attachments[0].data)
         return path.resolve().as_uri(), path
     folder = base / application_id / new_id()[:8]
     folder.mkdir(parents=True, exist_ok=True)
     for i, (attachment, document) in enumerate(zip(inp.attachments, documents, strict=True), 1):
         kind = attachment.kind if attachment.kind in ATTACHMENT_KIND_LABEL else "other"
-        (folder / f"{i}-{kind}{EXTENSIONS.get(document.format, '')}").write_bytes(attachment.data)
+        (folder / f"{i}-{kind}{_extension(document, attachment.data)}").write_bytes(attachment.data)
     return folder.resolve().as_uri() + "/", folder
+
+
+def _extension(document: ExtractedDocument, data: bytes) -> str:
+    if document.format == "image":
+        return ".png" if data[:4] == b"\x89PNG" else ".jpg"
+    return EXTENSIONS.get(document.format, "")
 
 
 def remove_files(uri: str | None) -> None:
@@ -476,13 +554,15 @@ async def process_application(
     ai: AiGateway,
     deid: DeidService,
     uploads_dir: Path,
+    reader: DocumentReader | None = None,
 ) -> ApplicationOutcome:
     """Apply one application (see the module docstring). Raises IntakeRefused with a reason
     code; model errors come through as AiOutputInvalid / IdentifierInPrompt / ProviderUnavailable,
-    anything else from the model as IntakeRefused("ai_failed")."""
+    anything else from the model as IntakeRefused("ai_failed"). `reader` comes from the same
+    model-settings snapshot as `ai` (`ProviderSet.reader`); without it nothing is OCR'd."""
     posting = find_posting(db, inp)
     _require(inp)
-    documents = await in_thread(read_attachments, inp)
+    documents = await in_thread(read_attachments, inp, reader)
     applicant_hash = deid.applicant_hash(inp.applicant_no) if inp.applicant_no else None
     async with LOCKS.hold(f"applicant:{applicant_hash}" if applicant_hash else None):
         return await _apply(db, inp, posting, documents, applicant_hash, ai=ai, deid=deid, uploads_dir=uploads_dir)

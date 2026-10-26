@@ -22,6 +22,7 @@ import { parseRationale, SCREENING_STATUS_LABEL } from '@/lib/labels'
 import { formatDate, formatDateTime } from '@/lib/time'
 import { toastError } from '@/lib/toast'
 
+import ReadingSummary from './ReadingSummary.vue'
 import SheetSection from './SheetSection.vue'
 
 const props = defineProps<{ applicationId: string; postingId: string }>()
@@ -69,6 +70,8 @@ const change = (status: string) => {
         <ChannelBadge :channel="q.data.application.channel" class="mt-1.5" />
       </div>
     </div>
+
+    <ReadingSummary v-if="q.data.document?.reading" :reading="q.data.document.reading" />
 
     <p v-if="q.data.application.withdrawn_at" class="rounded-lg border bg-subtle px-3 py-2 text-[13px] text-muted-foreground" role="status">
       지원자가 채용 사이트에서 {{ formatDateTime(q.data.application.withdrawn_at) }}에 철회했습니다. 목록과 면접 잡기에서 빠졌습니다.

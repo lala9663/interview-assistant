@@ -2,6 +2,7 @@ import { CloudIcon, GlobeIcon, MonitorIcon } from '@lucide/vue'
 import type { Component } from 'vue'
 
 import type { DataLocation, ModelChangeKind, ModelImpl, ModelOptionField, ModelOptionValue, ModelRole, ModelSpec } from '@/api/types'
+import { MODEL_ROLE_KIND } from '@/api/types'
 
 export const DATA_LOCATION: Record<DataLocation, { label: string; hint: string; variant: 'success' | 'brand' | 'warning'; icon: Component }> = {
   local: { label: '이 PC', hint: '데이터가 이 서버 밖으로 나가지 않습니다.', variant: 'success', icon: MonitorIcon },
@@ -11,7 +12,7 @@ export const DATA_LOCATION: Record<DataLocation, { label: string; hint: string; 
 
 export const CHANGE_KIND_LABEL: Record<ModelChangeKind, string> = { initial: '처음 설정', apply: '변경', rollback: '되돌림' }
 
-export const kindOf = (role: string) => role.split('.')[0] as ModelImpl['kind']
+export const kindOf = (role: string): ModelImpl['kind'] => MODEL_ROLE_KIND[role as ModelRole] ?? (role.split('.')[0] as ModelImpl['kind'])
 
 /** "STT 사후를", "LLM 주 모델을": the object particle after the last Hangul syllable. */
 export function withObjectParticle(word: string): string {
@@ -22,6 +23,18 @@ export function withObjectParticle(word: string): string {
 
 /** Roles that take a voice sample in the connection test. */
 export const takesAudio = (role: string) => role.startsWith('stt.') || role === 'diarization'
+
+/** 서류 읽기 roles: tested by reading a document (built-in fictional resume or a file). */
+export const takesDocument = (role: string) => role.startsWith('document.')
+
+export const READ_METHOD_LABEL: Record<string, string> = { text: '텍스트 층', ocr: 'OCR', held: '보류' }
+export const PICTURE_LABEL: Record<string, string> = {
+  photo: '증명사진: 읽지 않고 버림',
+  ocr: 'OCR로 읽음',
+  skipped: '읽지 않음 (설정)',
+  small: '너무 작아 건너뜀',
+  failed: 'OCR 실패',
+}
 
 export function formatBytes(n: number | null | undefined): string {
   if (!n) return '–'
@@ -57,4 +70,6 @@ export const ROLE_SHORT: Record<string, string> = {
   'stt.batch': '사후',
   'llm.primary': '주 모델',
   'llm.screening': '선별용',
+  'document.ocr': 'OCR',
+  'document.reading': '읽기 방식',
 }

@@ -1,7 +1,7 @@
 """Which provider serves each AI role right now, and switching it without a restart.
 
-A `ProviderSet` is an immutable snapshot of the six roles at one config revision, with its own AI
-gateway. `ModelManager.active` is the set new work uses; replacing it is a single reference
+A `ProviderSet` is an immutable snapshot of every role (AI models and 서류 읽기) at one config
+revision, with its own AI gateway. `ModelManager.active` is the set new work uses; replacing it is a single reference
 assignment, so a request or background task that already holds a set keeps it to the end.
 Interview sessions pin the revision they started with (`InterviewSession.ai_config_revision`) and
 get their set back from `for_revision`, rebuilt from the history when needed (after a restart):
@@ -31,6 +31,7 @@ from sqlalchemy.orm import Session, sessionmaker
 from interview_assistant.ai.gateway import AiGateway
 from interview_assistant.ai_models import store
 from interview_assistant.config import ProviderSpec, Settings, load_providers
+from interview_assistant.documents.reading import DocumentReader
 from interview_assistant.models import (
     AiModelChange,
     AiScoringStatus,
@@ -97,6 +98,19 @@ class Unavailable:
     async def diarize(self, *args: Any, **kwargs: Any) -> Any:
         raise self._fail()
 
+    # 서류 읽기: an unusable reader refuses the files it would read; an unusable OCR engine
+    # leaves pages unread (held), which the intake reports as such.
+    def recognize(self, *args: Any, **kwargs: Any) -> Any:
+        raise self._fail()
+
+    def extract(self, *args: Any, **kwargs: Any) -> Any:
+        raise self._fail()
+
+    def convert(self, *args: Any, **kwargs: Any) -> Any:
+        from interview_assistant.documents.base import ConverterMissing
+
+        raise ConverterMissing(str(self._fail()))
+
 
 @dataclass(frozen=True)
 class ProviderSet:
@@ -110,6 +124,31 @@ class ProviderSet:
 
     def get(self, role: str) -> Any:
         return self.by_role[role]
+
+    @property
+    def reader(self) -> DocumentReader:
+        """Reads uploaded documents with this snapshot's 서류 읽기 settings. Take it once at the
+        start of a piece of work: the work then finishes with these settings even if an admin
+        changes them meanwhile, and its result records this revision."""
+        return reader_for(self.by_role, self.revision)
+
+
+def reader_for(by_role: Mapping[str, Any], revision: int | None) -> DocumentReader:
+    from interview_assistant.documents.reading import ReadingPolicy
+
+    policy = getattr(by_role.get("document.reading"), "policy", None) or ReadingPolicy()
+    extractors: dict[str, Any] = {}
+    if "document.pdf" in by_role:
+        extractors["pdf"] = by_role["document.pdf"]
+    if "document.hwp" in by_role:
+        extractors["hwp"] = extractors["hwpx"] = by_role["document.hwp"]
+    return DocumentReader(
+        policy=policy,
+        ocr=by_role.get("document.ocr"),
+        extractors=extractors,
+        converter=by_role.get("document.legacy"),
+        revision=revision,
+    )
 
 
 @dataclass(frozen=True)
@@ -220,7 +259,7 @@ class ModelManager:
             "stt": p.stt.get(slot),
             "embedding": p.embedding,
             "diarization": p.diarization,
-        }[role.kind]
+        }.get(role.kind)  # document roles have no presets: built from their specs
 
     async def warm_up_active(self) -> None:
         """Load the active providers' weights in the background after startup."""

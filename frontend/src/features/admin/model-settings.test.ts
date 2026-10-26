@@ -18,16 +18,23 @@ const card = async (role: string) => {
 const next = (user: ReturnType<typeof userEvent.setup>) => user.click(screen.getByRole('button', { name: /다음/ }))
 
 describe('관리자 > 모델 설정', () => {
-  it('shows the six roles with provider, model, status and where their data goes', async () => {
+  it('shows the AI roles and the 서류 읽기 roles with provider, model, status and where their data goes', async () => {
     await renderPage()
-    const cards = await screen.findAllByTestId('role-card')
-    expect(cards.map((c) => c.dataset.role)).toEqual(['llm.primary', 'llm.screening', 'stt.streaming', 'stt.batch', 'embedding', 'diarization'])
+    await screen.findAllByTestId('role-card')
+    const ai = within(screen.getByTestId('group-ai')).getAllByTestId('role-card')
+    expect(ai.map((c) => c.dataset.role)).toEqual(['llm.primary', 'llm.screening', 'stt.streaming', 'stt.batch', 'embedding', 'diarization'])
+    const docs = within(screen.getByTestId('group-documents')).getAllByTestId('role-card')
+    expect(docs.map((c) => c.dataset.role)).toEqual(['document.reading', 'document.ocr', 'document.pdf', 'document.hwp', 'document.legacy'])
+    expect(screen.getByRole('heading', { name: '서류 읽기' })).toBeInTheDocument()
+    const ocr = await card('document.ocr')
+    expect(within(ocr).getByText('PaddleOCR (로컬, PP-OCRv5 한국어)')).toBeInTheDocument()
+    expect(within(ocr).getByTestId('data-location')).toHaveTextContent('이 PC')
     const primary = await card('llm.primary')
     expect(within(primary).getByText('Claude (Vertex AI)')).toBeInTheDocument()
     expect(within(primary).getByTestId('role-model')).toHaveTextContent('claude-opus-5-5')
     expect(within(primary).getByTestId('data-location')).toHaveTextContent('사내 GCP')
     expect(within(primary).getByText('사용 가능')).toBeInTheDocument()
-    expect(await screen.findAllByTestId('history-row')).toHaveLength(6)
+    expect(await screen.findAllByTestId('history-row')).toHaveLength(11)
   })
 
   it('switches the batch STT to local Whisper: download, check, test, reason, apply, history, rollback', async () => {
@@ -72,7 +79,7 @@ describe('관리자 > 모델 설정', () => {
     await waitFor(async () => expect(within(await card('stt.batch')).getByTestId('role-model')).toHaveTextContent('faster-whisper-small'))
     expect(within(await card('stt.batch')).getByTestId('data-location')).toHaveTextContent('이 PC')
     const rows = await screen.findAllByTestId('history-row')
-    await waitFor(() => expect(screen.getAllByTestId('history-row')).toHaveLength(7))
+    await waitFor(() => expect(screen.getAllByTestId('history-row')).toHaveLength(12))
     const latest = screen.getAllByTestId('history-row')[0]!
     expect(latest).toHaveTextContent('김서연')
     expect(latest).toHaveTextContent('사후 전사를 로컬 Whisper로')
@@ -109,6 +116,70 @@ describe('관리자 > 모델 설정', () => {
     await user.click(screen.getByTestId('apply'))
     await waitFor(async () => expect(within(await card('llm.primary')).getByTestId('data-location')).toHaveTextContent('외부'))
     expect(getDb().models.history[0]!.details).toMatchObject({ confirmed_external: true })
+  })
+
+  it('switches the OCR engine to Tesseract: download its language data, read the sample, apply, roll back', async () => {
+    const user = userEvent.setup()
+    await renderPage()
+    await user.click(within(await card('document.ocr')).getByRole('button', { name: 'OCR 엔진 변경' }))
+    await user.click(await screen.findByTestId('impl-tesseract'))
+    await next(user)
+    await user.click(within(screen.getByTestId('model-choice-fast')).getByRole('button', { name: /다운로드 6MB/ }))
+    await user.click(screen.getByTestId('model-choice-fast'))
+    await waitFor(() => expect(within(screen.getByTestId('model-choice-fast')).getByText('내려받음')).toBeInTheDocument(), { timeout: 4000 })
+    await next(user)
+    await waitFor(() => expect(screen.getByRole('button', { name: /다음/ })).toBeEnabled())
+    expect(screen.getByText('프로그램 Tesseract')).toBeInTheDocument()
+    await next(user)
+    expect(screen.getByText(/가상 이력서 PNG/)).toBeInTheDocument()
+    await user.click(screen.getByTestId('run-test'))
+    const result = await screen.findByTestId('test-result')
+    expect(result).toHaveAttribute('data-ok', 'true')
+    const pages = within(result).getByTestId('reading-pages')
+    expect(within(pages).getAllByRole('row')).toHaveLength(3)
+    expect(pages.querySelector('[data-method="ocr"]')).toHaveTextContent('Tesseract')
+    expect(within(result).getByTestId('reading-images')).toHaveTextContent('증명사진: 읽지 않고 버림')
+    expect(within(result).getByTestId('reading-preview')).toHaveTextContent('[지원자]')
+    await next(user)
+    await user.type(screen.getByLabelText('변경 사유'), 'Tesseract와 비교')
+    await user.click(screen.getByTestId('apply'))
+    await waitFor(async () => expect(within(await card('document.ocr')).getByTestId('role-model')).toHaveTextContent('Tesseract kor+eng (fast)'))
+
+    await waitFor(() => expect(screen.getAllByTestId('history-row')[0]).toHaveTextContent('Tesseract (로컬, 비교용) · fast'))
+    const latest = screen.getAllByTestId('history-row')[0]!
+    await user.click(within(latest).getByRole('button', { name: /되돌리기/ }))
+    await user.type(screen.getByLabelText('사유'), 'PaddleOCR로 복귀')
+    await user.click(screen.getByTestId('confirm-revert'))
+    await waitFor(async () => expect(within(await card('document.ocr')).getByTestId('role-model')).toHaveTextContent('PP-OCRv5 mobile 한국어'))
+  })
+
+  it('the text-only reading mode holds pages that need OCR in the test, as intended', async () => {
+    const user = userEvent.setup()
+    await renderPage()
+    await user.click(within(await card('document.reading')).getByRole('button', { name: '읽기 방식 변경' }))
+    await next(user)
+    await user.click(screen.getByRole('combobox', { name: '읽기 방식' }))
+    await user.click(await screen.findByRole('option', { name: '텍스트만 (OCR 안 함)' }))
+    await next(user)
+    await waitFor(() => expect(screen.getByRole('button', { name: /다음/ })).toBeEnabled())
+    await next(user)
+    await user.click(screen.getByTestId('run-test'))
+    const result = await screen.findByTestId('test-result')
+    expect(result).toHaveAttribute('data-ok', 'true') // holding is what the setting is for: it can be applied
+    expect(result).toHaveTextContent('보류합니다')
+    expect(within(result).getByTestId('reading-pages').querySelector('[data-method="held"]')).not.toBeNull()
+    expect(screen.getByRole('button', { name: /다음/ })).toBeEnabled()
+  })
+
+  it('an external OCR service warns that original page images leave the company', async () => {
+    const user = userEvent.setup()
+    await renderPage()
+    await user.click(within(await card('document.ocr')).getByRole('button', { name: 'OCR 엔진 변경' }))
+    const clova = await screen.findByTestId('impl-clova_ocr')
+    expect(clova).toHaveTextContent('외부')
+    expect(clova).toHaveTextContent('구현: 아직 구현되지 않았습니다.')
+    await user.click(clova)
+    expect(screen.getByRole('list', { name: '단계' })).toHaveTextContent('외부 전송')
   })
 
   it('is for admins only: no menu item, no page', async () => {

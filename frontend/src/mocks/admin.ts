@@ -21,7 +21,8 @@ import {
   specLabel,
   SpecError,
   testResult,
-  WHISPER_SIZES,
+  WEIGHT_SIZES,
+  weightKey,
   type ModelState,
 } from './models'
 
@@ -38,28 +39,33 @@ const same = (a: ModelSpec, b: ModelSpec) => JSON.stringify(a) === JSON.stringif
 
 function catalogOf(state: ModelState) {
   syncDownloads(state)
-  return mockCatalog(state.downloaded)
+  // As impl_view: machine-level requirements (package, program, credentials); downloads are per model.
+  return mockCatalog(state.downloaded).map((i) => ({
+    ...i,
+    requirements: requirementsFor(i, {}, state.downloaded).filter((r) => !r.key.startsWith('weights:')),
+  }))
 }
 
 function syncDownloads(state: ModelState) {
-  for (const [model, job] of state.downloads) {
+  for (const [key, job] of state.downloads) {
     if (!job.cancelled && Date.now() - job.startedAt >= job.durationMs) {
-      state.downloaded.add(model)
-      state.downloads.delete(model)
+      state.downloaded.add(key)
+      state.downloads.delete(key)
     }
   }
 }
 
-function downloadView(state: ModelState, model: string): ModelDownload {
+function downloadView(state: ModelState, impl: string, model: string): ModelDownload {
   syncDownloads(state)
-  const total = WHISPER_SIZES[model] ?? 0
-  const job = state.downloads.get(model)
-  if (state.downloaded.has(model)) return { impl: 'faster_whisper', model, status: 'done', total_bytes: total, downloaded_bytes: total, error: null }
+  const key = weightKey(impl, model)
+  const total = WEIGHT_SIZES[impl]?.[model] ?? 0
+  const job = state.downloads.get(key)
+  if (state.downloaded.has(key)) return { impl, model, status: 'done', total_bytes: total, downloaded_bytes: total, error: null }
   if (job && !job.cancelled) {
     const share = Math.min(0.99, (Date.now() - job.startedAt) / job.durationMs)
-    return { impl: 'faster_whisper', model, status: 'downloading', total_bytes: total, downloaded_bytes: Math.round(total * share), error: null }
+    return { impl, model, status: 'downloading', total_bytes: total, downloaded_bytes: Math.round(total * share), error: null }
   }
-  return { impl: 'faster_whisper', model, status: job?.cancelled ? 'cancelled' : 'missing', total_bytes: total, downloaded_bytes: 0, error: null }
+  return { impl, model, status: job?.cancelled ? 'cancelled' : 'missing', total_bytes: total, downloaded_bytes: 0, error: null }
 }
 
 /** Validate a spec for a role; a Response on failure. */
@@ -99,7 +105,7 @@ function record(db: MockDb, role: ModelRole, kind: ModelChange['kind'], spec: Mo
     new_label: specLabel(catalog, role, spec) ?? '',
     reason,
     reverts_change_id: reverts,
-    details: { model: modelName(spec), data_location: findImpl(catalog, role, spec.impl)?.data_location, confirmed_external: external },
+    details: { model: modelName(spec, role), data_location: findImpl(catalog, role, spec.impl)?.data_location, confirmed_external: external },
   }
   state.history.unshift(change)
   state.active[role] = structuredClone(spec)
@@ -137,7 +143,7 @@ export const adminHandlers = [
     await latency(80)
     const db = getDb()
     if (!db.me.is_admin) return forbidden()
-    return HttpResponse.json(Object.keys(WHISPER_SIZES).map((m) => downloadView(db.models, m)))
+    return HttpResponse.json(Object.entries(WEIGHT_SIZES).flatMap(([impl, sizes]) => Object.keys(sizes).map((m) => downloadView(db.models, impl, m))))
   }),
 
   http.post(`${API}/downloads`, async ({ request }) => {
@@ -145,22 +151,23 @@ export const adminHandlers = [
     const db = getDb()
     if (!db.me.is_admin) return forbidden()
     const body = (await request.json()) as { impl: string; model: string }
-    if (body.impl !== 'faster_whisper' || !(body.model in WHISPER_SIZES)) return HttpResponse.json({ detail: '모델 파일을(를) 찾을 수 없습니다.' }, { status: 404 })
-    const now = downloadView(db.models, body.model)
+    if (!(body.model in (WEIGHT_SIZES[body.impl] ?? {}))) return HttpResponse.json({ detail: '모델 파일을(를) 찾을 수 없습니다.' }, { status: 404 })
+    const now = downloadView(db.models, body.impl, body.model)
     if (now.status !== 'done' && now.status !== 'downloading') {
-      db.models.downloads.set(body.model, { startedAt: Date.now(), durationMs: DOWNLOAD_MS * mockConfig.speed, cancelled: false })
+      db.models.downloads.set(weightKey(body.impl, body.model), { startedAt: Date.now(), durationMs: DOWNLOAD_MS * mockConfig.speed, cancelled: false })
     }
-    return HttpResponse.json(downloadView(db.models, body.model), { status: 202 })
+    return HttpResponse.json(downloadView(db.models, body.impl, body.model), { status: 202 })
   }),
 
   http.delete(`${API}/downloads/:impl/:model`, async ({ params }) => {
     await latency()
     const db = getDb()
     if (!db.me.is_admin) return forbidden()
+    const impl = String(params.impl)
     const model = String(params.model)
-    const job = db.models.downloads.get(model)
+    const job = db.models.downloads.get(weightKey(impl, model))
     if (job) job.cancelled = true
-    return HttpResponse.json(downloadView(db.models, model))
+    return HttpResponse.json(downloadView(db.models, impl, model))
   }),
 
   http.post(`${API}/:role/check`, async ({ params, request }) => {
@@ -198,7 +205,8 @@ export const adminHandlers = [
       return conflict('회사 밖으로 데이터를 보내는 provider입니다. 경고를 확인한 뒤 테스트하세요.')
     if (p.unmet.length) return conflict(`요구 조건을 충족하지 않습니다: ${p.unmet.map((r) => r.label).join(', ')}`)
     const audio = form.get('audio')
-    const result = testResult(params.role, p.spec, audio instanceof File ? audio : null)
+    const document = form.get('document')
+    const result = testResult(params.role, p.spec, audio instanceof File ? audio : null, document instanceof File ? document : null)
     await latency(Math.min(result.latency_ms, 1500))
     return HttpResponse.json(result)
   }),

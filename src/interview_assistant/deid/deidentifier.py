@@ -38,11 +38,18 @@ class Deidentifier:
         self._allow = frozenset(lookup_key(term) for term in allow)
 
     def deidentify(
-        self, text: str, *, candidate_id: str, known: KnownIdentity | None = None
+        self,
+        text: str,
+        *,
+        candidate_id: str,
+        known: KnownIdentity | None = None,
+        extra: Sequence[Detector] = (),
     ) -> DeidResult:
+        """`extra`: detectors for this text only (the OCR-tolerant one on a document's OCR'd
+        blocks, deid/documents.py)."""
         detections = [
             d
-            for detector in self.detectors
+            for detector in (*self.detectors, *extra)
             for d in detector.detect(text, known)
             if not self._is_allowed(d)
         ]

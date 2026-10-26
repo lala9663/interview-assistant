@@ -5,8 +5,12 @@ block ("오태호 팀장님") is also caught where it appears alone in another, 
 consistent across blocks. A separator no detector can match keeps spans from crossing block
 boundaries; should one ever cross, each block is de-identified on its own instead.
 
-A document with pages that need OCR is refused (`OcrRequired`): sending the readable part
-alone would silently drop content, and the PoC has no OCR.
+A document with pages that still need OCR (not read: text-only setting, OCR unavailable) is
+refused (`OcrRequired`): sending the readable part alone would silently drop content.
+
+Blocks read by OCR may hold the applicant's identifiers misread by a character or two; those
+spans also go through the OCR-tolerant detector (deid/detectors/ocr.py), which matches the known
+identity with that tolerance.
 """
 
 from __future__ import annotations
@@ -14,6 +18,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 from interview_assistant.deid.deidentifier import Deidentifier
+from interview_assistant.deid.detectors.ocr import OcrTolerantDetector
 from interview_assistant.deid.types import KnownIdentity, Replacement
 from interview_assistant.documents.types import BlockKind, ExtractedDocument, render_blocks
 
@@ -32,6 +37,7 @@ class DeidentifiedBlock:
     label: str
     text: str
     replacements: tuple[Replacement, ...]  # offsets into the block's original text
+    ocr: bool = False
 
 
 @dataclass(frozen=True)
@@ -60,12 +66,15 @@ def deidentify_document(
     if document.needs_ocr:
         raise OcrRequired(document.ocr_pages)
     texts = [b.text.replace("␞", " ") for b in document.blocks]
-    result = deidentifier.deidentify(_SEPARATOR.join(texts), candidate_id=candidate_id, known=known)
-
     starts, pos = [], 0
     for text in texts:
         starts.append(pos)
         pos += len(text) + len(_SEPARATOR)
+    ocr_spans = [(s, s + len(t)) for s, t, b in zip(starts, texts, document.blocks, strict=True) if b.ocr]
+    extra = (OcrTolerantDetector(ocr_spans),) if ocr_spans else ()
+    result = deidentifier.deidentify(
+        _SEPARATOR.join(texts), candidate_id=candidate_id, known=known, extra=extra
+    )
     per_block: list[list[Replacement]] = [[] for _ in texts]
     crossed = False
     for r in result.replacements:
@@ -80,11 +89,16 @@ def deidentify_document(
     blocks = []
     for block, text, replacements in zip(document.blocks, texts, per_block, strict=True):
         if crossed:
-            single = deidentifier.deidentify(text, candidate_id=candidate_id, known=known)
-            blocks.append(DeidentifiedBlock(block.kind, block.label, single.text, single.replacements))
+            extra = (OcrTolerantDetector([(0, len(text))]),) if block.ocr else ()
+            single = deidentifier.deidentify(text, candidate_id=candidate_id, known=known, extra=extra)
+            blocks.append(
+                DeidentifiedBlock(block.kind, block.label, single.text, single.replacements, block.ocr)
+            )
         else:
             blocks.append(
-                DeidentifiedBlock(block.kind, block.label, _apply(text, replacements), tuple(replacements))
+                DeidentifiedBlock(
+                    block.kind, block.label, _apply(text, replacements), tuple(replacements), block.ocr
+                )
             )
     return DeidentifiedDocument(document.format, tuple(blocks), document.images_dropped)
 

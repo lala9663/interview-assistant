@@ -7,8 +7,13 @@ block, link targets and annotation contents. Document properties come from the I
 and the XMP packet. Letter-spaced lines (자간을 넓힌 머리글 "권 하 린") are read from the glyph
 positions back into words ("권하린") before the text goes anywhere.
 
-A page whose content is an image with (almost) no text layer is marked as needing OCR. No
-text is produced for it: the PoC has no OCR, and the document is held back as a whole.
+A page whose content is an image with (almost) no text layer needs OCR. Without `reading` it is
+only marked (`needs_ocr`) and the document is held back as a whole. With `reading`
+(documents/reading.py) each page is planned: its text layer when usable, OCR of the rendered
+page when there is none or when the layer is garbled (quality.py; the garbled text, hidden text
+included, is dropped), always OCR or text only as the policy says. On a page read as text,
+pictures smaller than half the page are checked for an ID photo and read by OCR as the policy
+says (a larger picture behind a text layer is a background or the scan of a searchable PDF).
 """
 
 from __future__ import annotations
@@ -31,7 +36,9 @@ from interview_assistant.documents.base import (
 )
 from interview_assistant.documents.normalize import collapse
 from interview_assistant.documents.ooxml import local, parse_xml
-from interview_assistant.documents.types import BlockKind, ExtractedDocument, PageInfo
+from interview_assistant.documents.quality import assess
+from interview_assistant.documents.render import PdfRenderer
+from interview_assistant.documents.types import BlockKind, ExtractedDocument, PageInfo, ReadMethod
 
 Obj = dict[str, Any]
 
@@ -43,28 +50,42 @@ _RDF = "http://www.w3.org/1999/02/22-rdf-syntax-ns#"
 class PdfExtractor(DocumentExtractor):
     format = "pdf"
 
-    def __init__(self, *, min_text_chars: int = 30, scan_coverage: float = 0.5) -> None:
+    def __init__(self, *, min_text_chars: int = 30, scan_coverage: float = 0.5, **_: Any) -> None:
         """A page needs OCR when it has fewer than `min_text_chars` readable characters and
         either images cover at least `scan_coverage` of it or its text has no Unicode mapping."""
+        from interview_assistant.documents.reading import package_version
+
         self.min_text_chars = min_text_chars
         self.scan_coverage = scan_coverage
+        self.tool = package_version("pdfplumber")
+        self.model = self.tool
 
-    def extract(self, data: bytes, filename: str) -> ExtractedDocument:
+    async def warm_up(self) -> None:
+        return None
+
+    def extract(self, data: bytes, filename: str, *, reading: Any = None) -> ExtractedDocument:
         out = BlockCollector(filename, self.format)
+        renderer = PdfRenderer(data) if reading is not None else None
         try:
             with pdfplumber.open(io.BytesIO(data)) as pdf:
                 out.add_metadata((_INFO_KEYS.get(k, k), v) for k, v in _info(pdf).items())
                 out.add_metadata(_xmp(pdf))
                 for page in pdf.pages:
-                    self._page(page, out)
+                    self._page(page, out, reading, renderer)
         except ExtractionError:
             raise
         except Exception as exc:  # pdfminer raises a zoo of types for broken/encrypted files
             raise ExtractionError(f"PDF를 읽을 수 없습니다: {type(exc).__name__}: {exc}") from None
+        finally:
+            if renderer is not None:
+                renderer.close()
         return out.build()
 
-    def _page(self, page: Any, out: BlockCollector) -> None:
+    def _page(
+        self, page: Any, out: BlockCollector, reading: Any = None, renderer: PdfRenderer | None = None
+    ) -> None:
         n = page.page_number
+        start = len(out.blocks)
         chars: list[Obj] = page.chars
         fills = [r for r in page.rects if r.get("fill") and not _is_white(r.get("non_stroking_color"))]
         images: list[Obj] = page.images
@@ -99,11 +120,68 @@ class PdfExtractor(DocumentExtractor):
             coverage >= self.scan_coverage or unmapped > 0
         )
         out.images += len(images)
-        out.pages.append(PageInfo(n, readable, round(coverage, 3), needs_ocr))
-        if needs_ocr:
-            out.warnings.append(f"{n}쪽: 텍스트 레이어 없음, OCR 필요")
-        elif unmapped:
-            out.warnings.append(f"{n}쪽: 유니코드 매핑 없는 글자 {unmapped}개 제외")
+        if reading is None or renderer is None:
+            out.pages.append(PageInfo(n, readable, round(coverage, 3), needs_ocr))
+            if needs_ocr:
+                out.warnings.append(f"{n}쪽: 텍스트 레이어 없음, OCR 필요")
+            elif unmapped:
+                out.warnings.append(f"{n}쪽: 유니코드 매핑 없는 글자 {unmapped}개 제외")
+            return
+
+        layer = [b for b in out.blocks[start:] if b.kind in (BlockKind.body, BlockKind.table)]
+        quality = assess("\n".join(b.text for b in layer)) if layer else None
+        method, reason = reading.plan(has_text=not needs_ocr, quality=quality)
+        garbled = quality is not None and quality.garbled(reading.policy.sensitivity)
+        info = dict(
+            number=n,
+            text_chars=readable,
+            image_coverage=round(coverage, 3),
+            garbled=None if quality is None else round(quality.ratio, 3),
+        )
+        if method is ReadMethod.text:
+            out.pages.append(PageInfo(**info, method=method, tool=self.tool))
+            if unmapped:
+                out.warnings.append(f"{n}쪽: 유니코드 매핑 없는 글자 {unmapped}개 제외")
+            self._pictures(page, images, out, reading, renderer)
+            return
+        # OCR or held: the text layer's running text goes; garbled text goes entirely (hidden
+        # text in the same broken font too). Links, notes and properties are kept.
+        dropped = {BlockKind.body, BlockKind.table} | ({BlockKind.hidden} if garbled else set())
+        out.blocks[start:] = [b for b in out.blocks[start:] if b.kind not in dropped]
+        if garbled:
+            out.warnings.append(f"{n}쪽: 텍스트 층이 깨져 버림 ({quality.describe()})")  # type: ignore[union-attr]
+        if method is ReadMethod.ocr:
+            result, problem = reading.read(renderer.page(n - 1, reading.policy.dpi))
+            if result is not None:
+                out.add(BlockKind.body, f"{n}쪽 (OCR)", result.text, ocr=True)
+                reading.check_confidence(f"{n}쪽", result)
+                out.pages.append(
+                    PageInfo(
+                        **info, method=ReadMethod.ocr, reason=reason,
+                        tool=getattr(reading.ocr, "version", "") or result.model,
+                        confidence=result.confidence, elapsed_ms=result.elapsed_ms,
+                    )
+                )  # fmt: skip
+                return
+            reason = f"{reason}; {problem}"
+        out.pages.append(PageInfo(**info, needs_ocr=True, method=ReadMethod.held, reason=reason))
+        out.warnings.append(f"{n}쪽: {reason}, 처리 보류")
+
+    def _pictures(
+        self, page: Any, images: list[Obj], out: BlockCollector, reading: Any, renderer: PdfRenderer
+    ) -> None:
+        area = page.width * page.height
+        for k, image in enumerate(images, start=1):
+            share = _coverage([image], page)
+            if share >= self.scan_coverage or area <= 0:
+                continue  # a background, or the scan behind a searchable PDF's text layer
+            bbox = (image["x0"], image["top"], image["x1"], image["bottom"])
+            picture = renderer.crop(page.page_number - 1, reading.policy.dpi, bbox)
+            label = f"{page.page_number}쪽 그림 {k}"
+            result = reading.picture(picture, label, share=share)
+            if result is not None:
+                reading.check_confidence(label, result)
+                out.add(BlockKind.image_text, f"{label} (OCR)", result.text, ocr=True)
 
 
 def _text(chars: list[Obj]) -> str:

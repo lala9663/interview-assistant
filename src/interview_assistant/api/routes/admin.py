@@ -5,10 +5,15 @@ whether a package, an environment variable or a credentials file exists. Tests r
 admin asks, and a provider that sends data beyond this PC and the company GCP needs
 `confirm_external` to be tested or applied (plus a reason to apply). Every test, change, rollback
 and download is in the audit log; changes also in the model history (`ai_model_changes`).
+
+서류 읽기 roles (OCR engine, readers, converter, reading mode) are tested by reading a document:
+a built-in fictional resume or the admin's file (10 MB, deleted when the test ends). The answer
+holds how each page was read and a de-identified preview, never the raw text.
 """
 
 from __future__ import annotations
 
+import asyncio
 import json
 import tempfile
 from pathlib import Path
@@ -22,6 +27,8 @@ from interview_assistant.ai_models.manager import ChangeRefused, Prepared
 from interview_assistant.api import schemas as s
 from interview_assistant.api.deps import Admin, Db, RuntimeDep, audit
 from interview_assistant.api.errors import conflict, invalid, not_found
+from interview_assistant.deid.types import KnownIdentity
+from interview_assistant.documents.reading import MODE_LABELS
 from interview_assistant.models import AiModelChange, Interviewer, ModelChangeKind
 from interview_assistant.providers import catalog
 from interview_assistant.providers.audio import (
@@ -38,6 +45,7 @@ from interview_assistant.runtime import Runtime
 router = APIRouter(prefix="/admin/models", tags=["admin"])
 
 MAX_TEST_AUDIO_BYTES = 10 * 1024 * 1024
+MAX_TEST_DOCUMENT_BYTES = 10 * 1024 * 1024
 MAX_TEST_AUDIO_SECONDS = 60
 AUDIO_SUFFIXES = {".wav", ".webm", ".ogg", ".oga", ".mp3", ".m4a", ".mp4", ".flac", ".aac"}
 
@@ -53,7 +61,8 @@ def _spec_label(kind: str, spec: dict | None) -> str | None:
     if spec is None:
         return None
     info = _info(kind, spec["impl"])
-    model = (spec.get("options") or {}).get("model")
+    options = spec.get("options") or {}
+    model = options.get("model") or MODE_LABELS.get(str(options.get("mode")))  # 읽기 방식: its mode
     return f"{info.label} · {model}" if model else info.label
 
 
@@ -112,6 +121,7 @@ def role_state(db: Session, runtime: Runtime, role_key: str) -> s.ModelRoleState
         label=role.label,
         description=role.description,
         kind=role.kind,
+        group=role.group,
         spec=s.ModelSpec(impl=spec.impl if spec else "-", options=options),
         impl_label=info.label,
         model=str(getattr(provider, "model", "") or (spec.impl if spec else "")),
@@ -243,6 +253,19 @@ async def _test_audio(upload: UploadFile | None, folder: Path) -> tuple[Path, st
     return path, None, "upload"
 
 
+async def _test_document(upload: UploadFile | None, name: str, role: str) -> tuple[probe.DocumentSample, str]:
+    if upload is None:
+        return probe.document_sample(role), "sample"
+    data = await upload.read(MAX_TEST_DOCUMENT_BYTES + 1)
+    if len(data) > MAX_TEST_DOCUMENT_BYTES:
+        raise invalid("document", "파일이 너무 큽니다 (최대 10MB).")
+    if not data:
+        raise invalid("document", "빈 파일입니다.")
+    # Only the name typed on the screen is known: without it, names without a title may stay.
+    identity = KnownIdentity(name=name.strip() or None)
+    return probe.DocumentSample(data, upload.filename or "upload", identity, None), "upload"
+
+
 @router.post("/{role}/test", response_model=s.ModelTestResult)
 async def test_model(
     role: str,
@@ -252,10 +275,14 @@ async def test_model(
     spec: str = Form(...),
     confirm_external: bool = Form(False),
     audio: UploadFile | None = File(None),
+    document: UploadFile | None = File(None),
+    name: str = Form(""),
 ) -> s.ModelTestResult:
     """Run the role's connection test on a spec (applied or not). `spec` is the JSON of
     {impl, options}. STT and diarization take `audio` (a recording or file, at most 60 s), or the
-    built-in Korean sample without it. The audio is deleted when the test ends."""
+    built-in Korean sample without it. 서류 읽기 roles take `document` (10 MB) and optionally the
+    applicant's `name` for the preview's de-identification, or a built-in fictional resume. Files
+    are deleted when the test ends."""
     try:
         body = s.ModelSpecRequest.model_validate(json.loads(spec))
     except (json.JSONDecodeError, ValidationError) as exc:
@@ -263,6 +290,8 @@ async def test_model(
     prepared = runtime.models.prepare(role, body.impl, body.options)
     if prepared.external and not confirm_external:
         raise conflict("회사 밖으로 데이터를 보내는 provider입니다. 경고를 확인한 뒤 테스트하세요.")
+    if prepared.role.group == "documents":
+        return await _test_reading(db, admin, runtime, prepared, document, name)
     kind = prepared.role.kind
     with tempfile.TemporaryDirectory(prefix="ia-model-test-") as tmp:
         path, expected, source = SAMPLE, SAMPLE_TEXT, "sample"
@@ -300,6 +329,53 @@ async def test_model(
         output=result.output,
         error=result.error,
         audio=audio_source,
+    )
+
+
+async def _test_reading(
+    db: Db,
+    admin: Interviewer,
+    runtime: Runtime,
+    prepared: Prepared,
+    upload: UploadFile | None,
+    name: str,
+) -> s.ModelTestResult:
+    sample, source = await _test_document(upload, name, prepared.role.key)
+    try:
+        provider = await runtime.models.provider_for(prepared)
+    except ChangeRefused as exc:
+        if exc.status != 502:
+            raise
+        result = probe.ProbeResult(
+            False, prepared.spec.impl, 0, "도구를 불러오지 못했습니다.", error=exc.message
+        )
+    else:
+        active = dict(runtime.models.active.by_role)
+        result = await asyncio.to_thread(
+            probe.read_document, prepared, provider, active, sample, runtime.deid.config
+        )
+    audit(
+        db,
+        admin,
+        "model.tested",
+        "ai_model",
+        prepared.role.key,
+        impl=prepared.spec.impl,
+        model=result.model,
+        document=source,
+        data_location=prepared.info.data_location.value,
+        **probe.summary_for_audit(result),
+    )
+    db.commit()
+    return s.ModelTestResult(
+        ok=result.ok,
+        model=result.model,
+        latency_ms=result.latency_ms,
+        summary=result.summary,
+        output=result.output,
+        error=result.error,
+        audio=None,
+        document=source,
     )
 
 

@@ -244,6 +244,28 @@ class SessionBrief(Schema):
     ended_at: Timestamp | None
 
 
+class ReadingFile(BaseModel):
+    format: str
+    converted_from: str | None = None  # "doc" / "ppt": read after LibreOffice converted it
+    pages: int
+    ocr_pages: list[int]
+    ocr_confidence: float | None = None  # lowest page confidence among the OCR'd pages
+    pictures_read: int  # pictures in the document read by OCR (certificates, captures)
+    photos_dropped: int  # pictures taken for ID photos and dropped unread
+    garbled_pages: list[int]  # pages whose text layer was garbled and re-read by OCR
+
+
+class ReadingInfo(BaseModel):
+    """How the attachments were read (서류 읽기 settings in force when processing started)."""
+
+    revision: int | None
+    mode: Literal["auto", "always_ocr", "text_only"]
+    embedded_images: bool
+    sensitivity: str
+    tools: list[str]  # every reader and OCR engine used, with its version
+    files: list[ReadingFile]
+
+
 class DocumentInfo(BaseModel):
     """What an uploaded file held, counts only. Hidden blocks were left out of screening."""
 
@@ -252,6 +274,7 @@ class DocumentInfo(BaseModel):
     hidden_blocks: int
     images_dropped: int
     replacements: int
+    reading: ReadingInfo | None = None  # absent for applications read before 서류 읽기 settings
 
 
 class ApplicationDetail(BaseModel):
@@ -503,6 +526,7 @@ class ModelRoleState(BaseModel):
     label: str
     description: str
     kind: str
+    group: Literal["ai", "documents"]  # heading on the screen: AI 모델 / 서류 읽기
     spec: ModelSpec
     impl_label: str
     model: str  # the model name results and the audit log carry
@@ -540,6 +564,7 @@ class ModelTestResult(BaseModel):
     output: dict[str, Any]
     error: str | None
     audio: Literal["sample", "upload"] | None
+    document: Literal["sample", "upload"] | None = None  # 서류 읽기 roles: what was read
 
 
 class ModelDownload(BaseModel):

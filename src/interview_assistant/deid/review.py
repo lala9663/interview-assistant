@@ -2,7 +2,9 @@
 
 Per sample: the extracted text next to its de-identified version block by block (file name and
 properties first), replaced spans and tokens highlighted, surviving ground-truth values marked,
-dropped images and hidden blocks counted, and an OK / 누출 choice with a note. Choices stay in
+dropped images and hidden blocks counted, how each page was read (text layer or OCR, why, tool
+and version, OCR confidence and time), what was done with each picture (ID photo dropped, read
+by OCR, skipped), the OCR error rate, and an OK / 누출 choice with a note. Choices stay in
 the browser (localStorage) and can be copied out as TSV or saved as JSON.
 
 The page contains the raw extracted text by design, so it belongs to the raw zone: keep it on
@@ -19,7 +21,15 @@ from collections.abc import Sequence
 from datetime import datetime
 from html import escape
 
-from interview_assistant.deid.leaks import CHECKED, ERROR, OCR_HOLD, DocumentReport, leak_pattern
+from interview_assistant.deid.leaks import (
+    CHECKED,
+    ERROR,
+    OCR_HOLD,
+    REFUSED,
+    SKIPPED,
+    DocumentReport,
+    leak_pattern,
+)
 from interview_assistant.documents.types import BlockKind
 
 _KIND_LABELS = {
@@ -33,6 +43,15 @@ _KIND_LABELS = {
     BlockKind.comment: "메모·주석",
     BlockKind.link: "링크",
     BlockKind.hidden: "숨은 텍스트",
+    BlockKind.image_text: "그림 속 글자 (OCR)",
+}
+_METHOD_LABELS = {"text": "텍스트 층", "ocr": "OCR", "held": "보류"}
+_PICTURE_LABELS = {
+    "photo": "증명사진으로 판단, 읽지 않고 버림",
+    "ocr": "OCR로 읽음",
+    "skipped": "읽지 않음 (설정)",
+    "small": "너무 작아 읽지 않음",
+    "failed": "OCR 실패",
 }
 _CATEGORY_LABELS = {
     "candidate": "지원자",
@@ -74,10 +93,13 @@ def render_review_report(
         ).encode("utf-8")
     ).hexdigest()[:16]
     ids = json.dumps([r.sample.id for r in reports])
+    ocr_read = [r for r in checked if r.document is not None and r.document.ocr_used]
+    refused = [r for r in reports if r.status in (REFUSED, SKIPPED)]
     summary = (
-        f"텍스트형 {len(checked)}건 자동 검사: 실패 {sum(1 for r in checked if not r.ok)}건, "
+        f"자동 검사 {len(checked)}건 (OCR로 읽은 {len(ocr_read)}건 포함): 실패 {sum(1 for r in checked if not r.ok)}건, "
         f"정답 값 {expected}개 중 누출 {leaked}개 · "
         f"OCR 필요·처리 보류 {len(held)}건 (분류 정확 {held_ok}/{len(held)})"
+        + (f" · 거부·건너뜀 {len(refused)}건" if refused else "")
         + (f" · 오류 {len(errors)}건" if errors else "")
     )
     return _PAGE.format(
@@ -93,7 +115,7 @@ def render_review_report(
 
 
 def _status_class(r: DocumentReport) -> str:
-    if r.status == OCR_HOLD:
+    if r.status in (OCR_HOLD, REFUSED, SKIPPED):
         return "hold" if r.ok else "bad"
     return "good" if r.ok else "bad"
 
@@ -101,6 +123,10 @@ def _status_class(r: DocumentReport) -> str:
 def _badge(r: DocumentReport) -> str:
     if r.status == ERROR:
         return '<span class="badge bad">오류</span>'
+    if r.status == REFUSED:
+        return '<span class="badge hold">거부됨 (예상대로)</span>'
+    if r.status == SKIPPED:
+        return '<span class="badge hold">건너뜀 (변환기 없음)</span>'
     if r.status == OCR_HOLD:
         cls = "hold" if r.ok else "bad"
         text = "OCR 필요 · 처리 보류" if r.ok else "OCR 분류 틀림"
@@ -125,6 +151,10 @@ def _section(r: DocumentReport, tokens: re.Pattern[str]) -> str:
     if r.deidentified is not None:
         facts.append(f"치환 {r.deidentified.replacements}곳")
     facts.append(f"정답 값 {len(s.expected)}개")
+    if r.cer is not None:
+        facts.append(f"OCR 글자 오류율 {r.cer:.1%}")
+    if doc is not None and doc.reading is not None:
+        facts.append(f"읽기 방식 {doc.reading.mode} · 도구 {', '.join(doc.reading.tools)}")
     traps = "".join(f'<span class="trap">{escape(t)}</span>' for t in s.traps)
 
     notes = []
@@ -137,6 +167,11 @@ def _section(r: DocumentReport, tokens: re.Pattern[str]) -> str:
         for e, label in r.leaks
     ]
     notes += [f"<li>남은 {escape(k)} 형태: <code>{escape(v)}</code> ({escape(label)})</li>" for k, v, label in r.residual]
+    notes += [
+        f"<li>근접 누출 (OCR 오인식): {escape(_CATEGORY_LABELS.get(e.category.value, e.category.value))} "
+        f"<code>{escape(e.value)}</code>이(가) <code>{escape(surface)}</code>로 남음 ({escape(label)})</li>"
+        for e, surface, label in r.near
+    ]
     notes += [f"<li>과잉 치환: <code>{escape(k)}</code>가 사라짐</li>" for k in r.lost]
     notes += [f"<li>추출 누락: <code>{escape(v)}</code>가 추출 텍스트에 없음</li>" for v in r.not_in_source]
     notes += [
@@ -144,6 +179,13 @@ def _section(r: DocumentReport, tokens: re.Pattern[str]) -> str:
         for v, k in r.missing
     ]
     problems = f'<ul class="problems">{"".join(notes)}</ul>' if notes else ""
+    if r.ocr_missed:
+        problems += (
+            '<p class="keep">그림 속에만 있고 읽지 못한 값(누출 아님): '
+            + ", ".join(f"<code>{escape(v)}</code>" for v in r.ocr_missed)
+            + "</p>"
+        )
+    reading = _reading_table(doc)
 
     if r.status == OCR_HOLD:
         body = (
@@ -169,6 +211,7 @@ def _section(r: DocumentReport, tokens: re.Pattern[str]) -> str:
   <p class="facts">{" · ".join(escape(f) for f in facts)}</p>
   <div class="traps">{traps}</div>
   {problems}
+  {reading}
   {body}
   <details class="truth"><summary>정답 목록 ({len(s.expected)}개)</summary>{_truth_table(r)}</details>
   <div class="review">
@@ -178,6 +221,34 @@ def _section(r: DocumentReport, tokens: re.Pattern[str]) -> str:
     <textarea name="n-{escape(s.id)}" rows="1" placeholder="메모 (누출 위치, 과잉 치환 등)"></textarea>
   </div>
 </section>"""
+
+
+def _reading_table(doc) -> str:
+    """How each page was read and what happened to each picture (only when something was not
+    plain text layer)."""
+    if doc is None or (
+        all(p.method.value == "text" for p in doc.pages) and not doc.images
+    ):
+        return ""
+    rows = []
+    for p in doc.pages:
+        confidence = f"{p.confidence:.0%}" if p.confidence is not None else ""
+        seconds = f"{p.elapsed_ms / 1000:.1f}초" if p.elapsed_ms is not None else ""
+        cls = " bad-text" if p.method.value == "held" else ""
+        rows.append(
+            f"<tr><td>{p.number}</td><td class=\"{cls.strip()}\">{_METHOD_LABELS.get(p.method.value, p.method.value)}</td>"
+            f"<td>{escape(p.reason)}</td><td>{escape(p.tool)}</td><td>{confidence}</td><td>{seconds}</td></tr>"
+        )
+    for i in doc.images:
+        confidence = f"{i.confidence:.0%}" if i.confidence is not None else ""
+        rows.append(
+            f"<tr><td>{escape(i.label)}</td><td>그림</td><td>{escape(_PICTURE_LABELS.get(i.decision, i.decision))}</td>"
+            f"<td>{escape(i.detail)}</td><td>{confidence}</td><td></td></tr>"
+        )
+    return (
+        '<table class="truth-table reading"><thead><tr><th>쪽·그림</th><th>읽은 방식</th><th>이유</th>'
+        f"<th>도구 · 판단 근거</th><th>OCR 신뢰도</th><th>시간</th></tr></thead><tbody>{''.join(rows)}</tbody></table>"
+    )
 
 
 def _pair_table(r: DocumentReport, tokens: re.Pattern[str]) -> str:
@@ -217,8 +288,12 @@ def _truth_table(r: DocumentReport) -> str:
     missing = {v for v, _ in r.missing} | set(r.not_in_source)
     rows = []
     for e in r.sample.expected:
-        if r.status == OCR_HOLD:
-            result = "보류"
+        if r.status in (OCR_HOLD, REFUSED, SKIPPED):
+            result = "보류" if r.status == OCR_HOLD else "읽지 않음"
+        elif e in {n for n, _, _ in r.near}:
+            result = '<b class="bad-text">근접 누출</b>'
+        elif e.value in r.ocr_missed:
+            result = "OCR이 못 읽음"
         elif e in leaked:
             result = '<b class="bad-text">누출</b>'
         elif e.value in missing:

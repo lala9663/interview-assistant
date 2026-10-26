@@ -51,6 +51,7 @@ samples:
   - {category: candidate, value: 하린, where: [body]}
   keep: [직무에 지원한, 전공하며, 업무를 맡아, 입사 후 포부, 백엔드 개발자, 백엔드 개발]
   images: 1
+  photos: 1
 - id: R02
   file: 남궁민재_이력서(최종).pdf
   format: pdf
@@ -85,6 +86,7 @@ samples:
   - {category: candidate, value: Minjae Namgung, where: [body]}
   keep: [고장 난 물건을, 재직 중, 기록하는 습관, 오래 쓰이는 제품, 데이터 분석가, 데이터 분석]
   images: 1
+  photos: 1
 - id: R03
   file: Resume_SerinOh.pdf
   format: pdf
@@ -115,6 +117,7 @@ samples:
   - {category: phone, value: 010-0447-1290, where: [body]}
   keep: [경험을 바탕으로, 의사결정을 설명하는, 측정 가능한 목표로, 믿고 맡기는 사람, 회로 설계 엔지니어, 회로 설계]
   images: 1
+  photos: 1
 - id: R04
   file: 백승우-자기소개서-최종_v3.pdf
   format: pdf
@@ -146,6 +149,7 @@ samples:
   - {category: school, value: 카이스트, where: [body]}
   keep: [추천인, 사용자 문제를, 고객 문의를 분류하는, 작게 만들고 빨리 확인합니다, 현장의 목소리를, 머신러닝 엔지니어, 머신러닝]
   images: 1
+  photos: 1
 - id: R05
   file: 황보은채 이력서.pdf
   upload_name: 황보은채 이력서.pdf
@@ -176,6 +180,7 @@ samples:
   - {category: candidate, value: 은채, where: [body]}
   keep: [직무에 지원한, 전공하며, 업무를 맡아, 입사 후 포부, 프론트엔드 개발자, 프론트엔드 개발]
   images: 1
+  photos: 1
 - id: R06
   file: R06_차준호.pdf
   format: pdf
@@ -205,6 +210,7 @@ samples:
   - {category: person, value: 박하은, where: [body]}
   keep: [고장 난 물건을, 재직 중, 기록하는 습관, 오래 쓰이는 제품, 임베디드 개발자, 임베디드 소프트웨어]
   images: 1
+  photos: 1
 - id: R07
   file: 유다인_이력서.docx
   format: docx
@@ -234,6 +240,7 @@ samples:
   - {category: person, value: 최유진, where: [body]}
   keep: [경험을 바탕으로, 의사결정을 설명하는, 측정 가능한 목표로, 믿고 맡기는 사람, 백엔드 개발자, 백엔드 개발]
   images: 1
+  photos: 1
 - id: R08
   file: 입사지원서_탁지호.docx
   format: docx
@@ -265,6 +272,7 @@ samples:
   - {category: person, value: 한지민, where: [body]}
   keep: [사용자 문제를, 고객 문의를 분류하는, 작게 만들고 빨리 확인합니다, 현장의 목소리를, 클라우드 엔지니어, 클라우드 운영]
   images: 1
+  photos: 1
 - id: R09
   file: 선우하람_Resume.docx
   format: docx
@@ -298,6 +306,7 @@ samples:
   - {category: person, value: 윤서준, where: [body]}
   keep: ['추천인 연락처:', 직무에 지원한, 전공하며, 업무를 맡아, 입사 후 포부, QA 엔지니어, 품질 보증]
   images: 1
+  photos: 1
 - id: R10
   file: 이력서_문태오.docx
   format: docx
@@ -331,6 +340,7 @@ samples:
   - {category: candidate, value: Taeo Moon, where: [body]}
   keep: [고장 난 물건을, 재직 중, 기록하는 습관, 오래 쓰이는 제품, 자율주행 연구원, 자율주행 연구]
   images: 1
+  photos: 1
 - id: R11
   file: 포트폴리오_진서아.pptx
   format: pptx
@@ -360,6 +370,7 @@ samples:
   - {category: person, value: 서예준, where: [body]}
   keep: [경험을 바탕으로, 의사결정을 설명하는, 측정 가능한 목표로, 믿고 맡기는 사람, UX 디자이너, UX 디자인]
   images: 1
+  photos: 1
 - id: R12
   file: MinhyukPyo_portfolio.pptx
   format: pptx
@@ -390,6 +401,7 @@ samples:
   - {category: school, value: 홍익대, where: [body]}
   keep: [사용자 문제를, 고객 문의를 분류하는, 작게 만들고 빨리 확인합니다, 현장의 목소리를, 게임 클라이언트 개발자, 게임 클라이언트 개발]
   images: 1
+  photos: 1
 - id: R13
   file: 연가은 경력기술서.pptx
   format: pptx
@@ -420,6 +432,7 @@ samples:
   - {category: school, value: 충남대, where: [body]}
   keep: [직무에 지원한, 전공하며, 업무를 맡아, 입사 후 포부, 데이터 엔지니어, 데이터 엔지니어링]
   images: 1
+  photos: 1
 - id: R14
   file: 육지안_이력서.html
   format: html
@@ -572,6 +585,39 @@ samples:
   - {category: person, value: 오태호, where: [image]}
   keep: [고장 난 물건을, 재직 중, 기록하는 습관, 오래 쓰이는 제품, 펌웨어 개발자, 펌웨어 개발]
   images: 1
+  ocr_truth: '이 력 서
+
+    성명: 설도현  (Dohyun Seol)
+
+    생년월일: 1993.01.15
+
+    휴대전화: 010-1381-0274    이메일: dohyun.seol@example.net
+
+    주소: 서울특별시 노원구 초록숲길 5
+
+    학력: 광운대학교 전자공학 졸업
+
+    경력: 누리소프트 펌웨어 개발자 (2018.01 ~ 2025.06)
+
+    자기소개서
+
+    [성장 과정] 저는 설도현입니다. 어릴 때부터 고장 난 물건을 분해하고 다시
+
+    조립하는 것을 좋아했고, 그 호기심이 광운대 전자공학 진학으로 이어졌습니다.
+
+    [경력 사항] 누리소프트 재직 중 펌웨어 개발자 업무를 하며 신규 서비스 세
+
+    개를 출시했습니다. 오태호 팀장님과 함께한 프로젝트에서 일정과 품질을 함께
+
+    지키는 법을 배웠습니다.
+
+    [강점] 저는 기록하는 습관이 있습니다. 회의마다 결정 사항을 문서로 남겨 팀이
+
+    같은 실수를 반복하지 않도록 했습니다.
+
+    [포부] 펌웨어 개발 분야에서 오래 쓰이는 제품을 만들고 싶습니다. 영문 이름
+
+    Dohyun Seol로 공개 저장소에 작업을 올려 두었습니다.'
 - id: R19
   file: 봉채원_scan.pdf
   format: pdf
@@ -600,6 +646,43 @@ samples:
   - {category: person, value: 정민지, where: [image]}
   keep: [경험을 바탕으로, 의사결정을 설명하는, 측정 가능한 목표로, 믿고 맡기는 사람, 웹 퍼블리셔, 웹 퍼블리싱]
   images: 2
+  ocr_truth: '이 력 서
+
+    성명: 봉채원  (Chaewon Bong)
+
+    생년월일: 1999.08.08
+
+    휴대전화: 010-0296-5530    이메일: chaewon.bong@example.com
+
+    주소: 경기도 용인시 수지구 은빛로 18
+
+    학력: 단국대학교 웹디자인학 졸업
+
+    경력: 새봄테크 웹 퍼블리셔 (2022.02 ~ 2025.10)
+
+    Scanned with ScanApp
+
+    자기소개서
+
+    자기소개서
+
+    [지원 동기] 새봄테크에서 쌓은 웹 퍼블리셔 경험을 바탕으로 더 큰 문제를 풀고
+
+    싶어 웹 퍼블리싱 직무에 지원했습니다.
+
+    [학업] 단국대학교에서 웹디자인학을 공부하며 데이터로 의사결정을 설명하는 방법을
+
+    익혔습니다.
+
+    [협업] 정민지 실장님과 진행한 개선 과제에서 처음으로 팀 전체의 목표를 숫자로
+
+    정리해 보았습니다. 이후 모든 일을 측정 가능한 목표로 바꾸어 생각합니다.
+
+    [포부] 저 봉채원, 입사 후 3년 안에 팀이 믿고 맡기는 사람이 되겠습니다.
+
+    연락처는 010-0296-5530입니다.
+
+    Scanned with ScanApp'
 - id: R20
   file: 금태민_지원서.pdf
   format: pdf
@@ -629,3 +712,566 @@ samples:
   - {category: address, value: 오송빛로 40, where: [image]}
   keep: [사용자 문제를, 고객 문의를 분류하는, 작게 만들고 빨리 확인합니다, 현장의 목소리를, 바이오 데이터 분석가, 바이오 데이터]
   images: 1
+  ocr_truth: '이 력 서
+
+    성명: 금태민  (Taemin Geum)
+
+    생년월일: 1991.12.12
+
+    휴대전화: 010-1749-3361    이메일: taemin.geum@example.org
+
+    주소: 충청북도 청주시 흥덕구 오송빛로 40
+
+    학력: 충북대학교 생물정보학 졸업
+
+    경력: 하늘시스템즈 바이오 데이터 분석가 (2016.08 ~ 2025.02)'
+- id: R21
+  file: 이력서_도하윤.hwpx
+  format: hwpx
+  scanned: false
+  traps: [HWPX(한글 2014+), 머리글(이름·직무·전화)·바닥글(이름), 각주에 추천인 전화, 숨은 설명(hiddenComment)에 이메일·전화, 흰 글씨 런(charPr 흰색), '하이퍼링크 필드(mailto, GitHub 영문 이름)', 글상자에 연락처, 문서 정보(작성자·마지막 저장자·설명), 변경 추적 작성자, 미리보기 텍스트(PrvText)에
+      이름·전화, '증명사진(사진 판정, OCR 안 함)', 자격증 사본 그림 속 이름·생년월일(OCR)]
+  identity:
+    name: 도하윤
+    aliases: [Hayun Do]
+    phones: [010-0517-2846]
+    emails: [hayun.do@example.com]
+    birthdate: '1997-05-21'
+    addresses: [서울특별시 은평구 바람꽃길 14]
+    schools: [서울시립대학교]
+    companies: [(주)한결소프트]
+  expected:
+  - {category: candidate, value: 도하윤, where: [filename, metadata, hidden, header, footer, image, table, body]}
+  - {category: candidate, value: Hayun Do, where: [metadata, table]}
+  - {category: email, value: hayun.do@example.com, where: [metadata, table, body, hidden, link]}
+  - {category: phone, value: 010-0517-2846, where: [hidden, header, table]}
+  - {category: birthdate, value: 1997.05.21, where: [image]}
+  - {category: birthdate, value: 1997년 5월 21일, where: [table]}
+  - {category: address, value: 서울특별시 은평구, where: [table]}
+  - {category: address, value: 바람꽃길 14, where: [table]}
+  - {category: school, value: 서울시립대학교, where: [table]}
+  - {category: company, value: (주)한결소프트, where: [table]}
+  - {category: phone, value: 010.0517.2846, where: [body]}
+  - {category: school, value: 서울시립대, where: [body]}
+  - {category: company, value: 한결소프트, where: [body]}
+  - {category: person, value: 김나래, where: [body]}
+  - {category: candidate, value: 하윤, where: [body]}
+  - {category: phone, value: 010-0782-3315, where: [comment]}
+  - {category: phone, value: 01005172846, where: [hidden]}
+  - {category: candidate, value: hayun-do, where: [link]}
+  keep: [직무에 지원한, 전공하며, 업무를 맡아, 입사 후 포부, 백엔드 개발자, 백엔드 개발, 자격증 사본]
+  images: 2
+  photos: 1
+  ocr_truth: '국가기술자격증
+
+    자격종목: 정보처리기사
+
+    성명: 도하윤
+
+    생년월일: 1997.05.21
+
+    자격번호: 26-2001-000123
+
+    위 사람은 국가기술자격법에 따라
+
+    자격을 취득하였음을 증명합니다.
+
+    2025년 6월 13일'
+- id: R22
+  file: R22_추서진.hwp
+  format: hwp
+  scanned: false
+  traps: ['HWP 5.0 바이너리(합성: 공개 형식대로 만든 파일, 한글로 저장한 파일 아님)', 머리글·바닥글 컨트롤, 각주에 추천인 전화, 숨은 설명에 이메일, 하이퍼링크 필드(mailto), 글상자에 주소, 문서 요약 정보(작성자·마지막 저장자·키워드), 미리보기 텍스트(PrvText), BinData 증명사진(압축)]
+  identity:
+    name: 추서진
+    aliases: [Seojin Choo]
+    phones: [010-1628-4093]
+    emails: [seojin.choo@example.org]
+    birthdate: '1994-09-03'
+    addresses: [대구광역시 달서구 이팝꽃로 31]
+    schools: [계명대학교]
+    companies: [새빛정보]
+  expected:
+  - {category: candidate, value: 추서진, where: [filename, metadata, hidden, header, footer, table, body]}
+  - {category: candidate, value: Seojin Choo, where: [metadata, table, body]}
+  - {category: email, value: seojin.choo@example.org, where: [metadata, table, hidden, link]}
+  - {category: phone, value: 010-1628-4093, where: [hidden, table]}
+  - {category: phone, value: 010.1628.4093, where: [header]}
+  - {category: birthdate, value: 1994.09.03, where: [table]}
+  - {category: address, value: 대구광역시 달서구, where: [table, body]}
+  - {category: address, value: 이팝꽃로 31, where: [table, body]}
+  - {category: school, value: 계명대학교, where: [table]}
+  - {category: company, value: 새빛정보, where: [table, body]}
+  - {category: school, value: 계명대, where: [body]}
+  - {category: person, value: 한도윤, where: [body]}
+  - {category: phone, value: 010-1904-6627, where: [comment]}
+  keep: [고장 난 물건을, 재직 중, 기록하는 습관, 오래 쓰이는 제품, 데이터 엔지니어, 데이터 엔지니어링]
+  images: 1
+  photos: 1
+- id: R23
+  file: 변예준_이력서_암호.hwp
+  format: hwp
+  scanned: false
+  refused: encrypted
+  traps: ['암호 걸린 HWP(FileHeader 암호 플래그): 읽지 않고 ''암호 걸린 문서''로 거부']
+  identity:
+    name: 변예준
+    aliases: [Yejun Byun]
+    phones: [010-0739-5512]
+    emails: [yejun.byun@example.net]
+    birthdate: '1996-02-17'
+    addresses: [경기도 부천시 꽃우물길 8]
+    schools: [동국대학교]
+    companies: [누리소프트]
+  expected:
+  - {category: candidate, value: 변예준, where: [filename, metadata, hidden, header, footer, table, body]}
+  - {category: candidate, value: Yejun Byun, where: [metadata, table]}
+  - {category: email, value: yejun.byun@example.net, where: [metadata, table, hidden, link]}
+  - {category: phone, value: 010-0739-5512, where: [hidden, table, body]}
+  - {category: phone, value: 010.0739.5512, where: [header]}
+  - {category: birthdate, value: 1996.02.17, where: [table]}
+  - {category: address, value: 경기도 부천시, where: [table, body]}
+  - {category: address, value: 꽃우물길 8, where: [table, body]}
+  - {category: school, value: 동국대학교, where: [table, body]}
+  - {category: company, value: 누리소프트, where: [table, body]}
+  - {category: person, value: 윤가람, where: [body]}
+  - {category: phone, value: 010-1904-6627, where: [comment]}
+  keep: [경험을 바탕으로, 의사결정을 설명하는, 측정 가능한 목표로, 믿고 맡기는 사람, 서비스 기획자, 서비스 기획]
+  images: 1
+  photos: 1
+- id: R24
+  file: KakaoTalk_20261012_093015123.jpg
+  format: image
+  scanned: true
+  traps: ['휴대폰으로 찍은 이력서(JPG): 원근·기울어짐·그림자·흐림·JPEG', 파일명에 이름 없음(KakaoTalk_...), EXIF에 작성자(영문 이름·한글 이름)·설명, 그림 속 모든 정보는 OCR로만 읽힘]
+  identity:
+    name: 기서윤
+    aliases: [Seoyun Ki]
+    phones: [010-1095-3378]
+    emails: [seoyun.ki@example.com]
+    birthdate: '1998-11-09'
+    addresses: [인천광역시 남동구 갯바람로 22]
+    schools: [인하대학교]
+    companies: [다온랩스]
+  expected:
+  - {category: candidate, value: 기서윤, where: [image, metadata]}
+  - {category: candidate, value: Seoyun Ki, where: [image, metadata]}
+  - {category: birthdate, value: 1998.11.09, where: [image]}
+  - {category: phone, value: 010-1095-3378, where: [image]}
+  - {category: email, value: seoyun.ki@example.com, where: [image]}
+  - {category: school, value: 인하대학교, where: [image]}
+  - {category: company, value: 다온랩스, where: [image]}
+  - {category: address, value: 인천광역시 남동구, where: [image]}
+  - {category: address, value: 갯바람로 22, where: [image]}
+  - {category: school, value: 인하대, where: [image]}
+  - {category: person, value: 서지훈, where: [image]}
+  keep: [사용자 문제를, 고객 문의를 분류하는, 작게 만들고 빨리 확인합니다, 현장의 목소리를, 반도체 장비 엔지니어, 장비 엔지니어링]
+  images: 1
+  ocr_truth: '이 력 서
+
+    성명: 기서윤  (Seoyun Ki)
+
+    생년월일: 1998.11.09
+
+    휴대전화: 010-1095-3378
+
+    이메일: seoyun.ki@example.com
+
+    주소: 인천광역시 남동구 갯바람로 22
+
+    학력: 인하대학교 전자공학 졸업
+
+    경력: 다온랩스 반도체 장비 엔지니어 (2022.01 ~ 2025.11)
+
+    자기소개서
+
+    [자기소개] 기서윤(Seoyun Ki)입니다. 인하대 졸업 후
+
+    다온랩스에서 일하며 사용자 문제를 가장 먼저 듣는 사람이 되려고
+
+    노력했습니다.
+
+    [대표 프로젝트] 반도체 장비 엔지니어 업무를 하면서 고객 문의를
+
+    분류하는 내부 도구를 만들었고, 처리 시간을 40% 줄였습니다. 서지훈
+
+    책임님이 이 도구를 다른 팀에도 소개해 주셨습니다.
+
+    [일하는 방식] 작게 만들고 빨리 확인합니다. 실패한 시도도 기록해 두고
+
+    다음 결정의 근거로 씁니다.
+
+    [포부] 장비 엔지니어링 직무에서 현장의 목소리를 제품으로
+
+    연결하겠습니다.'
+- id: R25
+  file: 이력서_캡처_어하준.png
+  format: image
+  scanned: true
+  traps: ['화면 캡처한 이력서(PNG, 깨끗한 글자)', PNG 텍스트 청크에 작성자 이름, 그림 속 모든 정보는 OCR로만 읽힘]
+  identity:
+    name: 어하준
+    aliases: [Hajun Eo]
+    phones: [010-0861-2075]
+    emails: [hajun.eo@example.org]
+    birthdate: '1995-06-30'
+    addresses: [광주광역시 서구 무지개로 17]
+    schools: [전남대학교]
+    companies: [하늘시스템즈]
+  expected:
+  - {category: candidate, value: 어하준, where: [filename, image, metadata]}
+  - {category: candidate, value: Hajun Eo, where: [image]}
+  - {category: birthdate, value: 1995.06.30, where: [image]}
+  - {category: phone, value: 010-0861-2075, where: [image]}
+  - {category: email, value: hajun.eo@example.org, where: [image]}
+  - {category: school, value: 전남대학교, where: [image]}
+  - {category: company, value: 하늘시스템즈, where: [image]}
+  - {category: address, value: 광주광역시 서구, where: [image]}
+  - {category: address, value: 무지개로 17, where: [image]}
+  - {category: school, value: 전남대, where: [image]}
+  - {category: person, value: 윤채아, where: [image]}
+  - {category: candidate, value: 하준, where: [image]}
+  keep: [직무에 지원한, 전공하며, 업무를 맡아, 입사 후 포부, 공정 엔지니어, 공정 엔지니어링]
+  images: 1
+  ocr_truth: '이 력 서
+
+    성명: 어하준  (Hajun Eo)
+
+    생년월일: 1995.06.30
+
+    휴대전화: 010-0861-2075
+
+    이메일: hajun.eo@example.org
+
+    주소: 광주광역시 서구 무지개로 17
+
+    학력: 전남대학교 화학공학 졸업
+
+    경력: 하늘시스템즈 공정 엔지니어 (2020.03 ~ 2025.09)
+
+    자기소개서
+
+    [지원 동기] 안녕하십니까. 공정 엔지니어링 직무에 지원한 어하준입니다.
+
+    전남대에서 화학공학을 전공하며 큰 시스템이 실패 없이 돌아가게 만드는
+
+    일에 흥미를 느꼈습니다.
+
+    [직무 역량] 하늘시스템즈에서 공정 엔지니어 업무를 맡아 장애 대응
+
+    절차를 다시 설계했고, 배포 실패율을 절반으로 줄였습니다. 당시 윤채아
+
+    수석님께서 코드 리뷰 문화를 함께 만들어 주셨습니다.
+
+    [협업 경험] 동료들은 저를 ''하준 님''이라고 부르며 어려운 일을 먼저
+
+    맡기곤 했습니다. 문제를 숫자로 설명하고 합의를 이끄는 것이 제
+
+    강점입니다.
+
+    [입사 후 포부] 입사 후에는 동료 개발자들이 믿고 쓰는 플랫폼을 만들고
+
+    싶습니다. 궁금하신 점은 hajun.eo@example.org로 연락
+
+    주시면 감사하겠습니다.'
+- id: R26
+  file: 남주원_이력서(한글변환).pdf
+  format: pdf
+  scanned: true
+  ocr_pages: [1, 2]
+  traps: ['한글 글꼴의 ToUnicode가 깨진 PDF(텍스트 층 = CP949를 Latin-1로 읽은 글자): 깨짐 판정 후 OCR', 깨진 텍스트 층 속 이름도 보내지 않음, 작성자 메타데이터는 정상(유니코드), 머리글·바닥글 반복]
+  identity:
+    name: 남주원
+    aliases: [Juwon Nam]
+    phones: [010-1472-6630]
+    emails: [juwon.nam@example.net]
+    birthdate: '1993-03-12'
+    addresses: [경상남도 김해시 가야꽃길 9]
+    schools: [부경대학교]
+    companies: [푸른솔시스템즈]
+  expected:
+  - {category: candidate, value: 남주원, where: [filename, metadata, image]}
+  - {category: candidate, value: Juwon Nam, where: [image]}
+  - {category: birthdate, value: 1993.03.12, where: [image]}
+  - {category: phone, value: 010-1472-6630, where: [image]}
+  - {category: email, value: juwon.nam@example.net, where: [image]}
+  - {category: address, value: 경상남도 김해시, where: [image]}
+  - {category: address, value: 가야꽃길 9, where: [image]}
+  - {category: school, value: 부경대학교, where: [image]}
+  - {category: company, value: 푸른솔시스템즈, where: [image]}
+  - {category: school, value: 부경대, where: [image]}
+  - {category: person, value: 정우진, where: [image]}
+  keep: []
+  images: 1
+  ocr_truth: '남주원 · 이력서
+
+    이 력 서
+
+    성명 남주원
+
+    영문 Juwon Nam
+
+    생년월일 1993.03.12 휴대전화 010-1472-6630
+
+    이메일 juwon.nam@example.net
+
+    주소 경상남도 김해시 가야꽃길 9
+
+    학력 사항
+
+    기간 학교 전공 구분
+
+    2014.03 ~ 2018.02 부경대학교 기계공학 졸업
+
+    경력 사항
+
+    기간 회사 직무 담당 업무
+
+    2018.08 ~ 2025.06 푸른솔시스템즈 설비 엔지니어 설비 보전
+
+    남주원 · 이력서
+
+    자기소개서
+
+    [성장 과정] 저는 남주원입니다. 어릴 때부터 고장 난 물건을 분해하고 다시 조립하는 것을 좋아했고, 그 호기심이
+
+    부경대 기계공학 진학으로 이어졌습니다.
+
+    [경력 사항] 푸른솔시스템즈 재직 중 설비 엔지니어 업무를 하며 신규 서비스 세 개를 출시했습니다. 정우진
+
+    팀장님과 함께한 프로젝트에서 일정과 품질을 함께 지키는 법을 배웠습니다.
+
+    [강점] 저는 기록하는 습관이 있습니다. 회의마다 결정 사항을 문서로 남겨 팀이 같은 실수를 반복하지 않도록
+
+    했습니다.
+
+    [포부] 설비 보전 분야에서 오래 쓰이는 제품을 만들고 싶습니다. 영문 이름 Juwon Nam로 공개 저장소에 작업을
+
+    올려 두었습니다.'
+- id: R27
+  file: 주예린_지원서류_합본.pdf
+  format: pdf
+  scanned: true
+  ocr_pages: [2]
+  traps: ['1쪽: 텍스트 + 자격증 사본 그림(그림 속 이름·생년월일은 OCR) + 증명사진', '2쪽: 스캔한 이력서(쪽 전체 OCR)', 작성자 메타데이터에 이름]
+  identity:
+    name: 주예린
+    aliases: [Yerin Joo]
+    phones: [010-0954-1186]
+    emails: [yerin.joo@example.com]
+    birthdate: '1999-01-25'
+    addresses: [충청남도 천안시 동남구 버들빛로 33]
+    schools: [한국기술교육대학교]
+    companies: [새봄테크]
+  expected:
+  - {category: candidate, value: 주예린, where: [filename, metadata, body, image]}
+  - {category: phone, value: 010-0954-1186, where: [body, image]}
+  - {category: email, value: yerin.joo@example.com, where: [body, image]}
+  - {category: birthdate, value: 1999.01.25, where: [image]}
+  - {category: candidate, value: Yerin Joo, where: [image]}
+  - {category: school, value: 한국기술교육대학교, where: [image]}
+  - {category: company, value: 새봄테크, where: [image]}
+  - {category: address, value: 충청남도 천안시 동남구, where: [image]}
+  - {category: address, value: 버들빛로 33, where: [image]}
+  - {category: person, value: 최다인, where: [image]}
+  keep: [자격증 사본, 경험을 바탕으로, 의사결정을 설명하는, 측정 가능한 목표로, 믿고 맡기는 사람, 자동화 엔지니어, 공장 자동화]
+  images: 3
+  photos: 1
+  ocr_truth: '국가기술자격증
+
+    자격종목: 정보처리기사
+
+    성명: 주예린
+
+    생년월일: 1999.01.25
+
+    자격번호: 26-2001-000123
+
+    위 사람은 국가기술자격법에 따라
+
+    자격을 취득하였음을 증명합니다.
+
+    2025년 6월 13일
+
+    이 력 서
+
+    성명: 주예린  (Yerin Joo)
+
+    생년월일: 1999.01.25
+
+    휴대전화: 010-0954-1186
+
+    이메일: yerin.joo@example.com
+
+    주소: 충청남도 천안시 동남구 버들빛로 33
+
+    학력: 한국기술교육대학교 메카트로닉스공학 졸업
+
+    경력: 새봄테크 자동화 엔지니어 (2022.07 ~ 2025.12)
+
+    자기소개서
+
+    [지원 동기] 새봄테크에서 쌓은 자동화 엔지니어 경험을 바탕으로 더 큰
+
+    문제를 풀고 싶어 공장 자동화 직무에 지원했습니다.
+
+    [학업] 한국기술교육대학교에서 메카트로닉스공학을 공부하며 데이터로
+
+    의사결정을 설명하는 방법을 익혔습니다.
+
+    [협업] 최다인 선임님과 진행한 개선 과제에서 처음으로 팀 전체의 목표를
+
+    숫자로 정리해 보았습니다. 이후 모든 일을 측정 가능한 목표로 바꾸어
+
+    생각합니다.
+
+    [포부] 저 주예린, 입사 후 3년 안에 팀이 믿고 맡기는 사람이
+
+    되겠습니다. 연락처는 010-0954-1186입니다.'
+- id: R28
+  file: 편지우_이력서_자격증첨부.docx
+  format: docx
+  scanned: false
+  traps: ['증명사진(실제 크기, 사진 판정으로 OCR 안 함)', '자격증 사본 그림(그림 속 이름·생년월일, 문서 속 그림 OCR)', 머리글에 이름·전화, 작성자 메타데이터]
+  identity:
+    name: 편지우
+    aliases: [Jiwoo Pyeon]
+    phones: [010-1307-8814]
+    emails: [jiwoo.pyeon@example.org]
+    birthdate: '1996-08-14'
+    addresses: [전북특별자치도 전주시 덕진구 솔내길 12]
+    schools: [전북대학교]
+    companies: [한빛테크]
+  expected:
+  - {category: candidate, value: 편지우, where: [filename, header, metadata, image, table, body]}
+  - {category: phone, value: 010-1307-8814, where: [header, table]}
+  - {category: birthdate, value: 1996.08.14, where: [image, table]}
+  - {category: candidate, value: Jiwoo Pyeon, where: [table, body]}
+  - {category: email, value: jiwoo.pyeon@example.org, where: [table]}
+  - {category: address, value: 전북특별자치도 전주시 덕진구, where: [table]}
+  - {category: address, value: 솔내길 12, where: [table]}
+  - {category: school, value: 전북대학교, where: [table]}
+  - {category: company, value: 한빛테크, where: [table, body]}
+  - {category: school, value: 전북대, where: [body]}
+  - {category: person, value: 이수민, where: [body]}
+  keep: [자격증 사본, 사용자 문제를, 고객 문의를 분류하는, 작게 만들고 빨리 확인합니다, 현장의 목소리를, 회로 설계 엔지니어, 회로 설계]
+  images: 2
+  photos: 1
+  ocr_truth: '국가기술자격증
+
+    자격종목: 정보처리기사
+
+    성명: 편지우
+
+    생년월일: 1996.08.14
+
+    자격번호: 26-2001-000123
+
+    위 사람은 국가기술자격법에 따라
+
+    자격을 취득하였음을 증명합니다.
+
+    2025년 6월 13일'
+- id: R29
+  file: 탁서아_이력서_구버전.doc
+  format: doc
+  scanned: false
+  traps: ['구형 .doc(Word 97-2003, LibreOffice로 저장): 변환기로 .docx로 바꿔 읽음', 머리글에 이름·전화, 작성자 메타데이터, 숨김 서식 텍스트에 이전 주소, 증명사진]
+  identity:
+    name: 탁서아
+    aliases: [Seoa Tak]
+    phones: [010-0628-9941]
+    emails: [seoa.tak@example.net]
+    birthdate: '1992-12-01'
+    addresses: [부산광역시 수영구 광안바다로 7]
+    schools: [부산대학교]
+    companies: [LG전자]
+  expected:
+  - {category: candidate, value: 탁서아, where: [filename, header, metadata, table, body]}
+  - {category: phone, value: 010.0628.9941, where: [header]}
+  - {category: address, value: 부산광역시 수영구, where: [hidden, table]}
+  - {category: address, value: 광안바다로 7, where: [hidden, table]}
+  - {category: candidate, value: Seoa Tak, where: [table]}
+  - {category: birthdate, value: 1992년 12월 1일, where: [table]}
+  - {category: phone, value: 010-0628-9941, where: [table]}
+  - {category: email, value: seoa.tak@example.net, where: [table, body]}
+  - {category: school, value: 부산대학교, where: [table]}
+  - {category: company, value: LG전자, where: [table, body]}
+  - {category: school, value: 부산대, where: [body]}
+  - {category: person, value: 강하늘, where: [body]}
+  - {category: candidate, value: 서아, where: [body]}
+  keep: [직무에 지원한, 전공하며, 업무를 맡아, 입사 후 포부, 품질 엔지니어, 품질 관리]
+  images: 1
+  photos: 1
+- id: R30
+  file: 포트폴리오_캡처_나도윤.pptx
+  format: pptx
+  scanned: true
+  ocr_pages: [5]
+  traps: ['그림만 있는 캡처 슬라이드(슬라이드 5, 글자는 OCR로만)', 증명사진(실제 크기), 작성자 메타데이터]
+  identity:
+    name: 나도윤
+    aliases: [Doyun Na]
+    phones: [010-1186-0472]
+    emails: [doyun.na@example.com]
+    birthdate: '1997-10-19'
+    addresses: [서울특별시 강서구 마곡빛길 25]
+    schools: [홍익대학교]
+    companies: [쿠팡]
+  expected:
+  - {category: candidate, value: 나도윤, where: [filename, metadata, image, table, body]}
+  - {category: candidate, value: Doyun Na, where: [image, table, body]}
+  - {category: email, value: doyun.na@example.com, where: [image, table]}
+  - {category: phone, value: 010-1186-0472, where: [image, table]}
+  - {category: birthdate, value: 1997.10.19, where: [table]}
+  - {category: address, value: 서울특별시 강서구, where: [table]}
+  - {category: address, value: 마곡빛길 25, where: [table]}
+  - {category: school, value: 홍익대학교, where: [table]}
+  - {category: company, value: 쿠팡, where: [table, body]}
+  - {category: school, value: 홍익대, where: [body]}
+  - {category: person, value: 문서연, where: [body]}
+  keep: [고장 난 물건을, 재직 중, 기록하는 습관, 오래 쓰이는 제품, UX 디자이너, UX 디자인]
+  images: 2
+  photos: 1
+  ocr_truth: '포트폴리오 · 프로젝트 소개
+
+    작성자: 나도윤 (Doyun Na)
+
+    연락처: doyun.na@example.com
+
+    휴대전화: 010-1186-0472
+
+    프로젝트: 사내 디자인 시스템 구축 (2023~2024)
+
+    역할: 컴포넌트 설계, 사용성 테스트 12회 진행
+
+    성과: 화면 제작 시간 35% 단축'
+- id: R31
+  file: 곽민서_발표자료.ppt
+  format: ppt
+  scanned: false
+  traps: ['구형 .ppt(PowerPoint 97-2003, LibreOffice로 저장): 변환기로 .pptx로 바꿔 읽음', 슬라이드 노트에 추천인과 전화, 작성자 메타데이터, 증명사진]
+  identity:
+    name: 곽민서
+    aliases: [Minseo Kwak]
+    phones: [010-0347-2259]
+    emails: [minseo.kwak@example.org]
+    birthdate: '1995-04-08'
+    addresses: [울산광역시 남구 고래빛로 44]
+    schools: [울산과학기술원]
+    companies: [현대자동차]
+  expected:
+  - {category: candidate, value: 곽민서, where: [filename, metadata, table, body]}
+  - {category: person, value: 오세훈, where: [notes, body]}
+  - {category: phone, value: 010-0347-2259, where: [notes, table, body]}
+  - {category: candidate, value: Minseo Kwak, where: [table]}
+  - {category: birthdate, value: 1995.04.08, where: [table]}
+  - {category: email, value: minseo.kwak@example.org, where: [table]}
+  - {category: address, value: 울산광역시 남구, where: [table]}
+  - {category: address, value: 고래빛로 44, where: [table]}
+  - {category: school, value: 울산과학기술원, where: [table, body]}
+  - {category: company, value: 현대자동차, where: [table]}
+  - {category: company, value: 현대차, where: [body]}
+  keep: [경험을 바탕으로, 의사결정을 설명하는, 측정 가능한 목표로, 믿고 맡기는 사람, 배터리 연구원, 배터리 연구]
+  images: 1
+  photos: 1

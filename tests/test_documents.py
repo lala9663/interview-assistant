@@ -28,9 +28,14 @@ from .conftest import ROOT
 MANIFEST = ROOT / "tests" / "fixtures" / "resumes" / "manifest.yaml"
 
 
+# The extractors without OCR (`extract_document`, no reading policy), on the 20 samples made
+# before OCR. Reading with OCR, HWP/HWPX, pictures and legacy files: test_document_reading.py.
+BEFORE_OCR = {f"R{n:02d}" for n in range(1, 21)}
+
+
 @pytest.fixture(scope="module")
 def samples():
-    return {s.id: s for s in load_document_samples(MANIFEST)}
+    return {s.id: s for s in load_document_samples(MANIFEST) if s.id in BEFORE_OCR}
 
 
 @pytest.fixture(scope="module")
@@ -47,6 +52,9 @@ def test_fixture_set_matches_the_plan(samples):
     assert len(samples) == 20
     assert {f: forms.count(f) for f in set(forms)} == {"pdf": 6, "docx": 4, "pptx": 3, "html": 4, "scan": 3}
     assert all(s.expected and s.traps for s in samples.values())
+    everything = load_document_samples(MANIFEST)
+    assert len(everything) == 31
+    assert {s.format for s in everything} == {"pdf", "docx", "pptx", "html", "hwp", "hwpx", "image", "doc", "ppt"}
 
 
 def test_format_is_detected_from_content(samples, docs):
@@ -59,9 +67,9 @@ def test_format_is_detected_from_content(samples, docs):
 @pytest.mark.parametrize(
     "data, name, message",
     [
-        (b"\xd0\xcf\x11\xe0\xa1\xb1\x1a\xe1" + b"\0" * 64, "이력서.hwp", "HWP"),
-        (b"\xd0\xcf\x11\xe0\xa1\xb1\x1a\xe1" + b"\0" * 64, "old.doc", "HWP 또는 구형"),
-        (b"GIF89a....", "photo.gif", "지원하지 않는"),
+        (b"GIF89a....", "photo.gif", "JPG·PNG만"),
+        (b"\x00\x00\x00\x18ftypheic\x00\x00", "IMG_0001.heic", "JPG·PNG만"),
+        (b"plain text, not a document", "notes.txt", "지원하지 않는"),
     ],
 )
 def test_unsupported_formats_are_refused(data, name, message):
@@ -69,13 +77,22 @@ def test_unsupported_formats_are_refused(data, name, message):
         extract_document(data, name)
 
 
-def test_hwpx_is_refused_by_name():
+def test_broken_ole_files_name_what_they_were_meant_to_be():
+    """HWP 5 and legacy Office share the OLE container; a broken one cannot say which it is."""
+    ole = b"\xd0\xcf\x11\xe0\xa1\xb1\x1a\xe1" + b"\0" * 64
+    with pytest.raises(ExtractionError, match="HWP 파일을 읽을 수 없습니다"):
+        extract_document(ole, "이력서.hwp")
+    with pytest.raises(ExtractionError, match="HWP·구형 오피스 파일을 읽을 수 없습니다"):
+        extract_document(ole, "old.doc")
+
+
+def test_hwpx_is_recognised_by_its_mimetype():
     buf = io.BytesIO()
     with zipfile.ZipFile(buf, "w") as zf:
         zf.writestr("mimetype", "application/hwp+zip")
         zf.writestr("Contents/section0.xml", "<x/>")
-    with pytest.raises(UnsupportedFormat, match="HWPX"):
-        extract_document(buf.getvalue(), "이력서.hwpx")
+    assert detect_format(buf.getvalue(), "renamed.zip") == "hwpx"
+    assert extract_document(buf.getvalue(), "이력서.hwpx").format == "hwpx"
 
 
 def test_broken_files_raise_extraction_error():

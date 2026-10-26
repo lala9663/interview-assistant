@@ -5,16 +5,19 @@ the company GCP also need the admin's confirmation (api/routes/admin.py). The LL
 fixed, made-up prompt through the AI gateway (guard + audit) and checks the structured answer. STT
 transcribes a voice sample, the built-in clip or the admin's own recording, through the role's own
 path: batch `transcribe` on a file, streaming `stream` on 16 kHz PCM chunks. Embedding checks the
-vector dimension, diarization the speaker turns. Nothing a test sends or returns is stored; the
-audit log keeps who tested what, the model, the outcome and the timings.
+vector dimension, diarization the speaker turns. 서류 읽기 roles read a built-in fictional resume
+or the admin's file with the candidate setting (`read_document`) and show how each page was read
+and a de-identified preview; the raw text never leaves the server. Nothing a test sends or
+returns is stored; the audit log keeps who tested what, the model, the outcome and the timings.
 """
 
 from __future__ import annotations
 
+import json
 import math
 import re
 import time
-import unicodedata
+from collections.abc import Mapping
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
@@ -30,7 +33,11 @@ from interview_assistant.ai.prompts import (
     connection_test_prompt,
 )
 from interview_assistant.ai_models.manager import Prepared, describe
+from interview_assistant.deid.config import DeidConfig
+from interview_assistant.deid.types import KnownIdentity
 from interview_assistant.providers.audio import decode_pcm16, pcm_chunks, pcm_seconds
+from interview_assistant.providers.base import ProviderUnavailable
+from interview_assistant.textmetrics import cer
 
 EMBED_TEXTS = ("연결 테스트 문장입니다.", "모델 설정 화면에서 보낸 두 번째 문장")
 
@@ -43,26 +50,6 @@ class ProbeResult:
     summary: str
     output: dict[str, Any] = field(default_factory=dict)
     error: str | None = None
-
-
-def normalize(text: str) -> str:
-    """For error rates: NFC, no spaces or punctuation, lower case."""
-    text = unicodedata.normalize("NFC", text).lower()
-    return "".join(c for c in text if not (c.isspace() or unicodedata.category(c).startswith("P")))
-
-
-def cer(reference: str, hypothesis: str) -> float:
-    """Character error rate: edit distance over the reference length, both normalized."""
-    ref, hyp = normalize(reference), normalize(hypothesis)
-    if not ref:
-        return 0.0 if not hyp else 1.0
-    previous = list(range(len(hyp) + 1))
-    for i, r in enumerate(ref, 1):
-        current = [i]
-        for j, h in enumerate(hyp, 1):
-            current.append(min(previous[j] + 1, current[j - 1] + 1, previous[j - 1] + (r != h)))
-        previous = current
-    return previous[-1] / len(ref)
 
 
 async def run(
@@ -189,9 +176,99 @@ async def _diarization(provider: Any, audio: Path) -> tuple[bool, str, dict[str,
     return True, f"화자 {len(speakers)}명, 구간 {len(turns)}개를 받았습니다.", output
 
 
+SAMPLES = Path(__file__).resolve().parents[1] / "providers" / "samples" / "documents"
+PREVIEW_CHARS = 2000
+
+
+@dataclass(frozen=True)
+class DocumentSample:
+    data: bytes
+    filename: str
+    identity: KnownIdentity
+    ocr_truth: str | None
+
+
+def document_sample(role: str) -> DocumentSample:
+    """The built-in fictional resume for a 서류 읽기 role (providers/samples/NOTICE.md)."""
+    index = json.loads((SAMPLES / "samples.json").read_text(encoding="utf-8"))
+    entry = index.get(role) or index["document.reading"]
+    return DocumentSample(
+        (SAMPLES / entry["file"]).read_bytes(),
+        entry["file"],
+        KnownIdentity.from_dict(entry["identity"]),
+        entry.get("ocr_truth"),
+    )
+
+
+def read_document(
+    prepared: Prepared,
+    provider: Any,
+    active: Mapping[str, Any],
+    sample: DocumentSample,
+    deid_config: DeidConfig,
+) -> ProbeResult:
+    """Read `sample` with `provider` in its role and the active settings for the other 서류 읽기
+    roles, then de-identify it on a throwaway store (nothing is saved). Runs in a worker thread.
+    The result holds how each page was read and a de-identified preview, never the raw text."""
+    from interview_assistant.ai_models.manager import reader_for
+    from interview_assistant.deid.documents import deidentify_document
+    from interview_assistant.deid.leaks import real_path, residual_scan
+    from interview_assistant.documents.base import ExtractionError
+
+    started = time.perf_counter()
+    by_role = {**active, prepared.role.key: provider}
+    model = str(getattr(provider, "model", "") or prepared.spec.impl)
+    try:
+        document = reader_for(by_role, None).read(sample.data, sample.filename)
+    except (ExtractionError, ProviderUnavailable) as exc:
+        elapsed = round((time.perf_counter() - started) * 1000)
+        return ProbeResult(False, model, elapsed, "읽지 못했습니다.", {"format": None}, describe(exc))
+    read_ms = round((time.perf_counter() - started) * 1000)
+    output: dict[str, Any] = {
+        "format": document.format,
+        "pages": document.page_summary(),
+        "images": [
+            {"label": i.label, "decision": i.decision, "confidence": i.confidence, "detail": i.detail}
+            for i in document.images
+        ],
+        "tools": list(document.reading.tools) if document.reading else [],
+        "warnings": list(document.warnings),
+        "read_ms": read_ms,
+    }
+    ocr_text = "\n".join(b.text for b in document.blocks if b.ocr)
+    if sample.ocr_truth and ocr_text:
+        output["cer"] = round(cer(sample.ocr_truth, ocr_text), 4)
+    held = [p for p in document.pages if p.needs_ocr]
+    if held:
+        reasons = "; ".join(f"{p.number}쪽: {p.reason}" for p in held)
+        elapsed = round((time.perf_counter() - started) * 1000)
+        if all("텍스트만" in p.reason for p in held):
+            # The setting works as intended: such documents are held, not read. Testable, appliable.
+            pages = ", ".join(str(p.number) for p in held)
+            summary = f"텍스트만 설정이라 {pages}쪽은 OCR하지 않고 보류합니다. 적용하면 이런 서류는 처리 보류됩니다."
+            return ProbeResult(True, model, elapsed, summary, output)
+        return ProbeResult(False, model, elapsed, f"읽지 못한 쪽이 있어 보류됩니다 ({reasons}).", output)
+    with real_path(deid_config) as (deid, enroll):
+        candidate_id, known = enroll("MODEL-TEST", sample.identity)
+        result = deidentify_document(deid, document, candidate_id=candidate_id, known=known)
+    preview = result.text
+    for _, surface in residual_scan(preview):  # belt and braces: no contact shape is shown
+        preview = preview.replace(surface, "■" * len(surface))
+    output["preview"] = preview[:PREVIEW_CHARS]
+    output["preview_truncated"] = len(preview) > PREVIEW_CHARS
+    output["replacements"] = result.replacements
+    ocr_pages = sum(1 for p in document.pages if p.method.value == "ocr")
+    pictures = sum(1 for i in document.images if i.decision == "ocr")
+    elapsed = round((time.perf_counter() - started) * 1000)
+    summary = f"{document.format.upper()} {len(document.pages)}쪽을 읽었습니다" + (
+        f" (OCR {ocr_pages}쪽" + (f", 그림 {pictures}개" if pictures else "") + ")" if ocr_pages or pictures else ""
+    )
+    return ProbeResult(True, model, elapsed, summary + ".", output)
+
+
 def summary_for_audit(result: ProbeResult) -> dict[str, Any]:
     """What the audit log keeps of a test: outcome and timings, never text."""
-    keep = ("audio_seconds", "realtime_factor", "cer", "dimensions", "turns", "partials")
+    keep = ("audio_seconds", "realtime_factor", "cer", "dimensions", "turns", "partials", "format", "read_ms")
     details = {k: result.output[k] for k in keep if k in result.output}
     details |= {"ok": result.ok, "latency_ms": result.latency_ms}
     if result.error:

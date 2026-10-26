@@ -26,12 +26,15 @@ from interview_assistant.models import (
     TranscriptSegment,
 )
 from interview_assistant.providers import catalog, registry
-from interview_assistant.providers.catalog import DataLocation, ImplInfo, OptionField
+from interview_assistant.providers.catalog import ROLES, DataLocation, ImplInfo, OptionField
 from interview_assistant.providers.fake import FakeLLM, FakeSTT
 from tests.api_util import COMPLETED, LIVE, P3, SCHEDULED, sse_events, wait_for
 from tests.conftest import ROOT, api_settings, file_session_factory, instant_providers
 
 FAST_LLM = {"impl": "fake", "options": {"model": "fake-llm-v2", "speed": 0}}
+
+# The first start seeds one revision per role (AI models and 서류 읽기).
+INITIAL = len(ROLES)
 
 
 def _apply(api, role: str, spec: dict, reason: str = "테스트로 교체", **extra):
@@ -194,7 +197,7 @@ def test_first_start_seeds_the_settings_from_the_yaml_once(
         create_app(settings, providers=instant_providers(), session_factory=factory)
     ) as api:
         body = api.get("/api/admin/models").json()
-        assert body["revision"] == 6 and body["persistent"] is True
+        assert body["revision"] == INITIAL and body["persistent"] is True
         assert {r["role"]: r["spec"]["impl"] for r in body["roles"]} == {
             "llm.primary": "fake",
             "llm.screening": "fake",
@@ -202,9 +205,14 @@ def test_first_start_seeds_the_settings_from_the_yaml_once(
             "stt.batch": "fake",
             "embedding": "fake",
             "diarization": "fake",
+            "document.reading": "standard",
+            "document.ocr": "fake",
+            "document.pdf": "pdfplumber",
+            "document.hwp": "syhwp",
+            "document.legacy": "libreoffice",
         }
         history = api.get("/api/admin/models/history").json()
-        assert [h["kind"] for h in history] == ["initial"] * 6
+        assert [h["kind"] for h in history] == ["initial"] * INITIAL
         assert all(h["actor"] is None and h["reason"] == "providers YAML 기본값" for h in history)
         assert _apply(api, "llm.primary", FAST_LLM).status_code == 200
 
@@ -216,7 +224,7 @@ def test_first_start_seeds_the_settings_from_the_yaml_once(
     settings = api_settings(path, key, tmp_path, providers_file=other)
     with TestClient(create_app(settings, session_factory=factory)) as api:
         body = api.get("/api/admin/models").json()
-        assert body["revision"] == 7
+        assert body["revision"] == INITIAL + 1
         primary = next(r for r in body["roles"] if r["role"] == "llm.primary")
         assert primary["spec"] == FAST_LLM and primary["model"] == "fake-llm-v2"
         assert api.get("/health").json()["providers"]["stt"]["batch"] == "FakeSTT"
@@ -258,7 +266,7 @@ def test_llm_test_checks_structured_output_through_the_gateway(api):
     assert user_row.target_id == "llm.primary" and user_row.details["ok"] is True
     assert "structured" not in user_row.details  # outcome only, never content
     # Testing changes nothing.
-    assert api.get("/api/admin/models").json()["revision"] == 6
+    assert api.get("/api/admin/models").json()["revision"] == INITIAL
 
 
 def test_stt_embedding_and_diarization_tests(api):
@@ -304,9 +312,9 @@ def test_apply_swaps_new_work_while_sessions_keep_their_providers(api):
     assert state["last_change"]["actor"]["employee_no"] == "E24017"
     assert state["last_change"]["reason"] == "새 모델 시험"
     assert state["pinned_sessions"] >= 1  # LIVE in progress (and C4 if its scoring still runs)
-    assert api.get("/health").json()["ai_config_revision"] == 7
+    assert api.get("/health").json()["ai_config_revision"] == INITIAL + 1
     [audit] = _audits(api, "model.applied")
-    assert audit.details["revision"] == 7 and audit.details["model"] == "fake-llm-v2"
+    assert audit.details["revision"] == INITIAL + 1 and audit.details["model"] == "fake-llm-v2"
 
     # New work outside sessions: the new model.
     assert api.post(f"/api/postings/{P3}/competency-sets/generate").status_code == 201
@@ -328,7 +336,7 @@ def test_apply_swaps_new_work_while_sessions_keep_their_providers(api):
             )
         }
         assert models == {"fake-llm"}
-        assert db.get(InterviewSession, LIVE).ai_config_revision == 6
+        assert db.get(InterviewSession, LIVE).ai_config_revision == INITIAL
 
     # An interview that starts now uses the new one.
     api.post(f"/api/sessions/{SCHEDULED}/consent", json={"consent_recording": True})
@@ -343,7 +351,7 @@ def test_apply_swaps_new_work_while_sessions_keep_their_providers(api):
     )[0][1]
     assert batch["model"] == "fake-llm-v2"
     with api.runtime.session_factory() as db:
-        assert db.get(InterviewSession, SCHEDULED).ai_config_revision == 7
+        assert db.get(InterviewSession, SCHEDULED).ai_config_revision == INITIAL + 1
         segments = db.scalars(
             select(TranscriptSegment).where(
                 TranscriptSegment.session_id == SCHEDULED, TranscriptSegment.speaker == "candidate"
@@ -433,7 +441,7 @@ def test_apply_refuses_what_it_cannot_run(api):
         json={"impl": "faster_whisper", "options": {"model": "large-v3"}, "reason": "정확도"},
     )
     assert whisper.status_code == 409 and "모델 파일 large-v3" in whisper.json()["detail"]
-    assert api.get("/api/admin/models").json()["revision"] == 6
+    assert api.get("/api/admin/models").json()["revision"] == INITIAL
     assert not _audits(api, "model.applied")
 
 
@@ -449,8 +457,8 @@ def test_rollback_restores_the_previous_spec_and_is_recorded(api):
     assert state["model"] == "fake-llm" and state["spec"]["options"]["speed"] == 1
     latest = api.get("/api/admin/models/history").json()[0]
     assert latest["kind"] == "rollback" and latest["reverts_change_id"] == change["id"]
-    assert latest["revision"] == 8 and latest["reason"] == "원래대로"
-    assert _audits(api, "model.reverted")[0].details["revision"] == 8
+    assert latest["revision"] == INITIAL + 2 and latest["reason"] == "원래대로"
+    assert _audits(api, "model.reverted")[0].details["revision"] == INITIAL + 2
 
     again = api.post(
         f"/api/admin/models/history/{change['id']}/revert", json={"reason": "한 번 더"}
@@ -588,7 +596,7 @@ def test_download_api_reports_progress_and_completes(api, monkeypatch):
 
     api.runtime.models.downloads.opener = opener
     listed = {d["model"]: d for d in api.get("/api/admin/models/downloads").json()}
-    assert set(listed) == {"small", "medium", "large-v3", "large-v3-turbo"}
+    assert {"small", "medium", "large-v3", "large-v3-turbo"} <= set(listed)
     assert listed["small"]["status"] == "missing"
 
     started = api.post(

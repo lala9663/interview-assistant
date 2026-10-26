@@ -17,7 +17,7 @@ import { errorMessage, toastError } from '@/lib/toast'
 import { cn } from '@/lib/utils'
 
 import DataLocationBadge from './DataLocationBadge.vue'
-import { initialOptions } from './labels'
+import { initialOptions, takesDocument } from './labels'
 import ModelOptionsForm from './ModelOptionsForm.vue'
 import ModelTestPanel from './ModelTestPanel.vue'
 import RequirementList from './RequirementList.vue'
@@ -128,7 +128,9 @@ function submit() {
     { role: role.value, body: { ...spec.value, reason: reason.value.trim(), confirm_external: confirmExternal.value } },
     {
       onSuccess: (s) => {
-        toast.success(`${s.label}: ${s.model}로 바꿨습니다`, { description: '재시작 없이 적용했습니다. 새로 시작하는 면접부터 이 모델을 씁니다.' })
+        toast.success(`${s.label}: ${s.model}로 바꿨습니다`, {
+          description: takesDocument(s.role) ? '재시작 없이 적용했습니다. 새로 들어오는 서류부터 이 설정으로 읽습니다.' : '재시작 없이 적용했습니다. 새로 시작하는 면접부터 이 모델을 씁니다.',
+        })
         emit('close')
       },
       onError: toastError('적용하지 못했습니다'),
@@ -231,7 +233,11 @@ const optionSummary = computed(() =>
           <div class="space-y-1.5 text-[13px] leading-relaxed">
             <p class="font-medium">회사 밖 API로 데이터를 보내는 provider입니다.</p>
             <p class="text-muted-foreground">{{ impl?.data_note }}</p>
-            <p class="text-muted-foreground">
+            <p v-if="takesDocument(role)" class="text-muted-foreground" data-testid="external-ocr-warning">
+              OCR은 비식별화보다 먼저 원본 쪽을 읽습니다. 이름·연락처가 그대로 보이는 서류 그림이 회사 밖으로 나갑니다. 연결 테스트도
+              외부로 보냅니다(내장 샘플은 가상 인물). 보안 담당 확인이 필요하면 적용하지 마세요.
+            </p>
+            <p v-else class="text-muted-foreground">
               LLM 입력은 바꾼 뒤에도 비식별화를 거치지만, 비식별 텍스트(또는 음성)가 이 PC와 사내 GCP 밖으로 나갑니다. 연결 테스트도 외부로
               요청을 보냅니다. 보안 담당 확인이 필요하면 적용하지 마세요.
             </p>
@@ -258,8 +264,17 @@ const optionSummary = computed(() =>
         </dl>
         <div class="space-y-1.5">
           <Label for="change-reason">변경 사유</Label>
-          <Textarea id="change-reason" v-model="reason" rows="2" :maxlength="500" placeholder="예: 사후 전사 정확도 개선을 위해 로컬 Whisper large-v3로 교체" />
-          <p class="text-xs text-muted-foreground">이력과 감사 로그에 이름과 함께 남습니다. 재시작 없이 바로 적용되고, 진행 중인 면접은 시작할 때의 모델을 끝까지 씁니다.</p>
+          <Textarea
+            id="change-reason"
+            v-model="reason"
+            rows="2"
+            :maxlength="500"
+            :placeholder="takesDocument(role) ? '예: 스캔 이력서를 읽으려고 로컬 PaddleOCR로 교체' : '예: 사후 전사 정확도 개선을 위해 로컬 Whisper large-v3로 교체'"
+          />
+          <p class="text-xs text-muted-foreground">
+            이력과 감사 로그에 이름과 함께 남습니다. 재시작 없이 바로 적용되고,
+            {{ takesDocument(role) ? '처리 중인 서류는 시작할 때의 설정으로 끝까지 읽습니다.' : '진행 중인 면접은 시작할 때의 모델을 끝까지 씁니다.' }}
+          </p>
         </div>
       </div>
 

@@ -5,6 +5,7 @@ from interview_assistant.deid.detectors.contact import contact_detector
 from interview_assistant.deid.detectors.dictionary import DictionaryDetector, TermDictionary
 from interview_assistant.deid.detectors.known import KnownIdentityDetector
 from interview_assistant.deid.detectors.ner import Entity, EntityRecognizer, NERDetector
+from interview_assistant.deid.detectors.ocr import OcrTolerantDetector
 from interview_assistant.deid.detectors.organization import organization_detector
 from interview_assistant.deid.detectors.person import titled_person_detector
 
@@ -15,6 +16,7 @@ __all__ = [
     "EntityRecognizer",
     "KnownIdentityDetector",
     "NERDetector",
+    "OcrTolerantDetector",
     "PatternRule",
     "RegexDetector",
     "TermDictionary",

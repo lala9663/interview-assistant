@@ -3,7 +3,7 @@ import { LockIcon, TriangleAlertIcon } from '@lucide/vue'
 import { computed, ref } from 'vue'
 
 import { useMe, useModelCatalog, useModelHistory, useModelSettings } from '@/api/queries'
-import type { ModelRoleState } from '@/api/types'
+import type { ModelGroup, ModelRoleState } from '@/api/types'
 import EmptyState from '@/components/common/EmptyState.vue'
 import ErrorState from '@/components/common/ErrorState.vue'
 import Page from '@/components/common/Page.vue'
@@ -23,6 +23,16 @@ const settings = useModelSettings(isAdmin)
 const catalog = useModelCatalog(isAdmin)
 const history = useModelHistory(isAdmin)
 
+const GROUPS: { key: ModelGroup; title: string; description: string }[] = [
+  { key: 'ai', title: 'AI 모델', description: 'LLM, STT, 임베딩, 화자분리. 진행 중인 면접은 시작할 때의 모델을 끝까지 씁니다.' },
+  {
+    key: 'documents',
+    title: '서류 읽기',
+    description:
+      '지원 서류를 텍스트 층으로 읽을지 OCR로 읽을지, 어떤 도구로 읽을지 정합니다. 처리 중인 서류는 시작할 때의 설정으로 끝나고, 지원서마다 읽은 설정이 남습니다. 그림은 LLM에 보내지 않습니다.',
+  },
+]
+
 const editing = ref<ModelRoleState | null>(null)
 const dialogOpen = ref(false)
 
@@ -37,7 +47,7 @@ function edit(state: ModelRoleState) {
     <PageHeader
       eyebrow="관리자"
       title="모델 설정"
-      description="역할마다 AI 모델을 고르고, 테스트하고, 서버 재시작 없이 적용합니다. 진행 중인 면접은 시작할 때의 모델을 끝까지 씁니다."
+      description="역할마다 AI 모델과 서류 읽기 도구를 고르고, 테스트하고, 서버 재시작 없이 적용합니다."
     >
       <template v-if="settings.data" #actions>
         <Badge variant="outline" class="tabular">설정 rev {{ settings.data.revision }}</Badge>
@@ -61,14 +71,20 @@ function edit(state: ModelRoleState) {
       </div>
 
       <ErrorState v-if="settings.isError" :error="settings.error" @retry="settings.refetch()" />
-      <div v-else class="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
-        <template v-if="settings.data">
-          <RoleCard v-for="r in settings.data.roles" :key="r.role" :state="r" @change="edit(r)" />
-        </template>
-        <template v-else>
-          <Skeleton v-for="i in 6" :key="i" class="h-52 rounded-xl" />
-        </template>
-      </div>
+      <template v-else>
+        <section v-for="g in GROUPS" :key="g.key" :aria-labelledby="`group-${g.key}`" class="mb-8">
+          <h2 :id="`group-${g.key}`" class="text-[15px] font-semibold tracking-tight">{{ g.title }}</h2>
+          <p class="mt-0.5 mb-3 text-xs text-muted-foreground">{{ g.description }}</p>
+          <div class="grid gap-4 md:grid-cols-2 xl:grid-cols-3" :data-testid="`group-${g.key}`">
+            <template v-if="settings.data">
+              <RoleCard v-for="r in settings.data.roles.filter((x) => (x.group ?? 'ai') === g.key)" :key="r.role" :state="r" @change="edit(r)" />
+            </template>
+            <template v-else>
+              <Skeleton v-for="i in 3" :key="i" class="h-52 rounded-xl" />
+            </template>
+          </div>
+        </section>
+      </template>
 
       <h2 class="mt-10 mb-3 text-[15px] font-semibold tracking-tight">변경 이력</h2>
       <Card class="overflow-hidden">

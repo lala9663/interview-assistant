@@ -114,7 +114,7 @@ def build_runtime(
             session_factory=session_factory,
             deid=deid,
             uploads_dir=settings.uploads_dir,
-            ai=lambda: models.active.ai,
+            models=lambda: models.active,
         ),
         workers=settings.intake_workers,
     )

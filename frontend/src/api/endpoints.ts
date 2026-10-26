@@ -107,12 +107,20 @@ export const endpoints = {
   modelSettings: (signal?: AbortSignal) => api.get<ModelSettings>('/admin/models', signal),
   modelCatalog: (signal?: AbortSignal) => api.get<ModelImpl[]>('/admin/models/catalog', signal),
   checkModel: (role: string, spec: ModelSpec) => api.post<ModelCheck>(`/admin/models/${role}/check`, spec),
-  /** STT and diarization take `audio` (a recording or file); without it the server's Korean sample. */
-  testModel: (role: string, spec: ModelSpec, opts: { confirmExternal?: boolean; audio?: Blob | null } = {}) => {
+  /** STT and diarization take `audio` (a recording or file); without it the server's Korean sample.
+   *  서류 읽기 roles take `document` (and the applicant's `name` for the preview's de-identification);
+   *  without it the server's built-in fictional resume. */
+  testModel: (
+    role: string,
+    spec: ModelSpec,
+    opts: { confirmExternal?: boolean; audio?: Blob | null; document?: File | null; name?: string } = {},
+  ) => {
     const form = new FormData()
     form.append('spec', JSON.stringify(spec))
     form.append('confirm_external', String(Boolean(opts.confirmExternal)))
     if (opts.audio) form.append('audio', opts.audio, opts.audio instanceof File ? opts.audio.name : 'recording.webm')
+    if (opts.document) form.append('document', opts.document, opts.document.name)
+    if (opts.name) form.append('name', opts.name)
     return api.postForm<ModelTestResult>(`/admin/models/${role}/test`, form)
   },
   applyModel: (role: string, body: ApplyModelRequest) => api.post<ModelRoleState>(`/admin/models/${role}/apply`, body),

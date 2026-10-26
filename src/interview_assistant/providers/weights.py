@@ -1,7 +1,8 @@
 """Local model weights: what each downloadable model needs, whether it is on disk, and the download.
 
-Weights are pinned to a Hugging Face commit and the large file to its sha256, so what runs is what
-was reviewed. Nothing is fetched until an admin presses "다운로드" (admin > 모델 설정); checking
+Weights are pinned to a commit (Hugging Face; GitHub for the Tesseract language data) and large
+files to their sha256, so what runs is what was reviewed. One set can gather files from several
+repos into sub-folders (a PaddleOCR bundle: detection, recognition, orientation). Nothing is fetched until an admin presses "다운로드" (admin > 모델 설정); checking
 whether a model is present only looks at file sizes on disk, never the network. Files land in
 `IA_WEIGHTS_DIR` (default `weights/`, git-ignored): `<dir>.partial/` while downloading, renamed to
 `<dir>/` once every file is complete and verified. An interrupted download resumes where it
@@ -31,9 +32,15 @@ _CHUNK = 1 << 20
 
 @dataclass(frozen=True)
 class WeightFile:
-    name: str
+    name: str  # path under the set's folder; may contain "/" ("det/inference.pdiparams")
     size: int
     sha256: str | None = None  # Git LFS files carry one; small JSON/text files do not
+    # Where the file comes from when not `<set repo>/<name>`: another Hugging Face repo and commit
+    # (`repo_id`, `revision`, `remote` = path in that repo), or a full pinned URL (GitHub raw).
+    repo_id: str | None = None
+    revision: str | None = None
+    remote: str | None = None
+    url: str | None = None
 
 
 @dataclass(frozen=True)
@@ -53,6 +60,12 @@ class WeightSet:
 
     def url(self, name: str, endpoint: str) -> str:
         return f"{endpoint.rstrip('/')}/{self.repo_id}/resolve/{self.revision}/{name}"
+
+    def file_url(self, f: WeightFile, endpoint: str) -> str:
+        if f.url:
+            return f.url
+        repo, revision = f.repo_id or self.repo_id, f.revision or self.revision
+        return f"{endpoint.rstrip('/')}/{repo}/resolve/{revision}/{f.remote or f.name}"
 
 
 def _whisper(size: str, repo_id: str, revision: str, *files: WeightFile) -> WeightSet:
@@ -116,6 +129,126 @@ WHISPER: dict[str, WeightSet] = {
         WeightFile("preprocessor_config.json", 340),
         WeightFile("tokenizer.json", 2710337),
         WeightFile("vocabulary.json", 1068114),
+    ),
+}
+
+
+def _paddle(folder: str, repo: str, revision: str, files: dict[str, tuple[int, str]]) -> list[WeightFile]:
+    """One PaddleOCR model (inference.json/.pdiparams/.yml) from its own repo, into `folder`/."""
+    return [
+        WeightFile(f"{folder}/{name}", size, sha, f"PaddlePaddle/{repo}", revision, name)
+        for name, (size, sha) in files.items()
+    ]
+
+
+# PP-OCRv5 (PaddlePaddle, Apache-2.0), checked 2026-10-26. A bundle is what one "model" choice
+# needs: text detection (mobile or server), the Korean recognizer (Korean, English, digits) and
+# the two small orientation classifiers the options can switch on. sha256 for every file.
+_PADDLE_REC = _paddle(
+    "rec",
+    "korean_PP-OCRv5_mobile_rec",
+    "c02ecaf1f22bfd1c618cce154fd19185b47e663a",
+    {
+        "inference.json": (217724, "562404e3c590c50c93778d5f0a94df21b47b5ab8f3ea6d47c7f8a7930c3bc844"),
+        "inference.pdiparams": (13342671, "cac3e5f12cf04aaa77f6a5bc704e4e736ef2908476551891d84b41b4e9090462"),
+        "inference.yml": (96039, "f757fa1c40e99edcf27e9cce879b93eb2a51fa46f5ef39095689b8c37dd75998"),
+    },
+)
+_PADDLE_ORIENTATION = [
+    *_paddle(
+        "textline_ori",
+        "PP-LCNet_x1_0_textline_ori",
+        "cd237a44b0e359d4fe38310a416203cf7403faa5",
+        {
+            "inference.json": (104399, "b81929eeaff8e52db0fafb49c9fbfc5bc0572f81641fe0179cc52096323fb4d4"),
+            "inference.pdiparams": (6743918, "0de2bcf996cf553e2b848dd7b1769dafffc6917b1ccdf55c1d8efe7909fbf743"),
+            "inference.yml": (735, "8d5120d0e1a30a9df7ed46aa9119da3796ed066777089d1c1d705f132d5e90f9"),
+        },
+    ),
+    *_paddle(
+        "doc_ori",
+        "PP-LCNet_x1_0_doc_ori",
+        "d3b95a6dff5fe8a94f2748e12b61cb26818a0df8",
+        {
+            "inference.json": (104441, "3580978602f309c3554508dd85d4fe09b73a7e0d80d7f9e63258f5b72c390c69"),
+            "inference.pdiparams": (6754166, "e8d6e7c5d264507e40e58a655779059d616b20d7441ea22047d829eb3931989c"),
+            "inference.yml": (766, "9e195eb729a8173588cd0e8a852c8b373aa606e79e77b4ac7d8346f5426caf26"),
+        },
+    ),
+]
+PADDLEOCR: dict[str, WeightSet] = {
+    "ppocrv5-mobile": WeightSet(
+        "paddleocr/ppocrv5-mobile-ko",
+        "PaddlePaddle/PP-OCRv5_mobile_det",
+        "0d63e78e2b680928f6b1747d76a08db6e645efb7",
+        (
+            *_paddle(
+                "det",
+                "PP-OCRv5_mobile_det",
+                "0d63e78e2b680928f6b1747d76a08db6e645efb7",
+                {
+                    "inference.json": (229777, "05feef1acb00aa4cd7362b15f7f501fc4f99d7b1fa73c1c871e0c7b1504b0f5c"),
+                    "inference.pdiparams": (4692937, "afa1820cb16c1fd0dad589d0f8b389139061c1ef6d68019685fd07be997dda5b"),
+                    "inference.yml": (903, "98069072e1b6b37d727fd9d9f11725faa46d6ea0de012f2ed26caea011c37699"),
+                },
+            ),
+            *_PADDLE_REC,
+            *_PADDLE_ORIENTATION,
+        ),
+        license="Apache-2.0",
+    ),
+    "ppocrv5-server": WeightSet(
+        "paddleocr/ppocrv5-server-ko",
+        "PaddlePaddle/PP-OCRv5_server_det",
+        "ca867c897ecbca8873081573a802ad70d499cb94",
+        (
+            *_paddle(
+                "det",
+                "PP-OCRv5_server_det",
+                "ca867c897ecbca8873081573a802ad70d499cb94",
+                {
+                    "inference.json": (402480, "af5876933d8806a1b50d895867e0781e135cd92ff37381992828fc8d1b842d28"),
+                    "inference.pdiparams": (87932887, "183146fe9d9910352f68482f623bcbbb9fa7b9e8fa1463b9ad288cef00524d2d"),
+                    "inference.yml": (903, "28fb721efc3634fc8aa677e474b9602cb815a91cf569ef357a7a553d7b3ce685"),
+                },
+            ),
+            *_PADDLE_REC,
+            *_PADDLE_ORIENTATION,
+        ),
+        license="Apache-2.0",
+    ),
+}
+
+
+def _tessdata(flavour: str, commit: str, files: dict[str, tuple[int, str]]) -> WeightSet:
+    base = f"https://raw.githubusercontent.com/tesseract-ocr/tessdata_{flavour}/{commit}"
+    return WeightSet(
+        f"tesseract/tessdata-{flavour}",
+        f"tesseract-ocr/tessdata_{flavour}",
+        commit,
+        tuple(WeightFile(name, size, sha, url=f"{base}/{name}") for name, (size, sha) in files.items()),
+        license="Apache-2.0",
+    )
+
+
+# Tesseract language data (Apache-2.0) from GitHub, pinned to a commit, checked 2026-10-26.
+# Korean plus English (addresses, e-mail, English names on Korean resumes).
+TESSDATA: dict[str, WeightSet] = {
+    "best": _tessdata(
+        "best",
+        "e12c65a915945e4c28e237a9b52bc4a8f39a0cec",
+        {
+            "kor.traineddata": (12528128, "f888d4038348a0c3d25151e7f452bda0d74ca275b18cab146798bcbb94084fff"),
+            "eng.traineddata": (15400601, "8280aed0782fe27257a68ea10fe7ef324ca0f8d85bd2fd145d1c2b560bcb66ba"),
+        },
+    ),
+    "fast": _tessdata(
+        "fast",
+        "87416418657359cb625c412a48b6e1d6d41c29bd",
+        {
+            "kor.traineddata": (1677415, "6b85e11d9bbf07863b97b3523b1b112844c43e713df8b66418a081fd1060b3b2"),
+            "eng.traineddata": (4113088, "7d4322bd2a7749724879683fc3912cb542f19906c83bcc1a52132556427170b2"),
+        },
     ),
 }
 
@@ -227,7 +360,7 @@ class DownloadManager:
         partial = weights.path(self.root).with_name(weights.path(self.root).name + ".partial")
         if not partial.is_dir():
             return 0
-        return sum(p.stat().st_size for p in partial.iterdir() if p.is_file())
+        return sum(p.stat().st_size for p in partial.rglob("*") if p.is_file())
 
     # Runs in the download thread.
     def _run(self, weights: WeightSet, state: DownloadState) -> None:
@@ -274,6 +407,7 @@ class DownloadManager:
         done_before: int,
     ) -> None:
         digest = hashlib.sha256() if f.sha256 else None
+        target.parent.mkdir(parents=True, exist_ok=True)
         have = target.stat().st_size if target.exists() else 0
         if have > f.size:
             target.unlink()
@@ -283,12 +417,13 @@ class DownloadManager:
                 for block in iter(lambda: existing.read(_CHUNK), b""):
                     digest.update(block)
         if have < f.size:
+            url = weights.file_url(f, self.endpoint)
             headers = {"User-Agent": "interview-assistant"}
-            if self.token:
+            if self.token and url.startswith(self.endpoint):  # never hand the HF token elsewhere
                 headers["Authorization"] = f"Bearer {self.token}"
             if have:
                 headers["Range"] = f"bytes={have}-"
-            request = urllib.request.Request(weights.url(f.name, self.endpoint), headers=headers)
+            request = urllib.request.Request(url, headers=headers)
             with self.opener(request) as response:
                 if have and getattr(response, "status", 200) != 206:  # no resume: start over
                     have = 0

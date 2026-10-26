@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import io
 from collections.abc import Iterator
+from typing import Any
 
 import docx
 from docx.opc.constants import RELATIONSHIP_TYPE as RT
@@ -47,9 +48,12 @@ class DocxExtractor(DocumentExtractor):
     def __init__(self, *, min_text_chars: int = 30) -> None:
         """A document with fewer readable characters than this in its body and tables, but with
         pictures, is a scan pasted into Word and needs OCR."""
-        self.min_text_chars = min_text_chars
+        from interview_assistant.documents.reading import package_version
 
-    def extract(self, data: bytes, filename: str) -> ExtractedDocument:
+        self.min_text_chars = min_text_chars
+        self.tool = package_version("python-docx")
+
+    def extract(self, data: bytes, filename: str, *, reading: Any = None) -> ExtractedDocument:
         try:
             document = docx.Document(io.BytesIO(data))
         except Exception as exc:
@@ -86,6 +90,13 @@ class DocxExtractor(DocumentExtractor):
 
         chars = sum(len("".join(b.text.split())) for b in out.blocks_of(BlockKind.body, BlockKind.table))
         needs_ocr = chars < self.min_text_chars and count_images(data, "word/media/") > 0
+        if reading is not None:
+            from interview_assistant.documents.hwpx import read_pictures
+
+            read_pictures(
+                out, reading, _pictures(document), picture_only=needs_ocr, chars=chars, tool=self.tool
+            )
+            return out.build()
         out.pages.append(PageInfo(1, chars, 0.0, needs_ocr))
         if needs_ocr:
             out.warnings.append("본문 텍스트 없이 그림만 있음, OCR 필요")
@@ -107,6 +118,40 @@ class DocxExtractor(DocumentExtractor):
             else:
                 lines.append(_text(child, hidden))
         flush()
+
+
+_A = "{http://schemas.openxmlformats.org/drawingml/2006/main}"
+_WP = "{http://schemas.openxmlformats.org/drawingml/2006/wordprocessingDrawing}"
+_R_EMBED = "{http://schemas.openxmlformats.org/officeDocument/2006/relationships}embed"
+
+
+def _pictures(document: Any) -> list[tuple[str, bytes, float | None]]:
+    """Pictures placed in the body: (label, image bytes, share of the page they cover)."""
+    try:
+        section = document.sections[0]
+        page_area = int(section.page_width) * int(section.page_height)
+    except Exception:
+        page_area = 0
+    out: list[tuple[str, bytes, float | None]] = []
+    seen: set[str] = set()
+    for blip in document.element.body.iter(_A + "blip"):
+        rid = blip.get(_R_EMBED)
+        if not rid or rid in seen:
+            continue
+        seen.add(rid)
+        try:
+            blob = document.part.related_parts[rid].blob
+        except (KeyError, AttributeError):
+            continue
+        share = None
+        holder = blip.getparent()
+        while holder is not None and holder.tag not in (_WP + "inline", _WP + "anchor"):
+            holder = holder.getparent()
+        extent = holder.find(_WP + "extent") if holder is not None else None
+        if extent is not None and page_area:
+            share = int(extent.get("cx", "0")) * int(extent.get("cy", "0")) / page_area
+        out.append((f"그림 {len(out) + 1}", blob, share))
+    return out
 
 
 def _blocks(container: etree._Element) -> Iterator[etree._Element]:

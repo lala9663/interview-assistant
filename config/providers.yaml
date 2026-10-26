@@ -28,3 +28,20 @@ providers:
   diarization:
     impl: google_stt_v2
     # 대안: { impl: pyannote }
+  # 서류 읽기 (관리자 > 모델 설정 > 서류 읽기). OCR 모델 파일은 관리자 화면의 "다운로드"로 받는다.
+  documents:
+    ocr:
+      impl: paddleocr
+      model: ppocrv5-mobile
+    pdf:
+      impl: pdfplumber
+    hwp:
+      impl: syhwp
+    legacy:
+      impl: libreoffice
+    reading:
+      impl: standard
+      mode: auto
+      embedded_images: true
+      sensitivity: medium
+    # 대안: ocr { impl: tesseract, model: best } / { impl: google_document_ai } / { impl: clova_ocr }(외부)

@@ -205,11 +205,20 @@ String signature = "v1=" + HexFormat.of().formatHex(mac.doFinal(message.getBytes
 | `kind` | `resume` 이력서(기본), `portfolio` 포트폴리오, `certificate` 증빙, `other` 기타 | 선택 | `photo`는 받지 않는다(6장) |
 | `filename` | 200자 이하 | 필수 | 원래 파일명. 파일명 안의 이름도 비식별화한다. 저장 파일명에는 쓰지 않는다 |
 
-받는 파일 형식: PDF(텍스트가 있는 것), DOCX, PPTX, HTML. 형식은 확장자가 아니라 내용으로 판별한다.
+받는 파일 형식(형식은 확장자가 아니라 내용으로 판별한다):
 
-- HWP·HWPX, 구형 .doc/.ppt, 이미지, 스프레드시트는 지금 `unsupported_attachment`. HWP와 이미지(OCR)는 서류 읽기 확장 작업에서 추가 예정이다. 추가되면 이 표를 고친다.
-- 텍스트 레이어 없는 스캔본은 `ocr_required`. 수신 시스템이 원문을 남겨 두므로 OCR이 붙으면 수신 쪽에서 다시 처리할 수 있다.
-- 손상되었거나 암호가 걸린 파일은 `unreadable_attachment`.
+| 형식 | 읽는 방법 |
+| --- | --- |
+| PDF | 텍스트 층이 있는 쪽은 그대로, 스캔한 쪽과 글자가 깨진 쪽은 OCR. 텍스트와 스캔이 섞인 파일도 된다 |
+| DOCX, PPTX, HTML | 본문·표·노트 등 텍스트. 안에 붙인 그림(자격증 캡처 등)은 수신 쪽 설정에 따라 OCR |
+| HWP(5.0), HWPX | 한글 문서. 본문·표·머리글·각주·메모·숨은 설명까지 |
+| 구형 .doc, .ppt | 수신 쪽에서 LibreOffice로 .docx·.pptx로 바꾼 뒤 읽는다 |
+| JPG, PNG | 휴대폰 사진·화면 캡처. OCR |
+
+- 스프레드시트(.xlsx·.xls), GIF, HEIC 등 나머지는 `unsupported_attachment`.
+- 증명사진으로 보이는 그림은 읽지 않고 버린다. 그래도 사진은 첨부로 보내지 않는다(6장).
+- 암호가 걸린 파일은 `encrypted_attachment`, 손상된 파일은 `unreadable_attachment`.
+- 아래 실패는 수신 쪽 설정·설치 문제라 수신 시스템이 원문을 남겨 두고, 고친 뒤 수신 쪽에서 다시 처리한다. 사이트가 다시 보낼 필요는 없다: `ocr_required`(읽기 방식이 "텍스트만"인데 스캔한 쪽이 있음), `ocr_unavailable`(OCR 엔진이나 모델 파일이 없거나 읽지 못함), `converter_missing`(.doc·.ppt인데 변환기가 없음), `reader_unavailable`(그 형식의 읽기 도구를 쓸 수 없음).
 
 ### 7.6 예
 
@@ -297,9 +306,13 @@ String signature = "v1=" + HexFormat.of().formatHex(mac.doFinal(message.getBytes
 | `skipped` | `withdrawn` | 철회된 지원서라 반영 안 함, 또는 처리 중 철회로 멈춤 | 없음 |
 | `failed` | `unknown_posting` | 이 공고 번호가 수신 시스템 공고에 연결되지 않음 | 수신 쪽이 공고 화면에서 번호를 연결하고 "다시 처리" |
 | `failed` | `posting_closed` | 수신 시스템에서 마감된 공고 | 수신 쪽 판단 (공고를 열고 다시 처리) |
-| `failed` | `unsupported_attachment` | 받지 않는 파일 형식 | 사이트가 PDF·DOCX 등으로 새 이벤트(revision+1) |
-| `failed` | `unreadable_attachment` | 손상·암호 파일 | 사이트가 정상 파일로 새 이벤트 |
-| `failed` | `ocr_required` | 스캔본 | 수신 쪽 OCR 도입 뒤 다시 처리, 또는 사이트가 텍스트 PDF로 |
+| `failed` | `unsupported_attachment` | 받지 않는 파일 형식(스프레드시트 등) | 사이트가 PDF·DOCX 등으로 새 이벤트(revision+1) |
+| `failed` | `encrypted_attachment` | 암호가 걸린 파일 | 사이트가 암호 없는 파일로 새 이벤트 |
+| `failed` | `unreadable_attachment` | 손상된 파일 | 사이트가 정상 파일로 새 이벤트 |
+| `failed` | `ocr_required` | 스캔한 쪽이 있는데 수신 쪽 읽기 방식이 "텍스트만" | 수신 쪽이 읽기 방식을 바꾸고 다시 처리 |
+| `failed` | `ocr_unavailable` | OCR로 읽지 못함(엔진·모델 파일 없음, 오류) | 수신 쪽이 OCR 엔진을 고치고 다시 처리 |
+| `failed` | `converter_missing` | .doc·.ppt인데 수신 쪽에 변환기가 없음 | 수신 쪽이 LibreOffice를 설치하고 다시 처리, 또는 사이트가 .docx·.pptx·PDF로 |
+| `failed` | `reader_unavailable` | 그 형식의 읽기 도구를 쓸 수 없음(설정 문제) | 수신 쪽이 고치고 다시 처리 |
 | `failed` | `duplicate_application` | 같은 사람이 같은 공고에 다른 지원 번호로 이미 활성 지원 | 사이트 데이터 확인 |
 | `failed` | `application_withdrawn` | 철회된 지원 번호의 새 버전 | 재지원이면 새 지원 번호로 |
 | `failed` | `invalid_field` | 지원 번호가 다른 공고·다른 지원자의 것 | 사이트 데이터 확인 |
@@ -349,7 +362,7 @@ GET {사이트}/api/applications?posting_no=DS-2026-0101&updated_since=2026-10-2
 - [ ] 이벤트를 만들 수 있는 시점: 제출·수정·철회 각각에 훅을 걸 수 있는지, 지원서별 revision을 매길 수 있는지
 - [ ] `applicant_no`가 사람 단위로 안정적인 번호인지(로그인 id·수험번호 등), 재가입하면 바뀌는지
 - [ ] 입력 칸 매핑: 사이트 실제 칸 ↔ 7.4. 학위·졸업 구분 코드, 경력 기간 형식, 자기소개 문항 수와 글자 수
-- [ ] 첨부: 받는 형식(HWP 비율), 크기, 스캔본 비율. 사진 칸이 첨부로 섞여 오지 않게 분리할 수 있는지
+- [ ] 첨부: 받는 형식(HWP 비율), 크기, 스캔본·휴대폰 사진 비율. 사진 칸이 첨부로 섞여 오지 않게 분리할 수 있는지
 - [ ] 보내지 않을 칸(6장)을 사이트 쪽에서 빼고 보낼 수 있는지. 사이트가 이미 모으고 있는 칸 목록
 - [ ] 재시도 큐가 있는지, 실패 이벤트를 운영자가 볼 화면이 있는지
 - [ ] 대조용 조회 API·재전송 API(9.2)를 만들 수 있는지
@@ -379,4 +392,4 @@ GET {사이트}/api/applications?posting_no=DS-2026-0101&updated_since=2026-10-2
 - 대조(9.2): 사이트 API가 정해지면 구현.
 - 압축 파일 일괄 가져오기: 연동 승인이 늦어질 때의 대안. 채용 담당자가 사이트에서 내려받은 ZIP(첨부)과 목록 CSV(이 명세의 칸)를 올리면 같은 처리 함수로 들어간다(통로만 추가). 구현 안 함.
 - 수신 서버 여러 대: 지금 처리 큐는 서버 한 대의 워커다.
-- 형식 확장: HWP·이미지(OCR)는 별도 작업에서 추가 예정.
+- 형식: HWP·HWPX·구형 .doc/.ppt·이미지(OCR)는 2026-10-26에 추가했다. 실제 한글 프로그램으로 저장한 HWP로 다시 확인할 것, HEIC·TIFF·스프레드시트는 받지 않는다.

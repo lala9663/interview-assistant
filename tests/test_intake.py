@@ -416,6 +416,9 @@ def test_a_withdrawal_cancels_an_event_being_applied(seeded_db, tmp_path, no_ext
 
 
 def test_failures_are_classified_and_an_unknown_posting_can_be_processed_after_linking(site):
+    # Without OCR (읽기 방식 '텍스트만') a scan cannot be read: ocr_required, retriable later.
+    text_only = {"impl": "standard", "options": {"mode": "text_only"}, "reason": "OCR 없이 받는 경우"}
+    assert site.post("/api/admin/models/document.reading/apply", json=text_only).status_code == 200
     p = [Person(30 + i) for i in range(6)]
     unknown = p[0].event("submitted", "A-0020", "DS-2026-0103")  # P3 is not linked yet
     image = p[1].event("submitted", "A-0021", P1_NO, attachments=[{"part": "f", "kind": "resume", "filename": "이력서.gif"}])

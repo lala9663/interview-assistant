@@ -172,17 +172,36 @@ def test_upload_extracts_deidentifies_screens_and_keeps_the_file(api, tmp_path):
     assert actions == {"profile.extracted", "screening.assessed"}
 
 
+def test_upload_reads_a_scan_with_the_ocr_engine_in_force(api):
+    """The fake OCR reads nothing but stands in for the engine: a scan goes through, and the
+    application records how it was read (settings revision, mode, tools, pages read by OCR)."""
+    scan = upload(api, "봉채원_scan.pdf")
+    assert scan.status_code == 201, scan.text
+    reading = scan.json()["document"]["reading"]
+    assert reading["mode"] == "auto" and reading["revision"] >= 1
+    assert "fake OCR" in reading["tools"] and any(t.startswith("pdfplumber") for t in reading["tools"])
+    assert reading["files"] == [
+        {
+            "format": "pdf", "converted_from": None, "pages": 2, "ocr_pages": [1, 2], "ocr_confidence": 0.5,
+            "pictures_read": 0, "photos_dropped": 0, "garbled_pages": [],
+        }
+    ]  # fmt: skip
+
+
 def test_upload_refuses_scans_unsupported_files_and_closed_inputs(api):
+    text_only = {"impl": "standard", "options": {"mode": "text_only"}, "reason": "OCR 끄기"}
+    assert api.post("/api/admin/models/document.reading/apply", json=text_only).status_code == 200
     scan = upload(api, "봉채원_scan.pdf")
     assert scan.status_code == 422
     assert "OCR" in scan.json()["detail"][0]["msg"]
 
+    # HWP is read now; a broken one (an OLE header and nothing else) is refused as unreadable.
     hwp = api.post(
         f"/api/postings/{P2}/applications",
         data={"name": "가나다"},
         files={"file": ("x.hwp", b"\xd0\xcf\x11\xe0\xa1\xb1\x1a\xe1" + b"\0" * 64)},
     )
-    assert hwp.status_code == 422 and "HWP" in hwp.json()["detail"][0]["msg"]
+    assert hwp.status_code == 422 and "읽을 수 없습니다" in hwp.json()["detail"][0]["msg"]
 
     nameless = upload(api, "이력서_문태오.docx", name="  ")
     assert nameless.status_code == 422

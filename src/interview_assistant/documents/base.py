@@ -7,6 +7,7 @@ import re
 import zipfile
 from abc import ABC, abstractmethod
 from collections.abc import Iterable, Mapping
+from typing import Any
 
 from interview_assistant.documents.normalize import normalize_text
 from interview_assistant.documents.types import BlockKind, ExtractedDocument, PageInfo, TextBlock
@@ -17,7 +18,15 @@ class ExtractionError(Exception):
 
 
 class UnsupportedFormat(ExtractionError):
-    """No extractor for this file type (HWP, legacy .doc/.ppt, images ...)."""
+    """No extractor for this file type (spreadsheets, GIF/HEIC pictures, unknown files ...)."""
+
+
+class EncryptedDocument(ExtractionError):
+    """The file is password-protected (HWP, Office); its content cannot be read."""
+
+
+class ConverterMissing(ExtractionError):
+    """A legacy .doc/.ppt arrived but no converter (LibreOffice) is installed or configured."""
 
 
 class DocumentExtractor(ABC):
@@ -27,12 +36,17 @@ class DocumentExtractor(ABC):
     tables, headers and footers, notes, link targets, properties, the file name), put text a
     viewer would not see into `hidden` blocks, count images instead of extracting them, and mark
     pages without a text layer as needing OCR instead of producing text for them.
+
+    With `reading` (documents/reading.PageReader), pages without a usable text layer and
+    pictures are read by OCR as its policy says, and every page records how it was read.
+    Without it, nothing is OCR'd (the behaviour before OCR existed).
     """
 
     format: str
+    tool: str = ""  # library and version, for the reading record
 
     @abstractmethod
-    def extract(self, data: bytes, filename: str) -> ExtractedDocument: ...
+    def extract(self, data: bytes, filename: str, *, reading: Any = None) -> ExtractedDocument: ...
 
 
 class BlockCollector:
@@ -47,10 +61,10 @@ class BlockCollector:
         self.images = 0
         self.add(BlockKind.filename, "파일명", filename)
 
-    def add(self, kind: BlockKind, label: str, text: str) -> None:
+    def add(self, kind: BlockKind, label: str, text: str, *, ocr: bool = False) -> None:
         text = normalize_text(text)
         if text:
-            self.blocks.append(TextBlock(kind, label, text))
+            self.blocks.append(TextBlock(kind, label, text, ocr))
 
     def add_links(self, label: str, targets: Iterable[str]) -> None:
         seen: list[str] = []
@@ -111,6 +125,7 @@ METADATA_LABELS = {
     "identifier": "식별자",
     "language": "언어",
     "version": "버전",
+    "lastsaveby": "마지막 수정자",  # HWPX content.hpf
     "company": "회사",
     "manager": "관리자",
     "template": "서식 파일",
@@ -142,13 +157,16 @@ def _looks_like_timestamp(key: str, value: str) -> bool:
 _OLE = b"\xd0\xcf\x11\xe0\xa1\xb1\x1a\xe1"  # HWP 5, legacy .doc/.ppt/.xls
 _HTML_SNIFF = re.compile(rb"<!doctype\s+html|<html[\s>]|<head[\s>]|<body[\s>]|<meta\s", re.I)
 _HTML_EXTENSIONS = (".html", ".htm", ".xhtml")
+_OTHER_PICTURES = (b"GIF8", b"BM", b"II*\x00", b"MM\x00*", b"RIFF")
 
 
 def detect_format(data: bytes, filename: str = "") -> str:
-    """'pdf', 'docx', 'pptx' or 'html' from the content (not just the extension).
+    """The format from the content (not just the extension): 'pdf', 'docx', 'pptx', 'html',
+    'hwp' (HWP 5.x), 'hwpx', 'doc', 'ppt' (legacy Office, read after conversion) or 'image'
+    (JPG, PNG).
 
-    Raises UnsupportedFormat for anything else, naming HWP explicitly since it is common in
-    Korean applications and out of scope for the PoC.
+    Raises UnsupportedFormat for anything else, EncryptedDocument for a password-protected Office
+    file, ExtractionError for a broken container.
     """
     head = data[:1024]
     if b"%PDF-" in head:
@@ -165,28 +183,65 @@ def detect_format(data: bytes, filename: str = "") -> str:
         if "ppt/presentation.xml" in names:
             return "pptx"
         if b"hwp" in mimetype or any(n.startswith("Contents/section") for n in names):
-            raise UnsupportedFormat("HWPX(한글) 파일은 아직 지원하지 않습니다")
+            return "hwpx"
+        if "xl/workbook.xml" in names:
+            raise UnsupportedFormat("엑셀 파일(.xlsx)은 지원하지 않습니다")
         raise UnsupportedFormat("지원하지 않는 압축 문서 형식입니다")
     if data[:8] == _OLE:
-        if filename.lower().endswith(".hwp"):
-            raise UnsupportedFormat("HWP(한글) 파일은 아직 지원하지 않습니다")
-        raise UnsupportedFormat("HWP 또는 구형 오피스 파일(.doc/.ppt)은 아직 지원하지 않습니다")
+        return _ole_format(data, filename)
+    if data[:3] == b"\xff\xd8\xff" or data[:8] == b"\x89PNG\r\n\x1a\n":
+        return "image"
+    if data.startswith(_OTHER_PICTURES) or data[4:12] in (b"ftypheic", b"ftypheix", b"ftypmif1"):
+        raise UnsupportedFormat("그림 파일은 JPG·PNG만 읽습니다")
     if filename.lower().endswith(_HTML_EXTENSIONS) or _HTML_SNIFF.search(head):
         return "html"
     raise UnsupportedFormat("지원하지 않는 파일 형식입니다")
 
 
+def _ole_format(data: bytes, filename: str) -> str:
+    """HWP 5.x and legacy Office share the OLE compound file container: look at its streams."""
+    import olefile
+
+    kind = "HWP" if filename.lower().endswith(".hwp") else "HWP·구형 오피스"
+    try:
+        with olefile.OleFileIO(data) as ole:
+            names = {"/".join(entry) for entry in ole.listdir(streams=True, storages=True)}
+    except Exception:
+        raise ExtractionError(f"{kind} 파일을 읽을 수 없습니다 (손상된 파일)") from None
+    if "FileHeader" in names:
+        return "hwp"
+    if "EncryptedPackage" in names:
+        raise EncryptedDocument(
+            "암호가 걸린 오피스 문서입니다. 암호를 해제해 다시 저장한 파일을 올려 주세요."
+        )
+    if "WordDocument" in names:
+        return "doc"
+    if "PowerPoint Document" in names:
+        return "ppt"
+    if "Workbook" in names or "Book" in names:
+        raise UnsupportedFormat("엑셀 파일(.xls)은 지원하지 않습니다")
+    raise UnsupportedFormat("지원하지 않는 OLE 문서 형식입니다")
+
+
 def default_extractors() -> dict[str, DocumentExtractor]:
+    """Built-in readers; the admin settings can swap the PDF and HWP ones (documents/reading.py).
+    Legacy .doc/.ppt need a converter and are not here."""
+    from interview_assistant.documents.hwp import HwpReader
+    from interview_assistant.documents.image import ImageExtractor
     from interview_assistant.documents.pdf import PdfExtractor
     from interview_assistant.documents.powerpoint import PptxExtractor
     from interview_assistant.documents.webpage import HtmlExtractor
     from interview_assistant.documents.word import DocxExtractor
 
+    hwp = HwpReader()
     return {
         "pdf": PdfExtractor(),
         "docx": DocxExtractor(),
         "pptx": PptxExtractor(),
         "html": HtmlExtractor(),
+        "hwp": hwp,
+        "hwpx": hwp,
+        "image": ImageExtractor(),
     }
 
 
@@ -194,11 +249,18 @@ def extract_document(
     data: bytes,
     filename: str,
     extractors: Mapping[str, DocumentExtractor] | None = None,
+    *,
+    reading: Any = None,
 ) -> ExtractedDocument:
-    """Detect the format and run the matching extractor. Pass `extractors` to swap one out."""
+    """Detect the format and run the matching extractor. Pass `extractors` to swap one out.
+    Without `reading` nothing is OCR'd; documents/reading.DocumentReader is the full path."""
     fmt = detect_format(data, filename)
+    if fmt in ("doc", "ppt"):
+        raise ConverterMissing(f"구형 .{fmt} 파일은 변환기(LibreOffice)를 거쳐야 읽을 수 있습니다.")
     registry = default_extractors() if extractors is None else extractors
     extractor = registry.get(fmt)
     if extractor is None:
         raise UnsupportedFormat(f"'{fmt}' 형식의 추출기가 등록되어 있지 않습니다")
-    return extractor.extract(data, filename)
+    if reading is None:  # extractors written before OCR take no `reading`
+        return extractor.extract(data, filename)
+    return extractor.extract(data, filename, reading=reading)

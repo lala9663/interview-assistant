@@ -17,6 +17,9 @@ dependencies = [
     "python-pptx>=1.0.2",
     "beautifulsoup4>=4.15.0",
     "python-multipart>=0.0.32",
+    # HWP 5.x (MIT; pinned: documents/hwp.py walks its record tree) and OLE containers (BSD)
+    "syhwp==0.0.8",
+    "olefile>=0.47",
 ]
 
 [project.optional-dependencies]
@@ -27,6 +30,12 @@ gcp = [
 # Local STT on CPU (faster-whisper, MIT). Weights are downloaded from the admin screen.
 whisper = [
     "faster-whisper>=1.2.1",
+]
+# Local OCR on CPU (PaddleOCR PP-OCRv5, Apache-2.0). paddlepaddle stays at 3.2.x: 3.3.1's oneDNN
+# path fails on Windows CPUs (docs/document-reading.md). Models come from the admin screen.
+ocr = [
+    "paddleocr==3.7.0",
+    "paddlepaddle==3.2.2",
 ]
 
 [dependency-groups]

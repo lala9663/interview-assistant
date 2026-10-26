@@ -5,11 +5,22 @@
 Python 3.12, [uv](https://docs.astral.sh/uv/).
 
 ```bash
-uv sync --extra whisper   # 로컬 Whisper STT까지. 빼면 관리자 화면에 "패키지 없음"으로 보인다
+uv sync --extra whisper --extra ocr   # 로컬 Whisper STT와 로컬 OCR(PaddleOCR)까지. 빼면 관리자 화면에 "패키지 없음"으로 보인다
 cp .env.example .env
 ```
 
-`uv sync`는 목록에 없는 패키지를 지우므로, Whisper를 쓰려면 매번 `--extra whisper`를 붙인다(`uv run`은 지우지 않는다).
+`uv sync`는 목록에 없는 패키지를 지우므로, 매번 같은 `--extra`를 붙인다(`uv run`은 지우지 않는다). `ocr`은 paddleocr 3.7.0과 paddlepaddle 3.2.2(CPU, 약 500MB)다.
+
+### 시스템 프로그램 (선택)
+
+서류 읽기의 일부는 파이썬 밖 프로그램을 부른다. 없으면 그 기능만 관리자 화면에 "프로그램 없음"으로 보이고 나머지는 돈다.
+
+| 프로그램 | 쓰는 곳 | Windows | Ubuntu | 다른 위치 |
+| --- | --- | --- | --- | --- |
+| LibreOffice | 구형 .doc·.ppt 변환. 없으면 그런 서류는 "변환기 없음"으로 거부 | `winget install TheDocumentFoundation.LibreOffice` | `apt install libreoffice-core libreoffice-writer libreoffice-impress` | `SOFFICE_CMD` |
+| Tesseract | OCR 엔진 Tesseract(비교용, 기본은 PaddleOCR) | `winget install UB-Mannheim.TesseractOCR` | `apt install tesseract-ocr` | `TESSERACT_CMD` |
+
+OCR 모델 파일(PaddleOCR PP-OCRv5, Tesseract 한국어 데이터)은 설치가 아니라 관리자 > 모델 설정의 "다운로드"로 받는다([ai-models.md](ai-models.md) "서류 읽기").
 
 ### .env
 
@@ -20,7 +31,8 @@ cp .env.example .env
 | `IA_DATABASE_URL` | 기본 `sqlite+pysqlite:///./dev.db` |
 | `IA_DEV_INTERVIEWER` | 로그인 전까지 로그인한 면접관의 사번. 시드의 김서연 = `E24017`(관리자) |
 | `IA_UPLOADS_DIR`, `IA_RECORDINGS_DIR` | 원본 영역(업로드 서류, 녹음). git 제외, 서빙하지 않는다 |
-| `IA_WEIGHTS_DIR` | 내려받은 모델 가중치(로컬 Whisper). 기본 `weights/`, git 제외 |
+| `IA_WEIGHTS_DIR` | 내려받은 모델 가중치(로컬 Whisper, PaddleOCR, Tesseract 한국어 데이터). 기본 `weights/`, git 제외 |
+| `SOFFICE_CMD`, `TESSERACT_CMD` | LibreOffice·Tesseract 실행 파일 경로. PATH와 기본 설치 위치에 없을 때만 |
 | `IA_DEMO_SPEED` | 가상 지원자 속도. 1이면 프론트 모의 모드와 비슷, 0이면 지연 없음 |
 | `IA_SITE_SECRET`, `IA_SITE_SECRET_PREVIOUS` | 채용 사이트 연동의 공유 HMAC 키([site-intake-spec.md](site-intake-spec.md) 4장). 없으면 사이트 수신 엔드포인트가 503. 키 교체 중에는 이전 키도 받는다. 커밋하지 않는다 |
 | `IA_SITE_CLOCK_SKEW` | 서명 시각 허용 차이(초, 기본 300) |
@@ -85,4 +97,4 @@ uv run pytest              # 백엔드. 외부 네트워크 없이 돈다 (fake 
 cd frontend && npm run check   # 타입 검사 + 린트 + 테스트 + 빌드
 ```
 
-`tests/test_whisper.py`는 faster-whisper와 내려받은 모델 파일이 있을 때만 돌고, 없으면 건너뛴다.
+`tests/test_whisper.py`는 faster-whisper와 내려받은 모델 파일이 있을 때만, `tests/test_ocr_engines.py`는 PaddleOCR·Tesseract와 모델 파일이 있을 때만, LibreOffice가 필요한 구형 .doc·.ppt 테스트는 LibreOffice가 있을 때만 돌고 없으면 건너뛴다. 나머지는 fake OCR로 오프라인에서 돈다.

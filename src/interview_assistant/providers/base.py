@@ -9,7 +9,10 @@ from __future__ import annotations
 from abc import ABC, abstractmethod
 from collections.abc import AsyncIterator, Sequence
 from dataclasses import dataclass
-from typing import Any
+from typing import TYPE_CHECKING, Any
+
+if TYPE_CHECKING:
+    from PIL.Image import Image as PILImage
 
 
 # Audio formats an STT provider's `stream` can read. Real audio is 16 kHz mono signed 16-bit
@@ -117,3 +120,56 @@ class SpeakerTurn:
 class DiarizationProvider(Provider, ABC):
     @abstractmethod
     async def diarize(self, audio_uri: str) -> list[SpeakerTurn]: ...
+
+
+@dataclass(frozen=True)
+class OcrLine:
+    text: str
+    confidence: float  # 0..1
+    box: tuple[float, float, float, float]  # x0, top, x1, bottom in image pixels
+
+
+@dataclass(frozen=True)
+class OcrResult:
+    lines: tuple[OcrLine, ...]
+    model: str
+    elapsed_ms: int
+
+    @property
+    def text(self) -> str:
+        """Lines in the engine's reading order; a piece on the same row as the one before it (a
+        label and its value, split by a gap) joins it with a space instead of a line break.
+        Re-sorting by position instead breaks tilted photos, where one line's end sits as high
+        as the next line's start."""
+        out: list[str] = []
+        previous: OcrLine | None = None
+        for line in self.lines:
+            middle = (line.box[1] + line.box[3]) / 2
+            same_row = (
+                previous is not None
+                and previous.box[1] <= middle <= previous.box[3]
+                and line.box[0] >= previous.box[2] - 2
+            )
+            if out:
+                out.append(" " if same_row else "\n")
+            out.append(line.text)
+            previous = line
+        return "".join(out)
+
+    @property
+    def confidence(self) -> float | None:
+        """Mean line confidence weighted by length; None when nothing was read."""
+        weights = [(len(line.text), line.confidence) for line in self.lines if line.text.strip()]
+        total = sum(w for w, _ in weights)
+        return sum(w * c for w, c in weights) / total if total else None
+
+
+class OCRProvider(Provider, ABC):
+    """Reads the text of one page image. Synchronous and CPU-bound: document reading runs in a
+    worker thread and calls it page by page. `version` names the engine and its models for the
+    record of how each application was read ("PaddleOCR 3.7.0 · PP-OCRv5 mobile 한국어")."""
+
+    version: str = ""
+
+    @abstractmethod
+    def recognize(self, image: PILImage) -> OcrResult: ...

@@ -6,7 +6,7 @@ from pathlib import Path
 from typing import Any
 
 import yaml
-from pydantic import BaseModel, ConfigDict, SecretStr
+from pydantic import BaseModel, ConfigDict, Field, SecretStr
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -22,16 +22,33 @@ class ProviderSpec(BaseModel):
         return dict(self.model_extra or {})
 
 
+def _spec(impl: str, **options: Any) -> Any:
+    return lambda: ProviderSpec(impl=impl, **options)
+
+
+class DocumentsConfig(BaseModel):
+    """Document reading (admin > 모델 설정 > 서류 읽기). A YAML without this section gets these
+    defaults: no OCR engine that needs a download, the built-in readers, the automatic mode."""
+
+    ocr: ProviderSpec = Field(default_factory=_spec("fake"))
+    pdf: ProviderSpec = Field(default_factory=_spec("pdfplumber"))
+    hwp: ProviderSpec = Field(default_factory=_spec("syhwp"))
+    legacy: ProviderSpec = Field(default_factory=_spec("libreoffice"))
+    reading: ProviderSpec = Field(default_factory=_spec("standard"))
+
+
 class ProvidersConfig(BaseModel):
     llm: dict[str, ProviderSpec]  # roles: primary, screening
     stt: dict[str, ProviderSpec]  # roles: streaming, batch
     embedding: ProviderSpec
     diarization: ProviderSpec
+    documents: DocumentsConfig = Field(default_factory=DocumentsConfig)
 
     def by_role(self) -> dict[str, ProviderSpec]:
         """Flat role keys as the admin screen and the settings table name them: "llm.primary"."""
         roles = {f"llm.{k}": v for k, v in self.llm.items()}
         roles |= {f"stt.{k}": v for k, v in self.stt.items()}
+        roles |= {f"document.{k}": getattr(self.documents, k) for k in DocumentsConfig.model_fields}
         return roles | {"embedding": self.embedding, "diarization": self.diarization}
 
 

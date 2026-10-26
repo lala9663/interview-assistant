@@ -8,15 +8,16 @@
 src/interview_assistant/deid/
   deidentifier.py     # 원문 -> 토큰 치환 텍스트. LLM으로 가는 유일한 통로
   service.py          # 앱용: 설정·사전·탐지기를 한 번 만들고 DB 세션마다 Deidentifier를 준다
-  detectors/          # 교체 가능한 탐지기: 본인 정보, 정규식, 사전, 형태 패턴, 호칭 붙은 이름, NER 자리
+  detectors/          # 교체 가능한 탐지기: 본인 정보, 정규식, 사전, 형태 패턴, 호칭 붙은 이름, NER 자리, OCR 오독(ocr.py)
   store.py            # 토큰 발급과 역매핑 저장 (원래 값은 암호화)
   reidentify.py       # 재식별. 역매핑을 복호화하는 유일한 곳, 호출마다 감사 로그
-  documents.py        # 추출 문서 전체(파일명·속성 포함)를 블록 단위로 비식별화. 스캔본은 거부
+  documents.py        # 추출 문서 전체(파일명·속성 포함)를 블록 단위로 비식별화. OCR 블록에는 너그러운 탐지기를 더한다. 보류된 쪽이 있으면 거부
   leaks.py            # 누출 검수 로직 (텍스트 샘플, 파일 샘플)
   review.py           # 사람이 보는 검토 리포트 (HTML 1개)
-src/interview_assistant/documents/
+src/interview_assistant/documents/   # 서류 읽기 (document-reading.md)
   base.py             # DocumentExtractor 인터페이스, 형식 판별, extract_document
-  pdf.py, word.py, powerpoint.py, webpage.py   # PDF, DOCX, PPTX, HTML 구현
+  reading.py          # DocumentReader: 쪽마다 텍스트 층 또는 OCR, 읽기 기록
+  pdf.py, word.py, powerpoint.py, webpage.py, hwp.py, hwpx.py, image.py, legacy.py
   normalize.py        # NFC, 제로폭 문자 제거, 전각 숫자 변환 (모든 추출 결과에 적용)
 ```
 
@@ -53,32 +54,39 @@ uv run python scripts/check_leaks.py
 
 ## 서류 파일
 
-LLM으로 가는 서류 텍스트는 `extract_document` → `deidentify_document`만 거친다. 이미지는 세기만 하고 버리며, 원본 파일이나 이미지를 모델로 보내는 경로는 없다.
+LLM으로 가는 서류 텍스트는 읽기(`DocumentReader.read`, 앱은 관리자 설정으로 만든 것) → `deidentify_document`만 거친다. 그림은 OCR로 텍스트만 꺼내거나(설정) 세고 버리며, 증명사진은 읽지 않고 버린다. 원본 파일이나 그림을 모델로 보내는 경로는 없다.
 
 ```python
-document = extract_document(upload_bytes, upload_filename)   # PDF, DOCX, PPTX, HTML
+document = runtime.models.active.reader.read(upload_bytes, upload_filename)   # 형식·쪽별 방법은 document-reading.md
+# 설정 없이: extract_document(upload_bytes, upload_filename)  (OCR 없음, 스캔한 쪽은 보류)
 result = deidentify_document(deid, document, candidate_id=cid, known=identity)
 prompt_text = result.text   # 파일명·문서 속성·본문·표·머리글·바닥글·노트·링크·숨은 텍스트, 토큰 치환본
 ```
 
 - 추출 결과는 블록 단위(`documents/types.py`의 `BlockKind`)다. 흰 글씨, 0.5pt 글자, 슬라이드 밖 도형, `display:none`처럼 보이지 않는 텍스트는 `hidden` 블록으로 따로 두고, 선별 프롬프트에서는 뺀다.
 - PDF의 자간 넓힌 줄은 글자 좌표로 되돌린다(`documents/pdf.py`의 `close_letter_spacing`). 공백 글자 없이 고른 간격으로 이어진 세 글자 이상(같은 줄이면 두 글자 단어도)은 붙이고, 공백 글자나 더 넓은 간격은 단어 사이로 남긴다: "권 하 린 · 이 력 서" → "권하린 · 이력서". 보통 텍스트와 실제 공백으로 띄운 글자("이 력 서" 제목)는 바뀌지 않는다.
-- 텍스트 레이어가 없는 쪽(스캔본)이 하나라도 있으면 `needs_ocr`이고, `deidentify_document`가 `OcrRequired`로 거부한다. OCR은 아직 없으므로 문서 전체를 보류한다.
-- HWP/HWPX와 구형 .doc/.ppt는 `UnsupportedFormat`으로 거부한다.
-- 추출기 교체: `extract_document(..., extractors={"pdf": MyPdfExtractor()})`. 구현은 `DocumentExtractor`를 따른다.
-- 라이브러리: pdfplumber(MIT, pdfminer.six MIT, pypdfium2 Apache-2.0/BSD-3), python-docx·python-pptx(MIT), beautifulsoup4(MIT), lxml(BSD). PyMuPDF(AGPL)는 쓰지 않는다.
+- 텍스트 층이 없거나 깨진 쪽은 읽기 방식에 따라 OCR로 읽는다([document-reading.md](document-reading.md)). 깨진 텍스트 층은 숨은 텍스트까지 버린다(되돌리면 이름이 나오는 바이트라서). 읽지 못한 쪽이 하나라도 있으면 `needs_ocr`이고, `deidentify_document`가 `OcrRequired`로 거부해 문서 전체를 보류한다.
+- OCR 블록(`TextBlock.ocr`)에는 OCR 오독용 탐지기(`deid/detectors/ocr.py`)를 더 돌린다: 지원서 값과 자모 거리 1~2인 이름·학교·회사(단어 경계 없이), 띄어 쓰거나 호칭이 잘린 이름, 숫자 하나 틀린 전화번호, 이메일·영문 이름의 글자 뼈대. OCR 줄은 그 전에 비슷한 글자를 숫자로 고친다(`documents/ocrfix.py`). 일반 텍스트에는 쓰지 않는다(과잉 치환 방지).
+- 형식: PDF, DOCX, PPTX, HTML, HWP 5.0, HWPX, 구형 .doc/.ppt(LibreOffice 변환), JPG/PNG. 암호 문서는 `EncryptedDocument`, 변환기가 없으면 `ConverterMissing`, 나머지는 `UnsupportedFormat`.
+- 추출기 교체: `extract_document(..., extractors={"pdf": MyPdfExtractor()})` 또는 `DocumentReader(extractors=...)`. 구현은 `DocumentExtractor`를 따른다.
+- 라이브러리: pdfplumber(MIT, pdfminer.six MIT, pypdfium2 Apache-2.0/BSD-3), python-docx·python-pptx(MIT), beautifulsoup4(MIT), lxml(BSD), syhwp(MIT), olefile(BSD), Pillow(MIT-CMU), PaddleOCR·PaddlePaddle(Apache-2.0), Tesseract(Apache-2.0), LibreOffice(MPL-2.0, 별도 프로그램으로 실행). PyMuPDF·pyhwp(AGPL)는 쓰지 않는다.
 
 ### 파일 단위 누출 검수
 
-가상 이력서 20건: 추출 → 비식별화 → 정답 값 검사, 파일명·속성 포함, 네트워크 없음.
+가상 이력서 31건: 읽기 → 비식별화 → 정답 값 검사, 파일명·속성 포함, 네트워크 없음.
 
 ```bash
-uv run python scripts/check_leaks.py --documents
+uv run python scripts/check_leaks.py --documents                    # OCR 없이: 스캔·그림이 있는 8건은 보류로 분류
+uv run python scripts/check_leaks.py --documents --ocr paddleocr    # OCR 포함 (모델 파일 필요)
 ```
+
+OCR을 켜면 정답 값이 그대로 남은 누출 외에 OCR이 잘못 읽은 채 남은 "근접 누출"도 센다: 자모 근사 일치(비슷한 모양 글자는 같은 글자로 보고, 토큰은 가린 뒤), 전화·주민번호 숫자 편집 거리 1. OCR 글자 오류율(정답 그림 텍스트 대비)과, 그림에 있던 값을 OCR이 아예 못 읽은 경우(`ocr_missed`, 누출은 아니지만 선별 품질 문제)도 보고한다. 암호 문서는 거부되어야 통과다.
+
+결과(2026-10-26): OCR 없이 22건 누출 0·보류 8·거부 1. PaddleOCR로 30건 누출 0·근접 누출 0(정답 값 389개)·거부 1, 글자 오류율 평균 0.5%. Tesseract best·fast도 누출 0.
 
 ### 검토 리포트
 
-샘플별 원본 추출 텍스트와 비식별본을 나란히 보고, 토큰 강조, 속성·버린 이미지 수, OK/누출을 체크한다.
+샘플별 원본 추출 텍스트와 비식별본을 나란히 보고, 토큰 강조, 속성·버린 이미지 수, 쪽마다 읽은 방법·도구·신뢰도·시간과 그림마다 판단(OCR·증명사진 버림), 근접 누출, 글자 오류율, OK/누출을 체크한다. `--ocr`을 같이 주면 OCR한 결과로 만든다.
 
 ```bash
 uv run python scripts/check_leaks.py --documents --report
@@ -88,7 +96,7 @@ uv run python scripts/check_leaks.py --documents --report
 
 ### 가상 이력서 다시 만들기
 
-dev 의존성 reportlab, pillow가 필요하다. 한글 PDF와 스캔 이미지에 쓸 TrueType 폰트는 시스템에서 읽고 커밋하지 않는다. 기본으로 맑은 고딕·나눔고딕 경로를 찾고, 다른 폰트는 `--font` 또는 `IA_FIXTURE_FONT`로 준다.
+dev 의존성 reportlab, pillow가 필요하다. 구형 .doc·.ppt는 LibreOffice로 만들므로 `--legacy`를 줄 때만 다시 만든다(없으면 커밋된 파일을 둔다). HWP 5.0·HWPX는 `scripts/hwp_writers.py`가 규격대로 쓴다. 한글 PDF와 스캔 이미지에 쓸 TrueType 폰트는 시스템에서 읽고 커밋하지 않는다. 기본으로 맑은 고딕·나눔고딕 경로를 찾고, 다른 폰트는 `--font` 또는 `IA_FIXTURE_FONT`로 준다.
 
 ```bash
 uv run python scripts/make_resume_fixtures.py --font C:/Windows/Fonts/malgun.ttf

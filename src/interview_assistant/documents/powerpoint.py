@@ -21,7 +21,7 @@ from pptx.enum.shapes import MSO_SHAPE_TYPE
 from interview_assistant.documents.base import BlockCollector, DocumentExtractor, ExtractionError
 from interview_assistant.documents.normalize import collapse
 from interview_assistant.documents.ooxml import count_images, read_properties
-from interview_assistant.documents.types import BlockKind, ExtractedDocument, PageInfo
+from interview_assistant.documents.types import BlockKind, ExtractedDocument, PageInfo, ReadMethod
 
 A = "{http://schemas.openxmlformats.org/drawingml/2006/main}"
 R_ID = "{http://schemas.openxmlformats.org/officeDocument/2006/relationships}id"
@@ -35,16 +35,20 @@ class _Sink:
         self.hidden: list[str] = []
         self.links: list[str] = []
         self.picture_area = 0
+        self.pictures: list[tuple[bytes, int]] = []  # (image bytes, area on the slide)
 
 
 class PptxExtractor(DocumentExtractor):
     format = "pptx"
 
     def __init__(self, *, min_text_chars: int = 30, scan_coverage: float = 0.5) -> None:
+        from interview_assistant.documents.reading import package_version
+
         self.min_text_chars = min_text_chars
         self.scan_coverage = scan_coverage
+        self.tool = package_version("python-pptx")
 
-    def extract(self, data: bytes, filename: str) -> ExtractedDocument:
+    def extract(self, data: bytes, filename: str, *, reading: Any = None) -> ExtractedDocument:
         try:
             prs = Presentation(io.BytesIO(data))
         except Exception as exc:
@@ -73,9 +77,12 @@ class PptxExtractor(DocumentExtractor):
             text_chars = sum(len("".join(t.split())) for t in (*sink.text, *sink.tables))
             coverage = min(1.0, sink.picture_area / (size[0] * size[1])) if all(size) else 0.0
             needs_ocr = text_chars < self.min_text_chars and coverage >= self.scan_coverage
-            out.pages.append(PageInfo(n, text_chars, round(coverage, 3), needs_ocr))
-            if needs_ocr:
-                out.warnings.append(f"{label}: 그림만 있고 텍스트 없음, OCR 필요")
+            if reading is not None:
+                self._read_slide(out, reading, n, label, sink, size, text_chars, coverage, needs_ocr)
+            else:
+                out.pages.append(PageInfo(n, text_chars, round(coverage, 3), needs_ocr))
+                if needs_ocr:
+                    out.warnings.append(f"{label}: 그림만 있고 텍스트 없음, OCR 필요")
             for template in (slide.slide_layout, slide.slide_layout.slide_master):
                 if all(template is not t for t in templates):
                     templates.append(template)
@@ -91,6 +98,66 @@ class PptxExtractor(DocumentExtractor):
         out.add_links("링크", links)
         out.images = count_images(data)
         return out.build()
+
+    def _read_slide(
+        self,
+        out: BlockCollector,
+        reading: Any,
+        n: int,
+        label: str,
+        sink: _Sink,
+        size: tuple[int, int],
+        text_chars: int,
+        coverage: float,
+        picture_only: bool,
+    ) -> None:
+        """A picture-only slide (a scan or capture pasted in) is read through its pictures; on
+        other slides each picture goes through the ID-photo check and the picture setting."""
+        from interview_assistant.documents.images import ImageError, open_image
+
+        area = size[0] * size[1]
+        info = dict(number=n, text_chars=text_chars, image_coverage=round(coverage, 3))
+        method, reason = reading.plan(has_text=not picture_only)
+        if method is ReadMethod.held:
+            out.pages.append(PageInfo(**info, needs_ocr=True, method=method, reason=reason))
+            out.warnings.append(f"{label}: {reason}")
+            return
+        texts, confidences, elapsed = [], [], 0
+        for k, (blob, picture_area) in enumerate(sink.pictures, start=1):
+            try:
+                image = open_image(blob)
+            except ImageError:
+                continue
+            name = f"{label} 그림 {k}"
+            share = picture_area / area if area else None
+            result = reading.picture(image, name, share=share, force=picture_only)
+            if result is None:
+                continue
+            reading.check_confidence(name, result)
+            if picture_only:
+                texts.append(result.text)
+                elapsed += result.elapsed_ms
+                if result.confidence is not None:
+                    confidences.append(result.confidence)
+            else:
+                out.add(BlockKind.image_text, f"{name} (OCR)", result.text, ocr=True)
+        if not picture_only:
+            out.pages.append(PageInfo(**info, method=ReadMethod.text, tool=self.tool))
+            return
+        if not texts:
+            why = reading.problem or "그림에서 글자를 읽지 못함"
+            out.pages.append(PageInfo(**info, needs_ocr=True, method=ReadMethod.held, reason=f"{reason}; {why}"))
+            out.warnings.append(f"{label}: 그림을 OCR로 읽지 못해 보류")
+            return
+        out.add(BlockKind.body, f"{label} (OCR)", "\n".join(texts), ocr=True)
+        out.pages.append(
+            PageInfo(
+                **info, method=ReadMethod.ocr, reason="그림만 있는 슬라이드",
+                tool=getattr(reading.ocr, "version", ""),
+                confidence=sum(confidences) / len(confidences) if confidences else None,
+                elapsed_ms=elapsed,
+            )
+        )  # fmt: skip
 
 
 def _shapes(
@@ -110,6 +177,10 @@ def _shapes(
             _shapes(shape.shapes, target, size, top_level=False)
         if top_level and not off_slide and _is_picture(shape):
             sink.picture_area += _area(shape, size)
+            try:
+                sink.pictures.append((shape.image.blob, _area(shape, size)))
+            except Exception:  # linked or unsupported picture: counted, not readable
+                pass
         if shape.has_text_frame:
             target.text.append(_frame_text(shape.text_frame, target, filled=_has_fill(shape)))
         if getattr(shape, "has_table", False):

@@ -25,14 +25,17 @@ src/interview_assistant/
   live/                 # 실시간 전사: hub(STT → 비식별화 → SSE), audio(오디오 소스, 지금은 대본 읽는 가상 지원자)
   demo/                 # 데모 데이터(프론트 모의 데이터와 같은 가상 데이터)와 시드, 가상 지원자 대본
   deid/                 # 비식별화 (업무정의서 9장, deidentification.md)
-  documents/            # 서류 텍스트 추출 (PDF, DOCX, PPTX, HTML). 원본 영역 전용
+  documents/            # 서류 읽기, 원본 영역 전용 (document-reading.md): reading(쪽별 텍스트·OCR 선택, DocumentReader), quality(깨짐 판정), images(증명사진 판정), ocrfix(비슷한 글자), render(PDF 쪽 그림), 형식별 추출기 pdf·word·powerpoint·webpage·hwp·hwpx·image, legacy(LibreOffice 변환)
   providers/
-    base.py             # LLMProvider, STTProvider, EmbeddingProvider, DiarizationProvider (공통: model, warm_up), 오디오 형식
+    base.py             # LLMProvider, STTProvider, EmbeddingProvider, DiarizationProvider, OCRProvider (공통: model, warm_up), 오디오 형식
     registry.py         # impl 이름 -> 구현 클래스
     catalog.py          # 관리자 화면이 고르는 목록: 역할, 데이터 위치, 옵션 스키마, 요구 조건(네트워크 없이)
-    weights.py          # 모델 가중치: 커밋 고정·sha256, 이어받는 다운로드, 진행률
+    weights.py          # 모델 가중치(Whisper, PaddleOCR, Tesseract 한국어 데이터): 커밋 고정·sha256, 이어받는 다운로드, 진행률
+    programs.py         # 시스템 프로그램(Tesseract, LibreOffice) 찾기와 버전, 네트워크 없이
     audio.py            # 파일 URI, 16kHz PCM 디코딩(PyAV), 조각 내기, 내장 한국어 샘플(samples/, FLEURS CC BY 4.0)
     stt/faster_whisper.py  # 로컬 Whisper STT (CPU int8, 한국어, VAD, stream·transcribe)
+    ocr/paddle.py, ocr/tesseract.py  # 로컬 OCR (PP-OCRv5 한국어 CPU, Tesseract kor+eng)
+    samples/documents/  # 서류 읽기 연결 테스트용 가상 이력서
     fake.py             # 자격증명 없이 도는 구현 (speed로 지연 흉내)
     fake_tasks.py       # fake LLM이 앱 프롬프트에 규칙으로 답하는 부분 (모양만 그럴듯, 품질 아님)
 migrations/versions/    # Alembic 0001~0005
@@ -40,13 +43,14 @@ scripts/
   seed_demo.py          # 데모 데이터 시드
   grant_admin.py        # 면접관에게 관리자 권한 (0004 이전 DB용, SSO 전까지)
   bench_whisper.py      # Whisper 크기별 속도·메모리·CER·스트리밍 지연 측정
-  check_leaks.py        # 비식별화 누출 검수 (텍스트 샘플 / --documents 파일 샘플 / --report 검토 리포트)
+  bench_ocr.py          # OCR 엔진별 쪽당 시간·메모리·CER 측정
+  check_leaks.py        # 비식별화 누출 검수 (텍스트 샘플 / --documents 파일 샘플, --ocr로 OCR 포함 / --report 검토 리포트)
   fake_recruiting_site.py  # 가짜 채용 사이트: 서명된 지원서 이벤트 약 500건(중복·순서 바뀜·철회·일부러 넣은 오류), 처리 결과·시간 보고
-  make_resume_fixtures.py  # 가상 이력서 20건과 정답 목록 생성
+  make_resume_fixtures.py  # 가상 이력서 31건과 정답 목록 생성 (hwp_writers.py: HWP 5.0·HWPX 쓰기)
   export_mock_data.mjs  # 프론트 모의 데이터 → src/interview_assistant/demo/mock_data.json
 tests/
   fixtures/deid_samples.yaml  # 합성 텍스트 샘플 20건과 정답 목록
-  fixtures/resumes/     # 가상 이력서 파일 20건 (PDF 6, DOCX 4, PPTX 3, HTML 4, 스캔 PDF 3)과 manifest.yaml
+  fixtures/resumes/     # 가상 이력서 파일 31건 (PDF 텍스트 6·스캔 3·깨짐 1·혼합 1, DOCX 5, PPTX 4, HTML 4, HWPX 1, HWP 2, .doc 1, .ppt 1, JPG 1, PNG 1)과 manifest.yaml
 docs/                   # 이 문서들
 frontend/               # 면접관 UI (Vue 3, frontend.md)
 weights/                # 내려받은 모델 가중치 (git 제외)
@@ -81,7 +85,7 @@ uploads/, recordings/, reports/   # 원본 영역 (git 제외)
 
 ```
 업로드 화면 ─┐                                      ┌─ 공고 찾기 (id / 사이트 공고 번호)
-채용 사이트 ─┼─▶ ApplicationInput ─▶ process_application ─┼─ 첨부 읽기 (documents/)
+채용 사이트 ─┼─▶ ApplicationInput ─▶ process_application ─┼─ 첨부 읽기 (documents/, 텍스트·OCR)
 (압축 파일)  ┘      (통로가 만든다)        (하나뿐)     ├─ 지원자 찾기(지원자 번호 해시) 또는 만들기
                                                      ├─ 비식별화 (입력 칸·자기소개·첨부 전부)
                                                      ├─ 프로필 (입력 칸 그대로 / 없으면 모델)
@@ -94,4 +98,4 @@ uploads/, recordings/, reports/   # 원본 영역 (git 제외)
 
 ## 업로드
 
-업로드한 원본 서류는 `IA_UPLOADS_DIR`(기본 `uploads/`)에 지원서 id 이름으로 저장하고 응답에는 내보내지 않는다. 텍스트 추출 → 비식별화 → 프로필·선별 순서는 [api-contract.md](api-contract.md) "업로드"와 [deidentification.md](deidentification.md) "서류 파일".
+업로드한 원본 서류는 `IA_UPLOADS_DIR`(기본 `uploads/`)에 지원서 id 이름으로 저장하고 응답에는 내보내지 않는다. 읽기(쪽마다 텍스트 층 또는 OCR, [document-reading.md](document-reading.md)) → 비식별화 → 프로필·선별 순서는 [api-contract.md](api-contract.md) "업로드"와 [deidentification.md](deidentification.md) "서류 파일". 처리는 시작할 때의 모델 설정 스냅샷 하나에서 AI와 읽기 도구를 함께 꺼내, 도중에 관리자가 설정을 바꿔도 그 지원서는 처음 설정으로 끝난다. 그림은 OCR로 텍스트만 꺼내고 버린다. 그림을 모델로 보내는 경로는 없다.

@@ -18,7 +18,7 @@ import { toastError } from '@/lib/toast'
 const props = defineProps<{ open: boolean; postingId: string; postingTitle: string }>()
 const emit = defineEmits<{ close: []; uploaded: [result: UploadResult] }>()
 
-const ACCEPT = '.pdf,.docx,.pptx,.html,.htm'
+const ACCEPT = '.pdf,.docx,.pptx,.html,.htm,.hwp,.hwpx,.doc,.ppt,.jpg,.jpeg,.png'
 const upload = useUploadApplication(() => props.postingId)
 const fileInput = ref<HTMLInputElement | null>(null)
 const file = ref<File | null>(null)
@@ -53,8 +53,10 @@ function submit() {
     {
       onSuccess: (r) => {
         const hidden = r.document.hidden_blocks ? ` 숨은 텍스트 ${r.document.hidden_blocks}곳은 선별에서 뺐습니다.` : ''
+        const ocr = r.document.reading?.files.reduce((n, f) => n + f.ocr_pages.length, 0) ?? 0
+        const read = ocr ? ` OCR로 ${ocr}쪽을 읽었습니다.` : ''
         toast.success(`${r.candidate.pseudonym} 서류를 선별했습니다`, {
-          description: `적합도 ${r.screening.fit_score} · 보류로 시작합니다. 통과·탈락은 직접 정하세요.${hidden}`,
+          description: `적합도 ${r.screening.fit_score} · 보류로 시작합니다. 통과·탈락은 직접 정하세요.${read}${hidden}`,
         })
         reset()
         emit('uploaded', r)
@@ -70,7 +72,9 @@ function submit() {
     <DialogContent>
       <DialogHeader>
         <DialogTitle>서류 업로드</DialogTitle>
-        <DialogDescription>{{ postingTitle }} · PDF, DOCX, PPTX, HTML (최대 10MB). 스캔본은 아직 읽지 못합니다.</DialogDescription>
+        <DialogDescription>
+          {{ postingTitle }} · PDF, DOCX, PPTX, HTML, HWP·HWPX, 구형 DOC·PPT, JPG·PNG (최대 10MB). 스캔본과 사진은 관리자가 정한 읽기 방식대로 OCR로 읽습니다.
+        </DialogDescription>
       </DialogHeader>
       <form id="upload-form" class="space-y-4" @submit.prevent="submit">
         <div class="space-y-1.5">

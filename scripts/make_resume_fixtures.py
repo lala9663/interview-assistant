@@ -145,6 +145,17 @@ PEOPLE = [
     P("R18", "scan", "설도현_이력서_스캔.pdf", "설도현", "Dohyun Seol", "010-1381-0274", "dohyun.seol@example.net", "1993-01-15", "서울특별시 노원구", "초록숲길 5", "", "광운대학교", "광운대", "전자공학", "누리소프트", "누리소프트", "펌웨어 개발자", "펌웨어 개발", "2018.01 ~ 2025.06", "오태호", "팀장", 1),
     P("R19", "scan", "봉채원_scan.pdf", "봉채원", "Chaewon Bong", "010-0296-5530", "chaewon.bong@example.com", "1999-08-08", "경기도 용인시 수지구", "은빛로 18", "", "단국대학교", "단국대", "웹디자인학", "새봄테크", "새봄테크", "웹 퍼블리셔", "웹 퍼블리싱", "2022.02 ~ 2025.10", "정민지", "실장", 2),
     P("R20", "scan", "금태민_지원서.pdf", "금태민", "Taemin Geum", "010-1749-3361", "taemin.geum@example.org", "1991-12-12", "충청북도 청주시 흥덕구", "오송빛로 40", "", "충북대학교", "충북대", "생물정보학", "하늘시스템즈", "하늘시스템즈", "바이오 데이터 분석가", "바이오 데이터", "2016.08 ~ 2025.02", "박하은", "수석", 3),
+    P("R21", "hwpx", "이력서_도하윤.hwpx", "도하윤", "Hayun Do", "010-0517-2846", "hayun.do@example.com", "1997-05-21", "서울특별시 은평구", "바람꽃길 14", "", "서울시립대학교", "서울시립대", "도시공학", "(주)한결소프트", "한결소프트", "백엔드 개발자", "백엔드 개발", "2021.03 ~ 2025.12", "김나래", "책임", 0),
+    P("R22", "hwp", "R22_추서진.hwp", "추서진", "Seojin Choo", "010-1628-4093", "seojin.choo@example.org", "1994-09-03", "대구광역시 달서구", "이팝꽃로 31", "", "계명대학교", "계명대", "컴퓨터공학", "새빛정보", "새빛정보", "데이터 엔지니어", "데이터 엔지니어링", "2019.07 ~ 2025.10", "한도윤", "파트장", 1),
+    P("R23", "hwp", "변예준_이력서_암호.hwp", "변예준", "Yejun Byun", "010-0739-5512", "yejun.byun@example.net", "1996-02-17", "경기도 부천시", "꽃우물길 8", "", "동국대학교", "동국대", "경영정보학", "누리소프트", "누리소프트", "서비스 기획자", "서비스 기획", "2020.02 ~ 2025.08", "윤가람", "매니저", 2),
+    P("R24", "jpg", "KakaoTalk_20261012_093015123.jpg", "기서윤", "Seoyun Ki", "010-1095-3378", "seoyun.ki@example.com", "1998-11-09", "인천광역시 남동구", "갯바람로 22", "", "인하대학교", "인하대", "전자공학", "다온랩스", "다온랩스", "반도체 장비 엔지니어", "장비 엔지니어링", "2022.01 ~ 2025.11", "서지훈", "책임", 3),
+    P("R25", "png", "이력서_캡처_어하준.png", "어하준", "Hajun Eo", "010-0861-2075", "hajun.eo@example.org", "1995-06-30", "광주광역시 서구", "무지개로 17", "", "전남대학교", "전남대", "화학공학", "하늘시스템즈", "하늘시스템즈", "공정 엔지니어", "공정 엔지니어링", "2020.03 ~ 2025.09", "윤채아", "수석", 0),
+    P("R26", "garbled", "남주원_이력서(한글변환).pdf", "남주원", "Juwon Nam", "010-1472-6630", "juwon.nam@example.net", "1993-03-12", "경상남도 김해시", "가야꽃길 9", "", "부경대학교", "부경대", "기계공학", "푸른솔시스템즈", "푸른솔시스템즈", "설비 엔지니어", "설비 보전", "2018.08 ~ 2025.06", "정우진", "팀장", 1),
+    P("R27", "mixed", "주예린_지원서류_합본.pdf", "주예린", "Yerin Joo", "010-0954-1186", "yerin.joo@example.com", "1999-01-25", "충청남도 천안시 동남구", "버들빛로 33", "", "한국기술교육대학교", "코리아텍", "메카트로닉스공학", "새봄테크", "새봄테크", "자동화 엔지니어", "공장 자동화", "2022.07 ~ 2025.12", "최다인", "선임", 2),
+    P("R28", "docx", "편지우_이력서_자격증첨부.docx", "편지우", "Jiwoo Pyeon", "010-1307-8814", "jiwoo.pyeon@example.org", "1996-08-14", "전북특별자치도 전주시 덕진구", "솔내길 12", "", "전북대학교", "전북대", "전자공학", "한빛테크", "한빛테크", "회로 설계 엔지니어", "회로 설계", "2020.09 ~ 2025.10", "이수민", "책임", 3),
+    P("R29", "doc", "탁서아_이력서_구버전.doc", "탁서아", "Seoa Tak", "010-0628-9941", "seoa.tak@example.net", "1992-12-01", "부산광역시 수영구", "광안바다로 7", "", "부산대학교", "부산대", "산업공학", "LG전자", "LG전자", "품질 엔지니어", "품질 관리", "2017.02 ~ 2025.08", "강하늘", "파트장", 0),
+    P("R30", "pptx_capture", "포트폴리오_캡처_나도윤.pptx", "나도윤", "Doyun Na", "010-1186-0472", "doyun.na@example.com", "1997-10-19", "서울특별시 강서구", "마곡빛길 25", "", "홍익대학교", "홍익대", "시각디자인학", "쿠팡", "쿠팡", "UX 디자이너", "UX 디자인", "2021.01 ~ 2025.09", "문서연", "리더", 1),
+    P("R31", "ppt", "곽민서_발표자료.ppt", "곽민서", "Minseo Kwak", "010-0347-2259", "minseo.kwak@example.org", "1995-04-08", "울산광역시 남구", "고래빛로 44", "", "울산과학기술원", "유니스트", "에너지공학", "현대자동차", "현대차", "배터리 연구원", "배터리 연구", "2019.03 ~ 2025.07", "오세훈", "책임", 2),
 ]
 
 
@@ -159,6 +170,9 @@ class Truth:
     keep: list[str] = field(default_factory=list)
     traps: list[str] = field(default_factory=list)
     images: int = 0
+    photos: int = 0  # ID photos placed (with OCR they must be dropped unread)
+    ocr_lines: list[str] = field(default_factory=list)  # text drawn into pictures OCR must read
+    refused: str = ""
 
     def put(self, kind: str, category: str, value: str) -> str:
         kinds = self.where.setdefault((category, value), [])
@@ -557,6 +571,7 @@ def build_pdf(p: Person, truth: Truth, plan: PdfPlan) -> bytes:
         if row[2] == "" and row[3] == "":
             spans.append(("SPAN", (2, r), (4, r)))
     truth.images += 1
+    truth.photos += 1
     widths = [28 * mm, 18 * mm, 22 * mm, 16 * mm, 22 * mm] if plan.narrow_cells else [28 * mm, 18 * mm, 48 * mm, 18 * mm, 40 * mm]
     if plan.sidebar:
         widths = [26 * mm, 16 * mm, 40 * mm, 16 * mm, 32 * mm]
@@ -782,6 +797,11 @@ def _scan_lines(p: Person, truth: Truth, with_intro: bool) -> list[str]:
     return lines
 
 
+def ocr_truth(truth: Truth, lines: list[str]) -> None:
+    """The text drawn into a picture, as a reader would type it, for OCR error rates."""
+    truth.ocr_lines.extend(line.removeprefix("# ") for line in lines if line.strip() and line != "---")
+
+
 def _scan_pdf(p: Person, truth: Truth, pages: list[bytes | list[str]], *, author: str = "", watermark: str = "") -> bytes:
     from reportlab.lib.pagesizes import A4
     from reportlab.lib.utils import ImageReader
@@ -816,7 +836,9 @@ def scan_r18(p: Person, truth: Truth, font: Path) -> tuple[bytes, dict]:
     truth.put("filename", "candidate", p.name)
     truth.put("metadata", "candidate", p.name)
     truth.trap("텍스트 레이어 없는 1쪽 스캔", "작성자 메타데이터에 실명(보류라 전송 안 됨)", "파일명에 이름")
-    page = _scan_image(_scan_lines(p, truth, with_intro=True), seed=18)
+    lines = _scan_lines(p, truth, with_intro=True)
+    ocr_truth(truth, lines)
+    page = _scan_image(lines, seed=18)
     return _scan_pdf(p, truth, [page], author=p.name), {"ocr_pages": [1]}
 
 
@@ -825,6 +847,7 @@ def scan_r19(p: Person, truth: Truth, font: Path) -> tuple[bytes, dict]:
     truth.trap("2쪽 스캔", "스캔 앱 워터마크 글자만 있는 텍스트 레이어")
     lines = _scan_lines(p, truth, with_intro=True)
     first, second = lines[:9], lines[9:]
+    ocr_truth(truth, [*first, "Scanned with ScanApp", "# 자기소개서", *second, "Scanned with ScanApp"])
     pages = [_scan_image(first, seed=191), _scan_image(["# 자기소개서", *second], seed=192)]
     return _scan_pdf(p, truth, pages, watermark="Scanned with ScanApp"), {"ocr_pages": [1, 2]}
 
@@ -836,7 +859,9 @@ def scan_r20(p: Person, truth: Truth, font: Path) -> tuple[bytes, dict]:
     typed = ["자기소개서", ""]
     for paragraph in intro(p, truth, "body"):
         typed += _wrap(paragraph, 48) + [""]
-    scanned = _scan_image(_scan_lines(p, truth, with_intro=False), seed=20)
+    lines = _scan_lines(p, truth, with_intro=False)
+    ocr_truth(truth, lines)
+    scanned = _scan_image(lines, seed=20)
     return _scan_pdf(p, truth, [typed, scanned], author=p.name), {"ocr_pages": [2]}
 
 
@@ -862,6 +887,8 @@ class DocxPlan:
     nested: bool = False  # 연락처 as a table nested in a cell
     page_breaks: int = 0
     extra: tuple[str, ...] = ()  # paragraphs after the 자기소개서
+    photo: bytes | None = None  # ID photo instead of the small placeholder
+    attachments: tuple[tuple[str, bytes, float], ...] = ()  # (heading, PNG, width in cm) at the end
 
 
 def _hyperlink(paragraph, url: str, text: str) -> None:
@@ -913,8 +940,9 @@ def build_docx(p: Person, truth: Truth, plan: DocxPlan) -> bytes:
     grid = doc.add_table(rows=len(rows), cols=5)
     grid.style = "Table Grid"
     photo = grid.cell(0, 0).merge(grid.cell(len(rows) - 1, 0))
-    photo.paragraphs[0].add_run().add_picture(io.BytesIO(photo_png()), width=Cm(2.4))
+    photo.paragraphs[0].add_run().add_picture(io.BytesIO(plan.photo or photo_png()), width=Cm(2.4))
     truth.images += 1
+    truth.photos += 1
     name_run = None
     for r, row in enumerate(rows):
         for c, value in enumerate(row, start=1):
@@ -963,6 +991,10 @@ def build_docx(p: Person, truth: Truth, plan: DocxPlan) -> bytes:
         doc.add_paragraph(paragraph)
     for paragraph in plan.extra:
         doc.add_paragraph(paragraph)
+    for heading, picture, width in plan.attachments:
+        doc.add_heading(heading, level=2)
+        doc.add_paragraph().add_run().add_picture(io.BytesIO(picture), width=Cm(width))
+        truth.images += 1
     if plan.white or plan.vanish:
         paragraph = doc.add_paragraph("이상입니다.")
         if plan.white:
@@ -1110,8 +1142,9 @@ def build_pptx(p: Person, truth: Truth, plan: dict) -> bytes:
     # 2. 인적사항
     profile = prs.slides.add_slide(blank)
     _textbox(profile.shapes, Inches(0.6), Inches(0.4), Inches(8), Inches(0.8), ["인적사항"], size=26)
-    profile.shapes.add_picture(io.BytesIO(photo_png()), Inches(0.6), Inches(1.4), Inches(1.8), Inches(2.4))
+    profile.shapes.add_picture(io.BytesIO(plan.get("photo") or photo_png()), Inches(0.6), Inches(1.4), Inches(1.8), Inches(2.4))
     truth.images += 1
+    truth.photos += 1
     rows = profile_rows(p, truth.at("table"), plan.get("layout", Layout()))
     _pptx_table(profile, Inches(2.8), Inches(1.4), Inches(9.8), rows)
 
@@ -1447,12 +1480,588 @@ p.MsoNormal {{ margin: 0cm; font-size: 10.0pt; font-family: "맑은 고딕"; }}
     return html.encode("utf-8"), {}
 
 
+# --- pictures for OCR (ID photo, certificate, typed pages, phone photo) ---------------------
+
+
+def portrait_png() -> bytes:
+    """ID photo placeholder at a realistic size (300x400): a silhouette on a studio backdrop."""
+    from PIL import Image, ImageDraw, ImageFilter
+
+    img = Image.new("RGB", (300, 400), (214, 221, 230))
+    draw = ImageDraw.Draw(img)
+    for y in range(400):  # backdrop gradient
+        shade = 214 + (y * 18) // 400
+        draw.line((0, y, 299, y), fill=(shade - 10, shade - 4, shade))
+    draw.ellipse((92, 52, 208, 196), fill=(196, 160, 138))  # face
+    draw.ellipse((84, 34, 216, 120), fill=(48, 40, 36))  # hair
+    draw.rectangle((40, 250, 260, 400), fill=(52, 58, 82))  # jacket
+    draw.polygon([(120, 250), (150, 330), (180, 250)], fill=(236, 236, 240))  # collar
+    img = img.filter(ImageFilter.GaussianBlur(1.6))
+    buf = io.BytesIO()
+    img.save(buf, format="PNG", optimize=True)
+    return buf.getvalue()
+
+
+def _font(size: int):
+    from PIL import ImageFont
+
+    return ImageFont.truetype(str(_FONT_PATH[0]), size)
+
+
+def text_page(lines: list[str], *, width: int = 1240, height: int = 1754, size: int = 25, paper: int = 255):
+    """A clean typed page at 150 dpi ("# " lines are centred titles, "---" a rule)."""
+    from PIL import Image, ImageDraw
+
+    img = Image.new("L", (width, height), paper)
+    draw = ImageDraw.Draw(img)
+    regular, large = _font(size), _font(size * 2)
+    y = 110
+    for line in lines:
+        if line.startswith("# "):
+            draw.text((width // 2, y), line[2:], fill=20, font=large, anchor="mt")
+            y += size * 3
+        elif line == "---":
+            draw.line((110, y, width - 110, y), fill=110, width=2)
+            y += size
+        else:
+            draw.text((120, y), line, fill=25, font=regular)
+            y += int(size * 1.65)
+    return img
+
+
+def certificate_png(p: Person, truth: Truth, title: str = "정보처리기사") -> bytes:
+    """A scanned certificate: the holder's name and birth date sit in the picture only."""
+    from PIL import Image, ImageDraw
+
+    img = Image.new("RGB", (1000, 700), (252, 250, 243))
+    draw = ImageDraw.Draw(img)
+    draw.rectangle((24, 24, 976, 676), outline=(150, 120, 60), width=6)
+    img_put = truth.at("image")
+    lines = [
+        "# 국가기술자격증",
+        f"자격종목: {title}",
+        f"성명: {img_put('candidate', p.name)}",
+        f"생년월일: {img_put('birthdate', birth_as(p, 'dots'))}",
+        "자격번호: 26-2001-000123",
+        "위 사람은 국가기술자격법에 따라",
+        "자격을 취득하였음을 증명합니다.",
+        "2025년 6월 13일",
+    ]
+    y = 70
+    for line in lines:
+        if line.startswith("# "):
+            draw.text((500, y), line[2:], fill=(30, 30, 30), font=_font(48), anchor="mt")
+            y += 100
+        else:
+            draw.text((110, y), line, fill=(30, 30, 30), font=_font(32))
+            y += 62
+    ocr_truth(truth, lines)
+    buf = io.BytesIO()
+    img.save(buf, format="PNG", optimize=True)
+    return buf.getvalue()
+
+
+def _resume_lines(p: Person, truth: Truth, kind: str = "image", *, with_intro: bool = True) -> list[str]:
+    """인적사항 and 자기소개서 as typed lines, values recorded as placed in `kind`."""
+    put = truth.at(kind)
+    lines = [
+        "# 이 력 서",
+        f"성명: {put('candidate', p.name)}  ({put('candidate', p.english)})",
+        f"생년월일: {put('birthdate', birth_as(p, 'dots'))}",
+        f"휴대전화: {put('phone', p.phone)}",
+        f"이메일: {put('email', p.email)}",
+        f"주소: {p.address}",
+        "---",
+        f"학력: {put('school', p.school)} {p.major} 졸업",
+        f"경력: {put('company', p.company)} {p.role} ({p.period})",
+        "---",
+    ]
+    address_pieces(p, put)
+    if with_intro:
+        lines.append("자기소개서")
+        for paragraph in intro(p, truth, kind):
+            lines += _wrap(paragraph, 40) + [""]
+    return lines
+
+
+def _perspective_coeffs(target: list[tuple[float, float]], source: list[tuple[float, float]]) -> list[float]:
+    """Coefficients for Image.transform(PERSPECTIVE): output corner i shows source corner i."""
+    matrix, vector = [], []
+    for (x, y), (u, v) in zip(target, source, strict=True):
+        matrix.append([x, y, 1, 0, 0, 0, -u * x, -u * y])
+        matrix.append([0, 0, 0, x, y, 1, -v * x, -v * y])
+        vector += [u, v]
+    n = 8  # Gaussian elimination, no numpy needed
+    rows = [row + [b] for row, b in zip(matrix, vector, strict=True)]
+    for col in range(n):
+        pivot = max(range(col, n), key=lambda r: abs(rows[r][col]))
+        rows[col], rows[pivot] = rows[pivot], rows[col]
+        for r in range(n):
+            if r != col:
+                factor = rows[r][col] / rows[col][col]
+                rows[r] = [a - factor * b for a, b in zip(rows[r], rows[col], strict=True)]
+    return [rows[i][n] / rows[i][i] for i in range(n)]
+
+
+def phone_photo(page, seed: int, *, exif: dict[int, object] | None = None) -> bytes:
+    """A page photographed with a phone: on a desk, tilted, in perspective, unevenly lit, a bit
+    out of focus, JPEG-compressed, with the phone's EXIF."""
+    import random
+
+    from PIL import Image, ImageChops, ImageDraw, ImageFilter
+
+    rng = random.Random(seed)
+    paper = page.convert("RGB")
+    paper = ImageChops.multiply(paper, Image.new("RGB", paper.size, (250, 246, 236)))
+    width, height = 1700, 2200
+    desk = Image.new("RGB", (width, height), (96, 84, 72))
+    draw = ImageDraw.Draw(desk)
+    for y in range(0, height, 4):  # wood-ish grain
+        tone = 84 + rng.randrange(0, 22)
+        draw.line((0, y, width, y), fill=(tone + 12, tone, tone - 10), width=4)
+    corners = [(190, 150), (1530, 205), (1600, 2050), (120, 1990)]  # tilted, in perspective
+    src = [(0, 0), (paper.width, 0), (paper.width, paper.height), (0, paper.height)]
+    warped = paper.transform((width, height), Image.Transform.PERSPECTIVE, _perspective_coeffs(corners, src), Image.Resampling.BICUBIC)
+    mask = Image.new("L", (width, height), 0)
+    ImageDraw.Draw(mask).polygon(corners, fill=255)
+    desk.paste(warped, (0, 0), mask)
+    # Uneven light: brighter top left, a soft shadow towards the bottom right.
+    light = Image.new("L", (width, height), 0)
+    light_draw = ImageDraw.Draw(light)
+    for i in range(0, width + height, 8):
+        value = max(150, 255 - i * 105 // (width + height))
+        light_draw.line((i, 0, 0, i), fill=value, width=9)
+    desk = ImageChops.multiply(desk, Image.merge("RGB", (light, light, light)))
+    desk = desk.filter(ImageFilter.GaussianBlur(1.4))
+    noise = Image.new("L", (128, 128))
+    noise.putdata([128 + int(rng.gauss(0, 9)) for _ in range(128 * 128)])
+    tiled = Image.new("L", (width, height))
+    for x in range(0, width, 128):
+        for y in range(0, height, 128):
+            tiled.paste(noise, (x, y))
+    desk = ImageChops.add(desk, Image.merge("RGB", (tiled, tiled, tiled)), scale=1.0, offset=-128)
+    data = Image.Exif()
+    for tag, value in (exif or {}).items():
+        data[tag] = value
+    buf = io.BytesIO()
+    desk.save(buf, format="JPEG", quality=72, exif=data.tobytes())
+    return buf.getvalue()
+
+
+# --- HWPX, HWP 5.0 ----------------------------------------------------------------------------
+
+
+def _writers():
+    """scripts/hwp_writers.py, also when this file is loaded by path (tests)."""
+    import importlib.util
+
+    if "hwp_writers" not in sys.modules:
+        spec = importlib.util.spec_from_file_location("hwp_writers", Path(__file__).with_name("hwp_writers.py"))
+        module = importlib.util.module_from_spec(spec)
+        sys.modules["hwp_writers"] = module
+        spec.loader.exec_module(module)
+    return sys.modules["hwp_writers"]
+
+
+def _hwpunit(mm: float) -> int:
+    return round(mm * 7200 / 25.4)
+
+
+def hwpx_r21(p: Person, truth: Truth, font: Path) -> tuple[bytes, dict]:
+    Hwpx = _writers().Hwpx
+
+    truth.put("filename", "candidate", p.name)
+    truth.trap("HWPX(한글 2014+)", "머리글(이름·직무·전화)·바닥글(이름)", "각주에 추천인 전화", "숨은 설명(hiddenComment)에 이메일·전화",
+               "흰 글씨 런(charPr 흰색)", "하이퍼링크 필드(mailto, GitHub 영문 이름)", "글상자에 연락처", "문서 정보(작성자·마지막 저장자·설명)",
+               "변경 추적 작성자", "미리보기 텍스트(PrvText)에 이름·전화", "증명사진(사진 판정, OCR 안 함)", "자격증 사본 그림 속 이름·생년월일(OCR)")  # fmt: skip
+    ref_phone = "010-0782-3315"
+    meta = truth.at("metadata")
+    doc = Hwpx(
+        title=f"이력서_{p.name}",
+        creator=meta("candidate", p.name),
+        last_saved_by=meta("candidate", p.english),
+        subject=f"{p.job} 지원",
+        description=f"연락처 {meta('email', p.email)}",
+        preview=f"이 력 서\r\n{truth.put('hidden', 'candidate', p.name)} {truth.put('hidden', 'phone', p.phone)}",
+        track_authors=[p.name],
+    )
+    doc.first(header=f"{truth.put('header', 'candidate', p.name)} | {p.job} 지원 | {truth.put('header', 'phone', p.phone)}",
+              footer=f"{truth.put('footer', 'candidate', p.name)} 이력서")  # fmt: skip
+    doc.paragraph("이 력 서")
+    photo, certificate = portrait_png(), certificate_png(p, truth)
+    doc.pictures = [("image1", photo), ("image2", certificate)]
+    doc.picture("image1", _hwpunit(30), _hwpunit(40))
+    truth.images += 1
+    truth.photos += 1
+    doc.table(profile_rows(p, truth.at("table"), Layout(phone="dash", birth="korean", hanja=False)), caption="인적사항")
+    doc.table(education_rows(p, truth.at("table")), caption="학력 사항")
+    doc.table(career_rows(p, truth.at("table")), caption="경력 사항")
+    doc.text_box(["연락처", truth.put("body", "phone", phone_as(p, "dots")), truth.put("body", "email", p.email)])
+    doc.paragraph("자기소개서")
+    for paragraph in intro(p, truth, "body"):
+        doc.paragraph(paragraph)
+    truth.put("body", "person", p.ref)
+    doc.paragraph(f"추천인 {p.ref} {p.ref_title}님", footnote=f"추천인 연락처 {truth.put('comment', 'phone', ref_phone)}")
+    doc.paragraph(
+        "포트폴리오와 연락처는 아래 링크에 있습니다.",
+        white=f"{truth.put('hidden', 'candidate', p.name)} {truth.put('hidden', 'phone', phone_as(p, 'plain'))}",
+        hidden=f"내부 메모: {truth.put('hidden', 'email', p.email)} 로 회신",
+        link=(f"mailto:{truth.put('link', 'email', p.email)}", "메일 보내기"),
+    )
+    handle = "hayun-do"
+    truth.put("link", "candidate", handle)
+    doc.paragraph("GitHub", link=(f"https://github.com/{handle}", "GitHub"))
+    doc.paragraph("자격증 사본")
+    doc.picture("image2", _hwpunit(120), _hwpunit(84))
+    truth.images += 1
+    truth.keep.append("자격증 사본")
+    thumb = io.BytesIO()
+    text_page(["# 이 력 서"], width=120, height=170, size=4).save(thumb, format="PNG")
+    return doc.build(thumb.getvalue()), {}
+
+
+def _hwp5_document(p: Person, truth: Truth, *, password: bool = False):
+    Hwp5 = _writers().Hwp5
+
+    meta = truth.at("metadata")
+    doc = Hwp5(
+        title=f"이력서 - {meta('candidate', p.name)}",
+        author=meta("candidate", p.name),
+        last_author=meta("candidate", p.english),
+        keywords=f"{p.job}, {meta('email', p.email)}",
+        preview=f"이 력 서 {truth.put('hidden', 'candidate', p.name)} {truth.put('hidden', 'phone', p.phone)}",
+        password=password,
+        pictures=[portrait_png()],
+    )
+    truth.images += 1
+    truth.photos += 1
+    doc.paragraph(
+        "이 력 서",
+        header=f"{truth.put('header', 'candidate', p.name)} · {truth.put('header', 'phone', phone_as(p, 'dots'))}",
+        footer=f"{truth.put('footer', 'candidate', p.name)} 입사지원서",
+    )
+    doc.table(profile_rows(p, truth.at("table"), Layout(phone="dash", birth="dots")))
+    doc.table(education_rows(p, truth.at("table")))
+    doc.table(career_rows(p, truth.at("table")))
+    doc.text_box([f"거주지: {p.region} {p.road}"])
+    address_pieces(p, truth.at("body"))
+    doc.paragraph("자기소개서")
+    for paragraph in intro(p, truth, "body"):
+        doc.paragraph(paragraph)
+    ref_phone = "010-1904-6627"
+    truth.put("body", "person", p.ref)
+    doc.paragraph(
+        f"추천인 {p.ref} {p.ref_title}님",
+        footnote=f"추천인 전화 {truth.put('comment', 'phone', ref_phone)}",
+        hidden=f"인사팀 메모: {truth.put('hidden', 'email', p.email)}",
+        link=(f"mailto:{truth.put('link', 'email', p.email)}", " (메일)"),
+    )
+    return doc
+
+
+def hwp_r22(p: Person, truth: Truth, font: Path) -> tuple[bytes, dict]:
+    truth.put("filename", "candidate", p.name)
+    truth.trap("HWP 5.0 바이너리(합성: 공개 형식대로 만든 파일, 한글로 저장한 파일 아님)", "머리글·바닥글 컨트롤", "각주에 추천인 전화",
+               "숨은 설명에 이메일", "하이퍼링크 필드(mailto)", "글상자에 주소", "문서 요약 정보(작성자·마지막 저장자·키워드)",
+               "미리보기 텍스트(PrvText)", "BinData 증명사진(압축)")  # fmt: skip
+    return _hwp5_document(p, truth).build(), {}
+
+
+def hwp_r23(p: Person, truth: Truth, font: Path) -> tuple[bytes, dict]:
+    truth.put("filename", "candidate", p.name)
+    truth.trap("암호 걸린 HWP(FileHeader 암호 플래그): 읽지 않고 '암호 걸린 문서'로 거부")
+    truth.refused = "encrypted"
+    return _hwp5_document(p, truth, password=True).build(), {}
+
+
+# --- pictures as files ------------------------------------------------------------------------
+
+
+def jpg_r24(p: Person, truth: Truth, font: Path) -> tuple[bytes, dict]:
+    truth.trap("휴대폰으로 찍은 이력서(JPG): 원근·기울어짐·그림자·흐림·JPEG", "파일명에 이름 없음(KakaoTalk_...)",
+               "EXIF에 작성자(영문 이름·한글 이름)·설명", "그림 속 모든 정보는 OCR로만 읽힘")  # fmt: skip
+    lines = _resume_lines(p, truth)
+    ocr_truth(truth, lines)
+    truth.images += 1
+    meta = truth.at("metadata")
+    exif = {
+        0x010F: "samsung",
+        0x0110: "SM-S928N",
+        0x013B: meta("candidate", p.english),  # Artist (ASCII)
+        0x9C9D: meta("candidate", p.name).encode("utf-16-le") + b"\0\0",  # XPAuthor
+        0x9C9C: f"{p.name} 이력서 사진".encode("utf-16-le") + b"\0\0",  # XPComment
+    }
+    return phone_photo(text_page(lines), seed=24, exif=exif), {}
+
+
+def png_r25(p: Person, truth: Truth, font: Path) -> tuple[bytes, dict]:
+    from PIL.PngImagePlugin import PngInfo
+
+    truth.put("filename", "candidate", p.name)
+    truth.trap("화면 캡처한 이력서(PNG, 깨끗한 글자)", "PNG 텍스트 청크에 작성자 이름", "그림 속 모든 정보는 OCR로만 읽힘")
+    lines = _resume_lines(p, truth)
+    ocr_truth(truth, lines)
+    truth.images += 1
+    info = PngInfo()
+    info.add_itxt("Author", truth.put("metadata", "candidate", p.name))
+    info.add_text("Software", "Snipping Tool")
+    buf = io.BytesIO()
+    text_page(lines, width=1100, height=1556, size=22).save(buf, format="PNG", pnginfo=info, optimize=True)
+    return buf.getvalue(), {}
+
+
+# --- PDFs: broken text layer, text with pictures and a scanned page ---------------------------
+
+
+def pdf_r26(p: Person, truth: Truth, font: Path) -> tuple[bytes, dict]:
+    """The Korean font's ToUnicode map is wrong (CP949 bytes as Latin-1): on screen the page is
+    Korean, in the text layer "ÀÌ·Â¼­". Only OCR reads the Korean; ASCII stays readable."""
+    from reportlab.pdfbase import ttfonts
+
+    truth.put("filename", "candidate", p.name)
+    truth.trap("한글 글꼴의 ToUnicode가 깨진 PDF(텍스트 층 = CP949를 Latin-1로 읽은 글자): 깨짐 판정 후 OCR", "깨진 텍스트 층 속 이름도 보내지 않음",
+               "작성자 메타데이터는 정상(유니코드)")  # fmt: skip
+    plan = PdfPlan(layout=Layout(phone="dash", birth="dots"), author=p.name, title="이력서", header=f"{p.name} · 이력서")
+    original = ttfonts.makeToUnicodeCMap
+
+    def broken(fontname, subset):
+        cmap = original(fontname, subset).split("\n")
+        start = next(i for i, line in enumerate(cmap) if line.endswith("beginbfchar")) + 1
+        for i, v in enumerate(subset):
+            char = chr(v)
+            if "가" <= char <= "힣":
+                cmap[start + i] = "<%02X> <%s>" % (i, char.encode("cp949").decode("latin-1").encode("utf-16-be").hex().upper())
+        return "\n".join(cmap)
+
+    ttfonts.makeToUnicodeCMap = broken
+    try:
+        data = build_pdf(p, truth, plan)
+    finally:
+        ttfonts.makeToUnicodeCMap = original
+    # Every value on the pages is only readable through OCR; the properties are fine.
+    for key in list(truth.where):
+        truth.where[key] = [k if k in ("metadata", "filename") else "image" for k in truth.where[key]]
+        truth.where[key] = list(dict.fromkeys(truth.where[key]))
+    truth.put("metadata", "candidate", p.name)
+    truth.keep.clear()  # OCR may misread a phrase; nothing to check for over-replacement
+    truth.photos = 0  # the whole page is OCR'd: the photo is part of the page, not judged alone
+    import pdfplumber
+
+    # The same pages with a correct map: their text is what OCR should read.
+    with pdfplumber.open(io.BytesIO(build_pdf(p, Truth(), plan))) as pdf:
+        for page in pdf.pages:
+            truth.ocr_lines.extend(line for line in (page.extract_text() or "").splitlines() if line.strip())
+    return data, {"ocr_pages": [1, 2]}
+
+
+def pdf_r27(p: Person, truth: Truth, font: Path) -> tuple[bytes, dict]:
+    from reportlab.lib.pagesizes import A4
+    from reportlab.lib.units import mm
+    from reportlab.lib.utils import ImageReader
+    from reportlab.pdfgen import canvas
+
+    truth.put("filename", "candidate", p.name)
+    truth.trap("1쪽: 텍스트 + 자격증 사본 그림(그림 속 이름·생년월일은 OCR) + 증명사진", "2쪽: 스캔한 이력서(쪽 전체 OCR)",
+               "작성자 메타데이터에 이름")  # fmt: skip
+    buf = io.BytesIO()
+    c = canvas.Canvas(buf, pagesize=A4, invariant=1)
+    c.setAuthor(truth.put("metadata", "candidate", p.name))
+    c.setTitle("지원서류 합본")
+    width, height = A4
+    c.setFont(FONT, 16)
+    c.drawString(20 * mm, height - 25 * mm, "지원서류 합본 (1/2)")
+    c.setFont(FONT, 10.5)
+    body = truth.at("body")
+    typed = [
+        f"지원자: {body('candidate', p.name)}  지원 직무: {p.job}",
+        f"연락처: {body('phone', p.phone)}  /  {body('email', p.email)}",
+        "첨부: 자격증 사본 1부, 이력서(스캔) 1부",
+    ]
+    for i, line in enumerate(typed):
+        c.drawString(20 * mm, height - (40 + i * 7) * mm, line)
+    c.drawImage(ImageReader(io.BytesIO(portrait_png())), width - 50 * mm, height - 70 * mm, 30 * mm, 40 * mm)
+    truth.images += 1
+    truth.photos += 1
+    c.drawImage(ImageReader(io.BytesIO(certificate_png(p, truth))), 20 * mm, height - 175 * mm, 120 * mm, 84 * mm)
+    truth.images += 1
+    truth.keep.append("자격증 사본")
+    c.showPage()
+    lines = _resume_lines(p, truth)
+    ocr_truth(truth, lines)
+    c.drawImage(ImageReader(io.BytesIO(_scan_jpeg(text_page(lines, size=24), seed=27))), 0, 0, width=width, height=height)
+    truth.images += 1
+    c.showPage()
+    c.save()
+    return buf.getvalue(), {"ocr_pages": [2]}
+
+
+def _scan_jpeg(page, seed: int) -> bytes:
+    import random
+
+    from PIL import Image
+
+    rng = random.Random(seed)
+    img = page.copy()
+    for _ in range(2500):
+        img.putpixel((rng.randrange(img.width), rng.randrange(img.height)), rng.randrange(110, 230))
+    img = img.rotate(-0.9, fillcolor=250, resample=Image.Resampling.BICUBIC)
+    buf = io.BytesIO()
+    img.save(buf, format="JPEG", quality=60, optimize=True)
+    return buf.getvalue()
+
+
+# --- DOCX / PPTX with pictures, and their legacy .doc / .ppt -----------------------------------
+
+
+def docx_r28(p: Person, truth: Truth, font: Path) -> tuple[bytes, dict]:
+    truth.put("filename", "candidate", p.name)
+    truth.trap("증명사진(실제 크기, 사진 판정으로 OCR 안 함)", "자격증 사본 그림(그림 속 이름·생년월일, 문서 속 그림 OCR)", "머리글에 이름·전화",
+               "작성자 메타데이터")  # fmt: skip
+    truth.put("header", "candidate", p.name)
+    truth.put("header", "phone", p.phone)
+    truth.put("metadata", "candidate", p.name)
+    certificate = certificate_png(p, truth)
+    truth.keep.append("자격증 사본")
+    plan = DocxPlan(
+        layout=Layout(phone="dash", birth="dots"), author=p.name, title="이력서", header=f"{p.name} · {p.phone}",
+        photo=portrait_png(), attachments=(("자격증 사본", certificate, 12.0),),
+    )  # fmt: skip
+    return build_docx(p, truth, plan), {}
+
+
+def _soffice_convert(data: bytes, source: str, target: str) -> bytes | None:
+    """DOCX/PPTX -> .doc/.ppt with LibreOffice, for the legacy samples. None without LibreOffice."""
+    import shutil
+    import subprocess
+    import tempfile
+
+    exe = os.environ.get("SOFFICE_CMD") or shutil.which("soffice") or next(
+        (c for c in (r"C:\Program Files\LibreOffice\program\soffice.exe", "/usr/bin/soffice") if Path(c).is_file()), None
+    )
+    if exe is None:
+        return None
+    with tempfile.TemporaryDirectory() as tmp:
+        folder = Path(tmp)
+        (folder / f"in.{source}").write_bytes(data)
+        profile = (folder / "profile").resolve().as_uri()
+        subprocess.run(
+            [exe, "--headless", "--norestore", f"-env:UserInstallation={profile}", "--convert-to", target,
+             "--outdir", str(folder / "out"), str(folder / f"in.{source}")],
+            capture_output=True, timeout=180, check=True,
+        )  # fmt: skip
+        return (folder / "out" / f"in.{target}").read_bytes()
+
+
+def doc_r29(p: Person, truth: Truth, font: Path) -> tuple[bytes, dict]:
+    truth.put("filename", "candidate", p.name)
+    truth.trap("구형 .doc(Word 97-2003, LibreOffice로 저장): 변환기로 .docx로 바꿔 읽음", "머리글에 이름·전화", "작성자 메타데이터",
+               "숨김 서식 텍스트에 이전 주소", "증명사진")  # fmt: skip
+    truth.put("header", "candidate", p.name)
+    truth.put("header", "phone", phone_as(p, "dots"))
+    truth.put("metadata", "candidate", p.name)
+    address_pieces(p, truth.at("hidden"))
+    plan = DocxPlan(
+        layout=Layout(phone="dash", birth="korean"), author=p.name, title="이력서", header=f"{p.name} · {phone_as(p, 'dots')}",
+        vanish=f"예전 주소 {p.region} {p.road}",
+    )  # fmt: skip
+    return _legacy(build_docx(p, truth, plan), "docx", "doc", p), {}
+
+
+def _capture_png(p: Person, truth: Truth) -> bytes:
+    """A captured portfolio page: the applicant's name, e-mail and GitHub only in the picture."""
+    from PIL import Image, ImageDraw
+
+    img = Image.new("RGB", (1600, 900), (248, 249, 251))
+    draw = ImageDraw.Draw(img)
+    draw.rectangle((0, 0, 1600, 90), fill=(36, 41, 61))
+    draw.text((40, 24), "포트폴리오 · 프로젝트 소개", fill=(240, 240, 245), font=_font(36))
+    put = truth.at("image")
+    lines = [
+        f"작성자: {put('candidate', p.name)} ({put('candidate', p.english)})",
+        f"연락처: {put('email', p.email)}",
+        f"휴대전화: {put('phone', p.phone)}",
+        "프로젝트: 사내 디자인 시스템 구축 (2023~2024)",
+        "역할: 컴포넌트 설계, 사용성 테스트 12회 진행",
+        "성과: 화면 제작 시간 35% 단축",
+    ]
+    for i, line in enumerate(lines):
+        draw.text((80, 150 + i * 105), line, fill=(30, 33, 45), font=_font(40))
+    ocr_truth(truth, ["포트폴리오 · 프로젝트 소개", *lines])
+    buf = io.BytesIO()
+    img.save(buf, format="PNG", optimize=True)
+    return buf.getvalue()
+
+
+def pptx_r30(p: Person, truth: Truth, font: Path) -> tuple[bytes, dict]:
+    from pptx.util import Inches
+
+    truth.put("filename", "candidate", p.name)
+    truth.trap("그림만 있는 캡처 슬라이드(슬라이드 5, 글자는 OCR로만)", "증명사진(실제 크기)", "작성자 메타데이터")
+    truth.put("metadata", "candidate", p.name)
+    capture = _capture_png(p, truth)
+
+    def hooks(prs, slides):
+        slide = prs.slides.add_slide(prs.slide_layouts[6])
+        slide.shapes.add_picture(io.BytesIO(capture), 0, 0, prs.slide_width, prs.slide_height)
+
+    truth.images += 1
+    plan = {"author": p.name, "title": "포트폴리오", "cover": ["포트폴리오", p.job], "hooks": [hooks],
+            "layout": Layout(phone="dash", birth="dots"), "photo": portrait_png()}  # fmt: skip
+    return build_pptx(p, truth, plan), {"ocr_pages": [5]}
+
+
+def ppt_r31(p: Person, truth: Truth, font: Path) -> tuple[bytes, dict]:
+    truth.put("filename", "candidate", p.name)
+    truth.trap("구형 .ppt(PowerPoint 97-2003, LibreOffice로 저장): 변환기로 .pptx로 바꿔 읽음", "슬라이드 노트에 추천인과 전화",
+               "작성자 메타데이터", "증명사진")  # fmt: skip
+    truth.put("metadata", "candidate", p.name)
+    truth.put("notes", "person", p.ref)
+    truth.put("notes", "phone", phone_as(p, "dash"))
+
+    def hooks(prs, slides):
+        cover, profile, history, letter = slides
+        letter.notes_slide.notes_text_frame.text = f"추천인 {p.ref} {p.ref_title}님, 문의 {phone_as(p, 'dash')}"
+
+    plan = {"author": p.name, "title": "발표자료", "cover": ["발표자료", p.job], "hooks": [hooks], "layout": Layout(phone="dash", birth="dots")}
+    return _legacy(build_pptx(p, truth, plan), "pptx", "ppt", p), {}
+
+
+_LEGACY_NOTE: list[str] = []
+
+
+def _legacy(data: bytes, source: str, target: str, p: Person) -> bytes:
+    """Converted only with --legacy (LibreOffice output differs byte-wise on every run); otherwise
+    the committed file is kept."""
+    existing = OUT / p.file
+    if not _LEGACY[0] and existing.is_file():
+        return existing.read_bytes()
+    converted = _soffice_convert(data, source, target)
+    if converted is None:
+        if existing.is_file():
+            _LEGACY_NOTE.append(f"{p.id}: LibreOffice 없음, 기존 {p.file} 유지")
+            return existing.read_bytes()
+        raise SystemExit(f"{p.id}: .{target} needs LibreOffice (soffice) to be generated")
+    return converted
+
+
+_LEGACY = [False]
+
+
 BUILDERS = {
     "R01": pdf_r01, "R02": pdf_r02, "R03": pdf_r03, "R04": pdf_r04, "R05": pdf_r05, "R06": pdf_r06,
     "R07": docx_r07, "R08": docx_r08, "R09": docx_r09, "R10": docx_r10,
     "R11": pptx_r11, "R12": pptx_r12, "R13": pptx_r13,
     "R14": html_r14, "R15": html_r15, "R16": html_r16, "R17": html_r17,
     "R18": scan_r18, "R19": scan_r19, "R20": scan_r20,
+    "R21": hwpx_r21, "R22": hwp_r22, "R23": hwp_r23, "R24": jpg_r24, "R25": png_r25, "R26": pdf_r26, "R27": pdf_r27,
+    "R28": docx_r28, "R29": doc_r29, "R30": pptx_r30, "R31": ppt_r31,
+}  # fmt: skip
+
+# form -> (format the reader must detect, needs OCR somewhere)
+FORMS = {
+    "pdf": ("pdf", False), "docx": ("docx", False), "pptx": ("pptx", False), "html": ("html", False),
+    "scan": ("pdf", True), "hwpx": ("hwpx", False), "hwp": ("hwp", False), "jpg": ("image", True), "png": ("image", True),
+    "garbled": ("pdf", True), "mixed": ("pdf", True), "doc": ("doc", False), "pptx_capture": ("pptx", True), "ppt": ("ppt", False),
 }  # fmt: skip
 
 
@@ -1481,10 +2090,11 @@ def build_all(font: Path, out_dir: Path) -> list[dict]:
         entry: dict = {"id": person.id, "file": person.file}
         if extra.get("upload_name"):
             entry["upload_name"] = extra["upload_name"]
-        entry["format"] = "pdf" if person.form == "scan" else person.form
-        entry["scanned"] = person.form == "scan"
+        entry["format"], entry["scanned"] = FORMS[person.form]
         if extra.get("ocr_pages"):
             entry["ocr_pages"] = extra["ocr_pages"]
+        if truth.refused:
+            entry["refused"] = truth.refused
         entry["traps"] = truth.traps
         entry["identity"] = person.identity()
         entry["expected"] = [
@@ -1492,6 +2102,10 @@ def build_all(font: Path, out_dir: Path) -> list[dict]:
         ]
         entry["keep"] = truth.keep
         entry["images"] = truth.images
+        if truth.photos:
+            entry["photos"] = truth.photos
+        if truth.ocr_lines:
+            entry["ocr_truth"] = "\n".join(truth.ocr_lines)
         entries.append(entry)
     return entries
 
@@ -1520,7 +2134,9 @@ def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     parser.add_argument("--font", help="Korean TrueType font (.ttf); default: IA_FIXTURE_FONT or system paths")
     parser.add_argument("--out", type=Path, default=OUT)
+    parser.add_argument("--legacy", action="store_true", help="re-convert the .doc/.ppt samples with LibreOffice")
     args = parser.parse_args(argv)
+    _LEGACY[0] = args.legacy
     if hasattr(sys.stdout, "reconfigure"):
         sys.stdout.reconfigure(encoding="utf-8")
     font = find_font(args.font)
@@ -1529,6 +2145,8 @@ def main(argv: list[str] | None = None) -> int:
     print(f"font {font}")
     for e in entries:
         print(f"{e['id']} {e['format']:<5} {'scan' if e['scanned'] else '    '} {len(e['expected']):>3} values  {e['file']}")
+    for note in _LEGACY_NOTE:
+        print(note)
     print(f"wrote {len(entries)} files and manifest.yaml to {args.out}")
     return 0
 

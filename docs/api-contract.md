@@ -95,14 +95,14 @@
 
 **업로드** (`POST /api/postings/{id}/applications`, 프론트 서류 선별 화면의 "서류 업로드"). 채용 사이트 연동과 같은 처리 함수 `intake/service.py`의 `process_application`을 쓰고 통로만 다르다:
 
-1. 파일(최대 10MB)을 형식 판별 후 텍스트 추출(`documents/`, PDF·DOCX·PPTX·HTML). HWP·구형 오피스는 422, 스캔본(텍스트 레이어 없는 쪽)은 OCR이 없어 422로 거부하고 아무것도 남기지 않는다. 판정은 `intake/service.py`의 `read_attachments` 한 곳이다(사이트 첨부와 같다).
+1. 파일(최대 10MB)을 형식 판별 후 읽는다(PDF·DOCX·PPTX·HTML·HWP·HWPX·구형 .doc/.ppt·JPG/PNG). 처리를 시작할 때의 서류 읽기 설정(관리자 > 모델 설정, 아래)으로 쪽마다 텍스트 층 또는 OCR을 고른다([document-reading.md](document-reading.md)). 읽을 수 없으면 422로 거부하고 아무것도 남기지 않는다: 받지 않는 형식, 암호 파일, 손상된 파일, 변환기 없음(.doc/.ppt), OCR 필요(읽기 방식 "텍스트만"), OCR 실패. 판정은 `intake/service.py`의 `read_attachments` 한 곳이다(사이트 첨부와 같다).
 2. 양식 값(이름 등)을 `KnownIdentity`로 `Candidate.encrypted_identity`에 봉인하고 새 가명(CAND-0021 …)을 붙인다. 이 값은 비식별화에만 쓰인다.
 3. 파일명·속성·본문·표·머리글·노트·링크·숨은 텍스트까지 블록 단위로 비식별화한다. 숨은 텍스트 블록(흰 글씨, 0.5pt, `display:none` 등)은 키워드 채우기·지시문 주입 위험이 있어 선별 프롬프트에서 뺀다. 개수만 `document.hidden_blocks`로 알려 준다.
 4. `screening` 역할 모델로 두 번 호출한다: 프로필 구조화(profile-v0.1) → JD·확정 역량 사전 기준 평가(screening-v0.4). 응답은 스키마로 검증하고, 형식이 틀리면 502로 전체를 되돌린다(만들던 지원자도 지운다, 실패도 감사 로그). 두 호출 사이에 커밋해, 모델을 기다리는 동안 쓰기 트랜잭션을 열어 두지 않는다(SQLite에서 다른 쓰기가 막히지 않게).
 5. 원본 파일은 `uploads/{candidate_id}/{application_id}.{확장자}`에 저장한다(파일 이름에 실명 없음, git 제외, 서빙하지 않음). `Application.source_file_uri`에만 경로가 남는다.
 6. 선별 상태는 AI 권고와 관계없이 `hold`로 시작한다. 통과·보류·탈락은 사람이 정하고(PATCH), AI 권고는 근거 첫 줄 끝 `(AI 권고: 통과)`에 적는다.
 
-`document` = `{format, blocks, hidden_blocks, images_dropped, replacements}` (개수만, 텍스트 없음). 시드 지원자는 파일이 없어 `null`이다.
+`document` = `{format, blocks, hidden_blocks, images_dropped, replacements, reading}` (개수만, 텍스트 없음). 시드 지원자는 파일이 없어 `null`이다. `reading`은 읽은 방법이다: `{revision, mode, embedded_images, sensitivity, tools[], files[]}`, 파일마다 `{format, converted_from, pages, ocr_pages[], ocr_confidence(OCR한 쪽 중 최저), pictures_read, photos_dropped, garbled_pages[]}`. 서류 읽기 설정 전에 들어온 지원서는 `reading`이 없다. 상세 패널의 "서류 읽기" 줄이 이것을 보여 준다.
 
 ### 면접 세션 (FR-04, 05, 06, 08)
 
@@ -175,27 +175,27 @@
 
 ### 관리자 > 모델 설정 (AI provider 교체)
 
-역할 6개(`llm.primary` LLM 주 모델, `llm.screening` LLM 선별용, `stt.streaming` STT 실시간, `stt.batch` STT 사후, `embedding`, `diarization`)마다 provider를 고르고, 테스트하고, 재시작 없이 적용한다. 모두 관리자만(403).
+역할 11개마다 provider를 고르고, 테스트하고, 재시작 없이 적용한다. 모두 관리자만(403). AI 모델 6개(`llm.primary` LLM 주 모델, `llm.screening` LLM 선별용, `stt.streaming` STT 실시간, `stt.batch` STT 사후, `embedding`, `diarization`)와 서류 읽기 5개(`document.reading` 읽기 방식, `document.ocr` OCR 엔진, `document.pdf` PDF 텍스트 추출, `document.hwp` HWP·HWPX 읽기, `document.legacy` 구형 오피스 변환). `ModelRoleState.group`(`ai`/`documents`)이 화면의 묶음이다.
 
 | 메서드 | 경로 | 요청 | 응답 | 단계 |
 | --- | --- | --- | --- | --- |
-| GET | `/api/admin/models` | | `ModelSettings` {revision, persistent, roles: ModelRoleState[6]} (spec, impl_label, 실제 model 이름, data_location, status ready/unavailable와 이유, requirements, note, last_change, pinned_sessions) | 3 |
+| GET | `/api/admin/models` | | `ModelSettings` {revision, persistent, roles: ModelRoleState[11]} (spec, impl_label, 실제 model 이름, data_location, status ready/unavailable와 이유, requirements, note, last_change, pinned_sessions) | 3 |
 | GET | `/api/admin/models/catalog` | | `ModelImpl[]` 등록된 구현마다 역할, 데이터 위치, 라이선스, 옵션 스키마(모델 선택지의 크기·다운로드 여부·역할별 권장), 역할별 기본값·안내, 이 PC의 요구 조건 | 3 |
 | POST | `/api/admin/models/{role}/check` | `{impl, options}` | `ModelCheck` {spec(검증·기본값 채움), data_location, external, requirements, ready, same_as_active}. 옵션이 스키마에 없거나 범위 밖이면 422. provider를 부르지 않는다 | 3 |
-| POST | `/api/admin/models/{role}/test` | multipart: `spec`(JSON `{impl, options}`), `confirm_external`, `audio`(STT·화자분리만, 선택, 60초·10MB 이하) | `ModelTestResult` {ok, model, latency_ms, summary, output, error, audio: sample/upload}. 요구 조건 미충족 409, 외부 전송인데 확인 없음 409, 모델 로드 실패는 200 ok=false | 3 |
+| POST | `/api/admin/models/{role}/test` | multipart: `spec`(JSON `{impl, options}`), `confirm_external`, `audio`(STT·화자분리만, 선택, 60초·10MB 이하), `document`(서류 읽기만, 선택, 10MB 이하)와 `name`(미리보기 비식별화용 지원자 이름, 선택) | `ModelTestResult` {ok, model, latency_ms, summary, output, error, audio: sample/upload, document: sample/upload}. 요구 조건 미충족 409, 외부 전송인데 확인 없음 409, 모델 로드 실패는 200 ok=false | 3 |
 | POST | `/api/admin/models/{role}/apply` | `{impl, options, reason, confirm_external}` | `ModelRoleState`. 새 provider를 만들고 워밍업(가중치 로드)한 뒤 바꿔 끼운다. 같은 설정·요구 조건 미충족·외부 전송 확인 없음 409, 사유 없음 422, 로드 실패 502 | 3 |
 | GET | `/api/admin/models/history?role=&limit=50` | | `ModelChange[]` 최신순 {revision, occurred_at, role, kind initial/apply/rollback, actor, previous, new, 표시 이름, reason, reverts_change_id, details} | 3 |
 | POST | `/api/admin/models/history/{change_id}/revert` | `{reason, confirm_external}` | `ModelRoleState`. 그 변경 직전 설정으로 되돌리고 rollback으로 기록. 처음 설정(이전 없음)·이미 같은 설정 409 | 3 |
 | GET | `/api/admin/models/downloads` | | `ModelDownload[]` {impl, model, status missing/downloading/done/failed/cancelled, total_bytes, downloaded_bytes, error}. 진행 중이면 프론트가 1초마다 다시 읽는다 | 3 |
-| POST | `/api/admin/models/downloads` | `{impl, model}` | 202 `ModelDownload`. Hugging Face에서 백그라운드로 받는다(커밋 고정, sha256 검증, 끊기면 이어받기) | 3 |
+| POST | `/api/admin/models/downloads` | `{impl, model}` | 202 `ModelDownload`. 백그라운드로 받는다(Whisper·PaddleOCR은 Hugging Face, Tesseract 한국어 데이터는 GitHub tessdata. 커밋 고정, sha256 검증, 끊기면 이어받기) | 3 |
 | DELETE | `/api/admin/models/downloads/{impl}/{model}` | | `ModelDownload` (취소, 받던 파일 삭제) | 3 |
 
 - **저장**: 활성 설정은 `ai_model_settings`(역할별 spec), 이력은 `ai_model_changes`(전역 revision, 누가·언제·이전·새 값·사유). 처음 기동할 때 YAML 값을 `initial`로 넣고, 그 뒤 YAML은 DB에 없는 역할의 기본값으로만 쓴다. spec에 자격증명은 없다.
 - **교체**: 역할 하나를 바꾸면 revision이 올라가고 6개 역할 전체의 새 스냅샷(`ProviderSet`, 자체 AI 게이트웨이)이 활성이 된다. 참조 하나를 바꾸는 원자적 교체라 이미 시작한 요청·백그라운드 작업은 들고 있던 스냅샷으로 끝난다. 세션은 `InterviewSession.ai_config_revision`으로 시작 때의 스냅샷을 다시 찾는다(재시작 뒤에는 이력으로 재구성). 같은 spec의 provider 인스턴스는 스냅샷끼리 공유해 Whisper 가중치를 한 번만 올리고, 활성·진행 중 세션 어디에도 안 쓰이는 인스턴스는 내린다.
 - **요구 조건**: 네트워크 없이 본다. 구현 여부, 패키지 설치(`uv sync --extra whisper` 등), 환경변수·자격증명 파일이 있는지(값은 읽지도 보내지도 않음), 모델 파일을 받았는지. 미충족이면 테스트·적용 모두 409이고 화면에 이유와 해결 방법이 나온다. Google·Vertex 계열은 "구현 전", "자격증명 없음"으로 보인다.
 - **보안**: API 키·자격증명은 화면에서 받지 않는다(서버 환경변수·Secret Manager). 데이터가 이 PC·사내 GCP 밖으로 나가는 provider(`data_location: external`)는 테스트에 `confirm_external`, 적용에 `confirm_external`과 사유가 있어야 한다. provider가 무엇이든 LLM 입력은 같은 비식별화·가드를 거친다(`tests/test_api_privacy.py`가 런타임 교체 뒤에도 검사). 테스트용 음성은 임시 폴더에 두었다가 테스트가 끝나면 지운다.
-- **감사 로그**: `model.tested`(결과·지연·CER 같은 수치만, 전사·응답 본문 없음), `model.applied`, `model.reverted`, `model.download_started`, `model.download_cancelled`. LLM 연결 테스트 호출 자체도 게이트웨이가 `model.connection_test`(actor ai)로 남긴다. 실시간 전사는 답변마다 `transcript.listened`(쓴 STT 모델).
-- **연결 테스트**: LLM은 지원자 데이터가 없는 고정 프롬프트(`connection-test-v0.1`)로 구조화 출력(JSON)과 간단한 지시 수행을 본다. STT는 내장 한국어 샘플(FLEURS ko_kr, CC BY 4.0, 정답과 비교해 CER) 또는 관리자가 올린 녹음을 역할의 실제 경로로 전사한다(사후 = `transcribe`, 실시간 = 16kHz PCM 조각을 `stream`). 임베딩은 벡터 차원, 화자분리는 구간 수.
+- **감사 로그**: `model.tested`(결과·지연·CER·형식·읽기 시간 같은 수치만, 전사·응답·서류 본문 없음, 서류 테스트는 sample/upload), `model.applied`, `model.reverted`, `model.download_started`, `model.download_cancelled`. LLM 연결 테스트 호출 자체도 게이트웨이가 `model.connection_test`(actor ai)로 남긴다. 실시간 전사는 답변마다 `transcript.listened`(쓴 STT 모델).
+- **연결 테스트**: LLM은 지원자 데이터가 없는 고정 프롬프트(`connection-test-v0.1`)로 구조화 출력(JSON)과 간단한 지시 수행을 본다. STT는 내장 한국어 샘플(FLEURS ko_kr, CC BY 4.0, 정답과 비교해 CER) 또는 관리자가 올린 녹음을 역할의 실제 경로로 전사한다(사후 = `transcribe`, 실시간 = 16kHz PCM 조각을 `stream`). 임베딩은 벡터 차원, 화자분리는 구간 수. 서류 읽기는 역할별 내장 가상 이력서(`providers/samples/documents/`, OCR 샘플은 정답과 비교해 CER) 또는 올린 파일을, 테스트하는 설정과 나머지 서류 읽기 역할의 활성 설정으로 읽는다. `output`은 쪽마다 방법·이유·도구·신뢰도·시간(`pages`), 그림마다 판단(`images`: OCR, 증명사진 버림, 작음, 끔), 도구 버전, 비식별화한 미리보기(2,000자, 전화·이메일 모양은 한 번 더 가림)다. 원문은 응답에도 감사 로그에도 없다. 읽기 방식 "텍스트만" 테스트는 스캔한 쪽을 보류로 보여 주고 ok다(적용할 수 있다).
 - **실시간 STT와 오디오 입력**: STT provider는 받을 수 있는 입력 형식(`accepts`)을 밝힌다. 실제 음성은 16kHz 모노 16비트 PCM(`PCM16_16K`)이고, 지금 실시간 면접의 가상 지원자는 텍스트를 보내므로 fake STT만 받아 적는다. 실시간 STT를 실제 모델로 바꾸면 새로 시작하는 면접은 `stt: down`(수기 답변)이 되고 감사 로그에 `transcript.unsupported_audio`가 남는다. 마이크·WebRTC 입력(`live/audio.AudioSource`가 PCM을 내는 구현)이 붙으면 같은 교체가 그대로 쓰인다.
 
 ## 3. 스트리밍: SSE로 정한 이유와 이벤트 형식
@@ -280,7 +280,7 @@ data: {"batch_id":"…"}
 | AI 채점 상태 | `InterviewSession.ai_scoring_status` (not_started/running/completed/failed) + `ai_scoring_started_at`, `ai_scoring_finished_at` | 세션당 채점은 한 번이고 목록마다 상태가 필요해서 작업 테이블보다 컬럼이 단순하다. 재시도 이력이 필요해지면 작업 테이블로 옮긴다. 0003은 AI 점수가 있는 기존 세션을 completed로 채운다 |
 | 세션이 쓰는 역량 사전 | `InterviewSession.competency_set_id` (시작할 때 그 시점 확정본으로 고정) | 면접 중이나 끝난 뒤에 새 버전이 확정되어도 그 면접의 사전 질문·채점·평가 역량이 바뀌면 안 된다. 시작 전 세션은 현재 확정본을 쓴다 |
 | `CompetencySet.approved_by` 의미 | 확정한 면접관 id (SSO 도입 후 SSO 사용자 id) | 프론트가 이름으로 바꿔 표시한다 |
-| 숨은 텍스트·지시문 | `Application.document_info` JSON (format, blocks, hidden_blocks, images_dropped, replacements, 개수만). `ApplicationDetail.document`로 노출 | 숨은 텍스트는 비식별화는 하되(토큰 일관성) 선별 프롬프트에서는 뺀다. 화면에는 개수만 알린다 |
+| 숨은 텍스트·지시문 | `Application.document_info` JSON (format, blocks, hidden_blocks, images_dropped, replacements, 개수만. 2026-10-26부터 `reading`: 읽기 설정 revision·도구·OCR한 쪽, 마이그레이션 없음). `ApplicationDetail.document`로 노출 | 숨은 텍스트는 비식별화는 하되(토큰 일관성) 선별 프롬프트에서는 뺀다. 화면에는 개수만 알린다 |
 | 예약된 면접과 가용 시간 | 스케줄 후보 계산에서 예정·진행 중 면접 60분을 뺀다 | 세션에는 종료 예정 시각이 없어 60분으로 둔다. 가용 시간 원본은 바꾸지 않는다 |
 
 0004 (`migrations/versions/0004_ai_model_settings.py`, 2026-10-25):
@@ -312,6 +312,8 @@ SQLite 마이그레이션 주의: batch 모드는 테이블을 복사한 뒤 원
 
 구현됨 (2026-10-26): 채용 사이트 연동 수신 6개 엔드포인트와 공고 번호 연결(PATCH 공고), 합계 52개. 통로와 분리된 처리 함수(`intake/`), 백그라운드 큐와 재시작 재개, 연동 현황 화면, 가짜 채용 사이트(`scripts/fake_recruiting_site.py`). 테스트 `tests/test_intake.py`.
 
+구현됨 (2026-10-26): 서류 읽기 확장. 관리자 > 모델 설정에 서류 읽기 역할 5개(같은 엔드포인트, 테스트에 `document`), 쪽 단위 텍스트·OCR 선택, 로컬 OCR(PaddleOCR PP-OCRv5 한국어, Tesseract), HWP·HWPX, 구형 .doc/.ppt(LibreOffice 변환), JPG·PNG, 지원서별 읽기 기록(`document.reading`), 새 실패 코드. 테스트 `tests/test_document_reading.py`, `test_document_quality.py`, `test_ocr_deid.py`, `test_document_settings.py`, `test_ocr_engines.py`(모델 파일이 있을 때만). [document-reading.md](document-reading.md), 측정은 [ocr-benchmark.md](ocr-benchmark.md).
+
 구현됨 (2026-10-25): 관리자 > 모델 설정 10개 엔드포인트(합계 45개), DB 저장·이력·되돌리기, 재시작 없는 교체와 세션 고정, 연결 테스트, 모델 다운로드, 로컬 Whisper STT(`faster_whisper`, CPU int8, 한국어). 테스트 `tests/test_model_settings.py`, `test_weights.py`, `test_whisper.py`(모델 파일이 있을 때만). 측정 결과는 [Whisper 측정](whisper-benchmark.md).
 
 남은 과제:
@@ -328,7 +330,7 @@ SQLite 마이그레이션 주의: batch 모드는 테이블을 복사한 뒤 원
 - **압축 파일 일괄 가져오기**: 연동 승인이 늦어질 때의 대안. 같은 `process_application`에 통로 하나를 더하면 된다(ZIP 안 파일 + 목록 CSV → `ApplicationInput`). 구현 안 함.
 - **수신 큐 여러 인스턴스**: 지금은 프로세스 하나의 워커. 여러 인스턴스면 행 선점(PostgreSQL `FOR UPDATE SKIP LOCKED`)이나 Cloud Tasks·Pub/Sub. 수신 요청 속도 제한도 없다.
 - **보존 기간**: 실패 이벤트 원문, 첨부 원본, 철회된 지원서의 원본을 언제 지울지(정보보호와 결정).
-- **OCR**: 스캔본 업로드는 지금 거부한다. 사이트 첨부의 스캔본은 원문을 남겨 두어 OCR이 붙으면 연동 현황에서 다시 처리할 수 있다.
+- **서류 읽기**: 실제 한글 프로그램으로 저장한 HWP·HWPX로 다시 확인(지금 HWP 5.0 픽스처는 코드로 만든 것), Google Document AI·Naver CLOVA OCR 구현(카탈로그만), HEIC·TIFF, 이 노트북 CPU에서 PaddleOCR server 검출은 쪽당 30초 이상이라 실사용 불가. 남은 한계는 [document-reading.md](document-reading.md) "알려진 한계".
 - **업로드 보완**: 업로드로 들어온 지원서는 지원자 번호가 없어 매번 새 지원자다(사이트 연동은 번호로 같은 사람을 찾는다). 바이러스 검사, 원본 파일 보존 기간·삭제.
 - **사전 질문 편집·AI 생성 API**: 지금은 시드와 확정 시 이월뿐이다.
 - **스케줄 그리드**: 잡힌 면접 시간을 그리드에서도 빼서 그리기.

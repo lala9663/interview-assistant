@@ -25,3 +25,10 @@ providers:
     dimensions: 8
   diarization:
     impl: fake
+  # 서류 읽기: fake OCR은 글자를 읽지 않고 자리 표시 한 줄만 돌려준다. 실제 OCR은 관리자 화면에서 PaddleOCR로 바꾼다.
+  documents:
+    ocr:
+      impl: fake
+    reading:
+      impl: standard
+      mode: auto

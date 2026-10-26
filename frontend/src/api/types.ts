@@ -297,6 +297,37 @@ export interface SessionBrief {
   ended_at: string | null
 }
 
+/** How one attachment was read. Labels and numbers only, nothing from the file. */
+export interface ReadingFile {
+  format: string
+  /** "doc" / "ppt": read after LibreOffice converted it */
+  converted_from: string | null
+  pages: number
+  ocr_pages: number[]
+  /** lowest page confidence among the OCR'd pages (0..1) */
+  ocr_confidence: number | null
+  /** pictures in the document read by OCR (certificates, captures) */
+  pictures_read: number
+  /** pictures taken for ID photos and dropped unread */
+  photos_dropped: number
+  /** pages whose text layer was garbled and re-read by OCR */
+  garbled_pages: number[]
+}
+
+export const READING_MODES = ['auto', 'always_ocr', 'text_only'] as const
+export type ReadingMode = (typeof READING_MODES)[number]
+
+/** The 서류 읽기 settings an application was read with (taken when its processing started). */
+export interface ReadingInfo {
+  revision: number | null
+  mode: ReadingMode
+  embedded_images: boolean
+  sensitivity: string
+  /** every reader and OCR engine used, with its version */
+  tools: string[]
+  files: ReadingFile[]
+}
+
 /** What an uploaded file held, counts only. Hidden blocks were left out of the screening prompt. */
 export interface DocumentInfo {
   format: string
@@ -304,6 +335,8 @@ export interface DocumentInfo {
   hidden_blocks: number
   images_dropped: number
   replacements: number
+  /** absent for applications read before 서류 읽기 settings existed */
+  reading?: ReadingInfo | null
 }
 
 /** GET /api/applications/{id} */
@@ -596,11 +629,40 @@ export interface CreateSessionRequest {
 export const DATA_LOCATIONS = ['local', 'gcp', 'external'] as const
 export type DataLocation = (typeof DATA_LOCATIONS)[number]
 
-/** The six AI roles, in display order. */
-export const MODEL_ROLES = ['llm.primary', 'llm.screening', 'stt.streaming', 'stt.batch', 'embedding', 'diarization'] as const
+/** The AI roles, then the 서류 읽기 roles, in display order. */
+export const MODEL_ROLES = [
+  'llm.primary',
+  'llm.screening',
+  'stt.streaming',
+  'stt.batch',
+  'embedding',
+  'diarization',
+  'document.reading',
+  'document.ocr',
+  'document.pdf',
+  'document.hwp',
+  'document.legacy',
+] as const
 export type ModelRole = (typeof MODEL_ROLES)[number]
+/** Heading the role is shown under: AI 모델 or 서류 읽기. */
+export type ModelGroup = 'ai' | 'documents'
+export const isDocumentRole = (role: string) => role.startsWith('document.')
 
-export type ModelKind = 'llm' | 'stt' | 'embedding' | 'diarization'
+export type ModelKind = 'llm' | 'stt' | 'embedding' | 'diarization' | 'reading' | 'ocr' | 'pdf_reader' | 'hwp_reader' | 'office_converter'
+/** The provider kind each role picks from (providers/catalog.py ROLES). */
+export const MODEL_ROLE_KIND: Record<ModelRole, ModelKind> = {
+  'llm.primary': 'llm',
+  'llm.screening': 'llm',
+  'stt.streaming': 'stt',
+  'stt.batch': 'stt',
+  embedding: 'embedding',
+  diarization: 'diarization',
+  'document.reading': 'reading',
+  'document.ocr': 'ocr',
+  'document.pdf': 'pdf_reader',
+  'document.hwp': 'hwp_reader',
+  'document.legacy': 'office_converter',
+}
 export type ModelChangeKind = 'initial' | 'apply' | 'rollback'
 export type ModelOptionType = 'string' | 'text' | 'integer' | 'number' | 'boolean' | 'select'
 export type ModelOptionValue = string | number | boolean
@@ -692,6 +754,7 @@ export interface ModelRoleState {
   label: string
   description: string
   kind: ModelKind
+  group: ModelGroup
   spec: ModelSpec
   impl_label: string
   /** the model name stored next to results and in the audit log */
@@ -728,10 +791,46 @@ export interface ModelTestResult {
   model: string
   latency_ms: number
   summary: string
-  /** role-specific: text / expected_text / cer / realtime_factor (STT), structured (LLM), dimensions ... */
+  /** role-specific: text / expected_text / cer / realtime_factor (STT), structured (LLM), dimensions,
+   *  pages / images / tools / preview (서류 읽기: see ReadingTestOutput) ... */
   output: Record<string, unknown>
   error: string | null
   audio: 'sample' | 'upload' | null
+  /** 서류 읽기 roles: the built-in fictional resume or the admin's file */
+  document?: 'sample' | 'upload' | null
+}
+
+/** One page of a 서류 읽기 test: how it was read. */
+export interface ReadingTestPage {
+  page: number
+  method: 'text' | 'ocr' | 'held'
+  reason: string | null
+  tool: string | null
+  confidence: number | null
+  elapsed_ms: number | null
+  text_chars: number
+}
+
+/** One picture inside the document and what was done with it. */
+export interface ReadingTestImage {
+  label: string
+  decision: 'photo' | 'ocr' | 'skipped' | 'small' | 'failed'
+  confidence: number | null
+  detail: string
+}
+
+/** `output` of a 서류 읽기 test. The preview is de-identified; the raw text never comes back. */
+export interface ReadingTestOutput {
+  format: string | null
+  pages?: ReadingTestPage[]
+  images?: ReadingTestImage[]
+  tools?: string[]
+  warnings?: string[]
+  read_ms?: number
+  cer?: number
+  preview?: string
+  preview_truncated?: boolean
+  replacements?: number
 }
 
 export interface ModelDownload {

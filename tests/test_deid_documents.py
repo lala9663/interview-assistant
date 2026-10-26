@@ -39,7 +39,8 @@ MANIFEST = ROOT / "tests" / "fixtures" / "resumes" / "manifest.yaml"
 
 @pytest.fixture(scope="module")
 def samples():
-    return load_document_samples(MANIFEST)
+    """The 20 samples made before OCR, read without it. With OCR: test_document_reading.py."""
+    return [s for s in load_document_samples(MANIFEST) if int(s.id[1:]) <= 20]
 
 
 @pytest.fixture(scope="module")
@@ -174,8 +175,10 @@ def test_script_documents_mode(tmp_path, capsys, no_network):
     report = tmp_path / "review.html"
     assert _load_script("check_leaks.py").main(["--documents", "--report", str(report)]) == 0
     out = capsys.readouterr().out
-    assert "documents checked 17, failed 0" in out and "leaked 0" in out
-    assert "ocr hold 3, misclassified 0" in out
+    # Without OCR: every text file checked (the legacy .doc/.ppt only where LibreOffice is
+    # installed), the 8 that need OCR held, the password-protected HWP refused.
+    assert re.search(r"documents checked (20|22), failed 0, ground-truth values \d+, leaked 0", out)
+    assert "ocr hold 8, misclassified 0, refused 1" in out
     assert "권하린" not in out and "harin.kwon" not in out  # names and file names stay masked
     assert report.read_text(encoding="utf-8").startswith("<!doctype html>")
 
