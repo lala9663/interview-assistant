@@ -10,11 +10,12 @@ JD 기반 서류 선별, 실시간 면접 보조(STT + 꼬리질문), 평점, �
 | 화면 | 요구사항 | 내용 |
 | --- | --- | --- |
 | 공고·역량 사전 | FR-02 | JD로 역량과 1~5점 행동 기준(BARS) 초안 생성, 검토 후 버전으로 확정 |
-| 서류 선별 | FR-01·03 | 서류 업로드 → 텍스트 추출 → 비식별화 → 프로필 구조화·적합도와 근거. 통과·탈락은 사람이 정함 |
+| 서류 선별 | FR-01·03 | 서류 업로드 또는 채용 사이트 연동 → 텍스트 추출 → 비식별화 → 프로필 구조화·적합도와 근거. 통과·탈락은 사람이 정함. 목록에 수신 경로 표시 |
 | 실시간 면접 | FR-04~08 | 지원자 카드, 실시간 전사, 꼬리질문 후보 스트리밍, Q&A 기록, 메모. 녹음 동의가 없으면 수기 모드 |
 | 평가 | FR-07·08 | AI 참고 점수(근거 인용 필수)와 면접관 점수를 나란히, 합산하지 않음 |
 | 면접관 스케줄 | FR-09 | 가용 시간 입력, 공통 빈 시간과 후보 시간 |
 | 관리자 > 모델 설정 | | 역할별 AI 모델 선택·테스트·재시작 없는 교체·이력·되돌리기 |
+| 관리자 > 연동 현황 | | 채용 사이트가 보낸 지원서 이벤트(제출·수정·철회)와 처리 결과·실패 사유, 공고별 건수, 실패 다시 처리 |
 
 ## 원칙
 
@@ -53,6 +54,7 @@ cd frontend && npm run check    # 타입 검사 + 린트 + 테스트 + 빌드
 | [docs/setup.md](docs/setup.md) | 설치, 환경변수, DB·마이그레이션, 시드, 테스트 |
 | [docs/architecture.md](docs/architecture.md) | 저장소 구조, AI 호출 흐름(가드·감사 로그), 실시간 전사, 업로드 |
 | [docs/api-contract.md](docs/api-contract.md) | 프론트 ↔ 백엔드 REST·SSE 계약, 모델 결정, 남은 과제 |
+| [docs/site-intake-spec.md](docs/site-intake-spec.md) | 채용 사이트 → 이 시스템 지원서 연동 명세(채용 시스템 부서용): 엔드포인트, 필드, 서명, 재시도, 오류 코드, 받지 않는 항목, 확인 목록 |
 | [docs/deidentification.md](docs/deidentification.md) | 비식별화 설정·탐지 규칙, 서류 파일, 누출 검수와 검토 리포트 |
 | [docs/frontend.md](docs/frontend.md) | 프론트 스택, 모의·연결 모드, 검사, 의존성 규칙 |
 | [docs/ai-models.md](docs/ai-models.md) | 관리자 > 모델 설정 사용법, 로컬 Whisper 설치·다운로드·테스트 |
@@ -67,6 +69,7 @@ config/        provider 기본값(YAML), 비식별화 설정·사전
 src/interview_assistant/
   api/         REST·SSE API          ai/          AI 작업 (gateway, prompts, 채점 …)
   ai_models/   모델 설정·교체          providers/   provider 인터페이스·구현·카탈로그
+  intake/      지원서 수신 (업로드·채용 사이트 → 처리 함수 하나)
   deid/        비식별화              documents/   서류 텍스트 추출
   live/        실시간 전사            models/      ORM 모델
 migrations/    Alembic                scripts/     시드, 누출 검수, Whisper 측정 …
@@ -81,6 +84,7 @@ docs/          문서
 - 2단계 비식별화: 구현 완료, 사용자 확인(토큰 형식, 사전, 검토 리포트로 20건 수동 검수) 대기.
 - 4~9단계: API·저장·화면을 fake provider로 구현(2026-10-23).
 - 관리자 > 모델 설정과 첫 실제 provider인 로컬 Whisper STT(2026-10-25).
-- 남은 것: 3단계 실제 LLM 연결과 품질 검증, 10~11단계 오디오(마이크·WebRTC, 사후 전사), 로그인(SSO), 사내 허용 모델 확인.
+- 채용 사이트 연동 수신(2026-10-26): 서명된 이벤트 수신 API와 연동 명세, 통로와 분리된 처리 함수, 백그라운드 큐, 연동 현황 화면. 가짜 채용 사이트로 500건 검증. 실제 사이트 연결은 승인·네트워크 확인 뒤.
+- 남은 것: 3단계 실제 LLM 연결과 품질 검증, 10~11단계 오디오(마이크·WebRTC, 사후 전사), 로그인(SSO), 사내 허용 모델 확인, 채용 사이트 실제 연결(또는 대안인 압축 파일 일괄 가져오기).
 
 자세한 체크리스트는 [docs/implementation-order.md](docs/implementation-order.md).

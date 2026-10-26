@@ -12,14 +12,15 @@ src/interview_assistant/
   config.py             # 설정 로더 (env + providers.yaml)
   crypto.py             # 컬럼 암호화 (Fernet, IA_ENCRYPTION_KEY)
   db.py                 # 엔진, 세션 팩토리
-  main.py               # FastAPI 앱 (/health, /api 라우터, 시작 시 멈춘 AI 채점 재개)
-  runtime.py            # 앱이 들고 있는 것: 모델 관리자(역할별 provider), DB, 비식별화, 전사 허브, 백그라운드 작업
+  main.py               # FastAPI 앱 (/health, /api 라우터, 시작 시 멈춘 AI 채점과 남은 수신 이벤트 재개)
+  runtime.py            # 앱이 들고 있는 것: 모델 관리자(역할별 provider), DB, 비식별화, 전사 허브, 지원서 수신 큐, 백그라운드 작업
+  intake/               # 지원서 수신: 통로와 분리된 처리 함수(service), 사이트 입력 칸(forms), 사이트 이벤트 명세(site), HMAC 서명(signature), 받기·반영(events), 백그라운드 큐(worker)
   ai_models/            # 관리자 > 모델 설정: store(활성 설정·이력 DB), manager(revision별 스냅샷, 세션 고정, 원자적 교체), probe(연결 테스트)
   models/               # ORM 모델 (업무정의서 6장 13개 + 비식별 역매핑 + 사전 질문·꼬리질문 후보·전사 구간 + 모델 설정·이력)
   domain.py             # JSON 컬럼 모양 (역량, 지원자 프로필)
   interviews.py         # 단계(stage)·집계·세션이 쓰는 역량 사전 규칙
   schedule.py           # 공통 빈 시간, 슬롯 후보 (프론트 lib/schedule.ts와 같은 규칙 + 잡힌 면접 제외)
-  api/                  # REST·SSE API (api-contract.md). routes/ 기능별 라우터(admin = 모델 설정, 관리자만), schemas.py 응답 스키마, views.py ORM → 응답
+  api/                  # REST·SSE API (api-contract.md). routes/ 기능별 라우터(admin = 모델 설정, intake = 채용 사이트 수신·연동 현황, 관리자만), schemas.py 응답 스키마, views.py ORM → 응답
   ai/                   # AI 작업: gateway(가드 → provider → 감사 로그), guard, prompts, competency, screening, followups, scoring
   live/                 # 실시간 전사: hub(STT → 비식별화 → SSE), audio(오디오 소스, 지금은 대본 읽는 가상 지원자)
   demo/                 # 데모 데이터(프론트 모의 데이터와 같은 가상 데이터)와 시드, 가상 지원자 대본
@@ -34,12 +35,13 @@ src/interview_assistant/
     stt/faster_whisper.py  # 로컬 Whisper STT (CPU int8, 한국어, VAD, stream·transcribe)
     fake.py             # 자격증명 없이 도는 구현 (speed로 지연 흉내)
     fake_tasks.py       # fake LLM이 앱 프롬프트에 규칙으로 답하는 부분 (모양만 그럴듯, 품질 아님)
-migrations/versions/    # Alembic 0001~0004
+migrations/versions/    # Alembic 0001~0005
 scripts/
   seed_demo.py          # 데모 데이터 시드
   grant_admin.py        # 면접관에게 관리자 권한 (0004 이전 DB용, SSO 전까지)
   bench_whisper.py      # Whisper 크기별 속도·메모리·CER·스트리밍 지연 측정
   check_leaks.py        # 비식별화 누출 검수 (텍스트 샘플 / --documents 파일 샘플 / --report 검토 리포트)
+  fake_recruiting_site.py  # 가짜 채용 사이트: 서명된 지원서 이벤트 약 500건(중복·순서 바뀜·철회·일부러 넣은 오류), 처리 결과·시간 보고
   make_resume_fixtures.py  # 가상 이력서 20건과 정답 목록 생성
   export_mock_data.mjs  # 프론트 모의 데이터 → src/interview_assistant/demo/mock_data.json
 tests/
@@ -72,6 +74,23 @@ uploads/, recordings/, reports/   # 원본 영역 (git 제외)
 - 실제 오디오(마이크·WebRTC, 11단계) 전까지는 `live/audio.py`의 가상 지원자가 데모 대본을 텍스트로 보내고 fake STT가 받아 적는다. 속도는 `speed`(providers.fake.yaml)와 `IA_DEMO_SPEED`.
 - 오디오 소스는 내보내는 형식을 밝힌다. 실제 음성은 16kHz 모노 16비트 PCM이고, STT provider가 그 형식을 못 읽으면(예: Whisper에 가상 지원자 텍스트) 그 면접은 수기 답변 입력으로 바뀐다.
 - 상태는 프로세스 메모리에 있다. 서버를 여러 대 띄우려면 공유 버스가 필요하다.
+
+## 지원서 수신 (통로와 처리)
+
+지원서는 두 통로로 들어온다: 서류 선별 화면의 업로드(파일 1건 + 양식 신원)와 채용 사이트 연동(서명된 이벤트). 통로는 받은 것을 `intake/service.py`의 `ApplicationInput`으로 바꾸기만 하고, 처리는 `process_application` 하나가 한다.
+
+```
+업로드 화면 ─┐                                      ┌─ 공고 찾기 (id / 사이트 공고 번호)
+채용 사이트 ─┼─▶ ApplicationInput ─▶ process_application ─┼─ 첨부 읽기 (documents/)
+(압축 파일)  ┘      (통로가 만든다)        (하나뿐)     ├─ 지원자 찾기(지원자 번호 해시) 또는 만들기
+                                                     ├─ 비식별화 (입력 칸·자기소개·첨부 전부)
+                                                     ├─ 프로필 (입력 칸 그대로 / 없으면 모델)
+                                                     └─ AI 선별 → 지원서 만들기·갱신 (보류로 시작)
+```
+
+- 채용 사이트 이벤트는 받자마자 202로 답하고 `intake_events`(큐이자 멱등성 기록)에 넣는다. 워커 `IA_INTAKE_WORKERS`개가 지원서 번호 단위로 차례를 지켜 반영하고(revision이 높은 것만), 서버가 재시작되면 남은 이벤트를 다시 처리한다. 형식·서명·재시도·오류 코드는 [site-intake-spec.md](site-intake-spec.md), API는 [api-contract.md](api-contract.md) "채용 사이트 연동".
+- 처리 중 모델을 기다리는 동안 쓰기 트랜잭션을 열어 두지 않는다. 비식별화(토큰 쓰기)는 스레드에서 하고 그 스레드 안에서 커밋하며, 모델 호출마다 감사 로그를 바로 커밋한다. SQLite는 쓰기가 하나뿐이라, 이벤트 루프 위에서 잠금을 쥔 채 기다리면 다른 쓰기가 루프 전체를 멈춘다.
+- 압축 파일 일괄 가져오기(남은 과제)는 같은 `process_application`에 통로 하나를 더하는 일이다.
 
 ## 업로드
 

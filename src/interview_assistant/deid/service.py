@@ -66,6 +66,20 @@ class DeidService:
     def seal(self, identity: KnownIdentity) -> str:
         return seal_identity(self._cipher(), identity)
 
+    def seal_payload(self, plaintext: str) -> str:
+        """Raw-zone ciphertext for a received intake payload (IntakeEvent.encrypted_payload)."""
+        return self._cipher().encrypt(plaintext)
+
+    def open_payload(self, ciphertext: str) -> str:
+        """Only the intake worker opens payloads, to apply them; nothing it returns is shown."""
+        return self._cipher().decrypt(ciphertext)
+
+    def applicant_hash(self, applicant_no: str) -> str:
+        """Keyed hash of the recruiting site's applicant number (Candidate.site_applicant_hash):
+        finds the same person again without storing the number. Changing IA_ENCRYPTION_KEY
+        changes every hash."""
+        return self._cipher().lookup_hash("site-applicant/v1", applicant_no.strip())
+
     def deidentify(self, db: Session, text: str, candidate: Candidate) -> str:
         """Tokenised text for one candidate. New tokens are flushed; the caller commits."""
         return (

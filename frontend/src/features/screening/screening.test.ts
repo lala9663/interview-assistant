@@ -28,6 +28,7 @@ function row(n: number, status: ScreeningStatus, fit: number, skills: string[] =
     years_experience: n,
     top_skills: skills,
     stage: 'screening',
+    channel: n % 2 ? 'site' : 'upload',
     created_at: `2026-10-${String(n).padStart(2, '0')}T00:00:00Z`,
   }
 }
@@ -66,6 +67,14 @@ describe('<ScreeningTable>', () => {
 
     await user.click(screen.getByRole('radio', { name: /전체/ }))
     expect(screen.getAllByTestId('screening-row')).toHaveLength(5)
+  })
+
+  it('shows how each application came in: the recruiting site or an upload', () => {
+    renderPlain(ScreeningTable, { rows: ROWS, selectedId: null, onOpen: vi.fn() })
+    const byPseudonym = Object.fromEntries(
+      screen.getAllByTestId('screening-row').map((r) => [within(r).getByText(/CAND-/).textContent, within(r).getByTestId('channel-badge').textContent?.trim()]),
+    )
+    expect(byPseudonym).toEqual({ 'CAND-0001': '사이트 연동', 'CAND-0002': '직접 업로드', 'CAND-0003': '사이트 연동', 'CAND-0004': '직접 업로드', 'CAND-0005': '사이트 연동' })
   })
 
   it('shows an empty state with a reset when nothing matches', async () => {

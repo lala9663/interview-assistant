@@ -81,6 +81,11 @@ def create_app(
             _resume_scoring(runtime)
         except Exception:  # an empty or unmigrated database must not stop the server
             log.exception("could not resume AI scoring")
+        try:
+            for worker in runtime.intake.start():  # site events still queued are applied again
+                runtime.tasks.add(worker)
+        except Exception:
+            log.exception("could not start the intake queue")
         runtime.spawn(runtime.models.warm_up_active())
         yield
         for task in list(runtime.tasks):

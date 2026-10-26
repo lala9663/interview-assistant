@@ -55,7 +55,11 @@ def dashboard(db: Db, me: Me) -> s.DashboardSummary:
         select(func.count())
         .select_from(Screening)
         .join(Application)
-        .where(Screening.status == ScreeningStatus.hold, Application.deleted_at.is_(None))
+        .where(
+            Screening.status == ScreeningStatus.hold,
+            Application.deleted_at.is_(None),
+            Application.withdrawn_at.is_(None),
+        )
     )
     return s.DashboardSummary(
         pipeline=[

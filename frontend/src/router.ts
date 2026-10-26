@@ -17,6 +17,7 @@ export const routes: RouteRecordRaw[] = [
       { path: 'sessions/:sessionId/evaluation', component: () => import('@/features/evaluation/EvaluationPage.vue') },
       { path: 'schedule', component: () => import('@/features/schedule/SchedulePage.vue') },
       { path: 'admin/models', component: () => import('@/features/admin/ModelSettingsPage.vue') },
+      { path: 'admin/intake', component: () => import('@/features/intake/IntakePage.vue') },
       { path: ':pathMatch(.*)*', component: NotFound },
     ],
   },

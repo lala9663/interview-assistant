@@ -8,6 +8,8 @@ export interface PostingSeed {
   title: string
   job_family: string
   status: PostingStatus
+  /** 채용 사이트 공고 번호 (P3 is left unlinked: its site events wait as unknown_posting) */
+  site_posting_no: string | null
   createdDaysAgo: number
   jd_text: string
   /** competency set versions, oldest first. `approved` = approved by that interviewer key. */
@@ -85,6 +87,7 @@ export const P1: PostingSeed = {
   title: '메모리 공정개발 엔지니어 (경력)',
   job_family: '공정개발',
   status: 'open',
+  site_posting_no: 'DS-2026-0101',
   createdDaysAgo: 24,
   jd_text: `[메모리사업부] 메모리 공정개발 엔지니어 (경력)
 
@@ -214,6 +217,7 @@ export const P2: PostingSeed = {
   title: 'AI 플랫폼 백엔드 엔지니어',
   job_family: 'SW개발',
   status: 'open',
+  site_posting_no: 'DS-2026-0102',
   createdDaysAgo: 18,
   jd_text: `[AI센터] AI 플랫폼 백엔드 엔지니어
 
@@ -281,6 +285,7 @@ export const P3: PostingSeed = {
   title: '모바일 UX 디자이너',
   job_family: '디자인',
   status: 'draft',
+  site_posting_no: null,
   createdDaysAgo: 3,
   jd_text: `[UX디자인그룹] 모바일 UX 디자이너
 

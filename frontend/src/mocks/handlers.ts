@@ -23,6 +23,7 @@ import { availabilityByInterviewer, suggestSlots } from '@/lib/schedule'
 import { isSameKstDay } from '@/lib/time'
 
 import { adminHandlers } from './admin'
+import { intakeHandlers } from './intake'
 import { ANSWER_BANK, GENERIC_BANK } from './data/banks'
 import { P1, P2 } from './data/postings'
 import { AI_MODEL, getDb, newId, SCREENING_MODEL, type MockDb, type QAMeta } from './db'
@@ -84,6 +85,7 @@ function sessionOr404(db: MockDb, id: string) {
 
 export const handlers = [
   ...adminHandlers,
+  ...intakeHandlers,
   // ----- me / dashboard / activity ---------------------------------------------------------------
   http.get(`${API}/me`, async () => {
     await latency()
@@ -128,6 +130,23 @@ export const handlers = [
     const db = getDb()
     const p = db.posting(String(params.id))
     if (!p) return notFound('공고')
+    return HttpResponse.json({ ...p, counts: db.counts(p.id) })
+  }),
+
+  http.patch(`${API}/postings/:id`, async ({ params, request }) => {
+    await latency()
+    const db = getDb()
+    const p = db.posting(String(params.id))
+    if (!p) return notFound('공고')
+    const body = (await request.json()) as { site_posting_no?: string | null }
+    const next = (body.site_posting_no ?? '').trim() || null
+    if (next !== null && !/^[A-Za-z0-9][A-Za-z0-9._:-]{0,63}$/.test(next)) return invalid('site_posting_no', '영문·숫자와 . _ : - 만 쓸 수 있습니다 (64자 이하).')
+    const other = next ? db.postings.find((x) => x.site_posting_no === next && x.id !== p.id) : undefined
+    if (other) return conflict(`공고 번호 ${next}는 이미 '${other.title}' 공고에 연결되어 있습니다.`)
+    if (p.site_posting_no !== next) {
+      db.log({ actor_type: 'user', action: 'posting.site_linked', target_type: 'job_posting', target_id: p.id, details: { from: p.site_posting_no, to: next } })
+      p.site_posting_no = next
+    }
     return HttpResponse.json({ ...p, counts: db.counts(p.id) })
   }),
 

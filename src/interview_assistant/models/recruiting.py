@@ -38,6 +38,13 @@ class ScreeningStatus(str, enum.Enum):
     rejected = "rejected"
 
 
+class ApplicationChannel(str, enum.Enum):
+    """How an application reached the system (수신 경로)."""
+
+    upload = "upload"  # a recruiter uploaded one file on the screening screen
+    site = "site"  # the recruiting site sent it (intake/, docs/site-intake-spec.md)
+
+
 class JobPosting(IdMixin, TimestampMixin, Base):
     __tablename__ = "job_postings"
 
@@ -47,6 +54,9 @@ class JobPosting(IdMixin, TimestampMixin, Base):
     status: Mapped[PostingStatus] = mapped_column(
         enum_column(PostingStatus), default=PostingStatus.draft, nullable=False
     )
+    # The recruiting site's posting number (채용 사이트 공고 번호). Site events name the posting by
+    # it; empty until someone links the posting on its detail screen.
+    site_posting_no: Mapped[str | None] = mapped_column(String(64), unique=True)
 
     competency_sets: Mapped[list[CompetencySet]] = relationship(
         back_populates="posting",
@@ -107,12 +117,19 @@ class PresetQuestion(IdMixin, TimestampMixin, Base):
 
 
 class Candidate(IdMixin, TimestampMixin, Base):
-    """A person. Identity lives only in `encrypted_identity`; everything else uses `pseudonym`."""
+    """A person. Identity lives only in `encrypted_identity`; everything else uses `pseudonym`.
+
+    `site_applicant_hash` is a keyed hash (`FieldCipher.lookup_hash`) of the recruiting site's
+    applicant number: the same number is the same person whichever posting they apply to. The
+    number itself is never stored and never leaves the API. Uploads have none (each upload is a
+    new person).
+    """
 
     __tablename__ = "candidates"
 
     pseudonym: Mapped[str] = mapped_column(String(64), unique=True, nullable=False)
     encrypted_identity: Mapped[str | None] = mapped_column(Text)
+    site_applicant_hash: Mapped[str | None] = mapped_column(String(64), unique=True)
     consent_recording: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
     consent_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     deleted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
@@ -137,6 +154,17 @@ class Application(IdMixin, TimestampMixin, Base):
     # What the uploaded file held, as counts only: {format, blocks, hidden_blocks, images_dropped,
     # replacements}. Hidden blocks are de-identified but kept out of the screening prompt.
     document_info: Mapped[dict[str, Any] | None] = mapped_column(JSON)
+    channel: Mapped[ApplicationChannel] = mapped_column(
+        enum_column(ApplicationChannel),
+        default=ApplicationChannel.upload,
+        server_default=ApplicationChannel.upload.value,
+        nullable=False,
+    )
+    # The recruiting site's application number (채용 사이트 지원 번호): one row per number, so an
+    # application sent twice or updated stays one application.
+    site_application_no: Mapped[str | None] = mapped_column(String(64), unique=True)
+    # Withdrawn on the recruiting site: the row stays (the site is the record) but leaves every list.
+    withdrawn_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     deleted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
 
     candidate: Mapped[Candidate] = relationship(back_populates="applications")

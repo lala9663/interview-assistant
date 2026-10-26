@@ -9,6 +9,7 @@ import { endpoints } from './endpoints'
 import type {
   ApplyModelRequest,
   Competency,
+  IntakeEventFilter,
   CreateQARequest,
   CreateSessionRequest,
   RevertModelRequest,
@@ -40,6 +41,8 @@ export const qk = {
   modelCatalog: ['admin', 'models', 'catalog'] as const,
   modelHistory: ['admin', 'models', 'history'] as const,
   modelDownloads: ['admin', 'models', 'downloads'] as const,
+  intakeSummary: ['admin', 'intake', 'summary'] as const,
+  intakeEvents: (filter: IntakeEventFilter) => ['admin', 'intake', 'events', filter] as const,
 }
 
 // ----- queries -------------------------------------------------------------------------------------
@@ -403,6 +406,63 @@ export function useRevertModel() {
     useMutation({
       mutationFn: ({ changeId, body }: { changeId: string; body: RevertModelRequest }) => endpoints.revertModel(changeId, body),
       onSuccess: invalidate,
+    }),
+  )
+}
+
+// ----- 관리자 > 연동 현황 ----------------------------------------------------------------------------
+
+/** Polls every 2 s while events wait or are being applied, every 15 s otherwise. */
+export const useIntakeSummary = (enabled: MaybeRefOrGetter<boolean> = true) =>
+  reactive(
+    useQuery(() => ({
+      queryKey: qk.intakeSummary,
+      queryFn: ({ signal }) => endpoints.intakeSummary(signal),
+      enabled: toValue(enabled),
+      staleTime: 0,
+      refetchInterval: (q) => (q.state.data && q.state.data.totals.queued + q.state.data.totals.processing > 0 ? 2000 : 15_000),
+    })),
+  )
+
+export const useIntakeEvents = (filter: MaybeRefOrGetter<IntakeEventFilter>, enabled: MaybeRefOrGetter<boolean> = true) =>
+  reactive(
+    useQuery(() => {
+      const f = toValue(filter)
+      return {
+        queryKey: qk.intakeEvents(f),
+        queryFn: ({ signal }) => endpoints.intakeEvents(f, signal),
+        enabled: toValue(enabled),
+        staleTime: 0,
+        placeholderData: keepPreviousData,
+        refetchInterval: (q) => (q.state.data?.some((e) => e.status === 'queued' || e.status === 'processing') ? 2000 : 15_000),
+      }
+    }),
+  )
+
+export function useIntakeRetry() {
+  const qc = useQueryClient()
+  const refresh = () => {
+    void qc.invalidateQueries({ queryKey: ['admin', 'intake'] })
+    void qc.invalidateQueries({ queryKey: ['postings'] })
+  }
+  return {
+    one: reactive(useMutation({ mutationFn: (id: string) => endpoints.retryIntakeEvent(id), onSuccess: refresh })),
+    all: reactive(
+      useMutation({ mutationFn: (body: { failure_code?: string; posting_no?: string }) => endpoints.retryIntake(body), onSuccess: refresh }),
+    ),
+  }
+}
+
+export function useUpdatePosting(postingId: MaybeRefOrGetter<string>) {
+  const qc = useQueryClient()
+  return reactive(
+    useMutation({
+      mutationFn: (siteNo: string | null) => endpoints.updatePosting(toValue(postingId), { site_posting_no: siteNo }),
+      onSuccess: (d) => {
+        qc.setQueryData(qk.posting(d.id), d)
+        void qc.invalidateQueries({ queryKey: qk.postings })
+        void qc.invalidateQueries({ queryKey: ['admin', 'intake'] })
+      },
     }),
   )
 }

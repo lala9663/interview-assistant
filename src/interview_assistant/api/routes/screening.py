@@ -1,54 +1,38 @@
 """서류 선별 (FR-01, 03): applications, screening decisions, the candidate index, uploads.
 
-Upload: the original file goes to the raw zone on disk (uploads/, never served), its text is
-extracted and de-identified, hidden text is kept out of the prompt, and the `screening` model
-structures a profile and assesses it. The identity typed into the form is sealed into
-Candidate.encrypted_identity; the API only ever shows the pseudonym.
+Upload: one channel into intake/service.py, like the recruiting site. The original file goes to
+the raw zone on disk (uploads/, never served), its text is extracted and de-identified, hidden
+text is kept out of the prompt, and the `screening` model structures a profile and assesses it.
+The identity typed into the form is sealed into Candidate.encrypted_identity; the API only ever
+shows the pseudonym. Withdrawn applications (recruiting site) leave every list.
 """
 
 from __future__ import annotations
 
-import logging
-import re
-
-from fastapi import APIRouter, File, Form, UploadFile
-from fastapi.concurrency import run_in_threadpool
+from fastapi import APIRouter, File, Form, HTTPException, UploadFile
 from sqlalchemy import select
 
-from interview_assistant.ai import AiOutputInvalid
-from interview_assistant.ai.guard import IdentifierInPrompt
-from interview_assistant.ai.prompts import SCREENING_PROMPT
-from interview_assistant.ai.screening import screen_document
 from interview_assistant.api import schemas as s
 from interview_assistant.api import views
 from interview_assistant.api.deps import Db, Me, RuntimeDep, audit
 from interview_assistant.api.errors import ai_failed, conflict, invalid, not_found
-from interview_assistant.deid.documents import OcrRequired, deidentify_document
 from interview_assistant.deid.types import KnownIdentity
-from interview_assistant.documents import (
-    BlockKind,
-    ExtractionError,
-    extract_document,
-    render_blocks,
+from interview_assistant.intake.service import (
+    MAX_ATTACHMENT_BYTES,
+    ApplicationInput,
+    Attachment,
+    IntakeRefused,
+    process_application,
 )
-from interview_assistant.interviews import approved_set
 from interview_assistant.models import (
-    ActorType,
     Application,
-    AuditLog,
-    Candidate,
+    ApplicationChannel,
     JobPosting,
     PostingStatus,
     Screening,
-    ScreeningStatus,
 )
-from interview_assistant.models.base import new_id
 
 router = APIRouter(tags=["screening"])
-log = logging.getLogger(__name__)
-
-MAX_UPLOAD_BYTES = 10 * 1024 * 1024
-_EXTENSIONS = {"pdf": ".pdf", "docx": ".docx", "pptx": ".pptx", "html": ".html"}
 
 
 def _application(db: Db, application_id: str) -> Application:
@@ -62,7 +46,7 @@ def _live_applications(db: Db) -> list[Application]:
     return list(
         db.scalars(
             select(Application)
-            .where(Application.deleted_at.is_(None))
+            .where(Application.deleted_at.is_(None), Application.withdrawn_at.is_(None))
             .order_by(Application.created_at)
         ).all()
     )
@@ -74,7 +58,11 @@ def applications(posting_id: str, db: Db) -> list[s.ApplicationRow]:
         raise not_found("공고")
     rows = db.scalars(
         select(Application)
-        .where(Application.posting_id == posting_id, Application.deleted_at.is_(None))
+        .where(
+            Application.posting_id == posting_id,
+            Application.deleted_at.is_(None),
+            Application.withdrawn_at.is_(None),
+        )
         .order_by(Application.created_at)
     ).all()
     return [views.application_row(a) for a in rows]
@@ -119,10 +107,7 @@ def _lines(value: str) -> tuple[str, ...]:
     return tuple(v.strip() for v in value.splitlines() if v.strip())
 
 
-def next_pseudonym(db: Db) -> str:
-    taken = db.scalars(select(Candidate.pseudonym).where(Candidate.pseudonym.like("CAND-%"))).all()
-    numbers = [int(m.group(1)) for p in taken if (m := re.fullmatch(r"CAND-(\d+)", p))]
-    return f"CAND-{max(numbers, default=0) + 1:04d}"
+_REFUSED_STATUS = {"unknown_posting": 404, "posting_closed": 409, "duplicate_application": 409}
 
 
 @router.post("/postings/{posting_id}/applications", response_model=s.UploadResult, status_code=201)
@@ -142,7 +127,8 @@ async def upload_application(
     companies: str = Form(""),
 ) -> s.UploadResult:
     """Form fields are what the application form already says about the candidate. Only `name`
-    is required; the rest (one value per line) helps de-identification catch more."""
+    is required; the rest (one value per line) helps de-identification catch more. The file goes
+    through the same processing as applications from the recruiting site (intake/service.py)."""
     posting = db.get(JobPosting, posting_id)
     if posting is None:
         raise not_found("공고")
@@ -150,23 +136,7 @@ async def upload_application(
         raise conflict("마감된 공고에는 지원서를 올릴 수 없습니다.")
     if not name.strip():
         raise invalid("name", "지원자 이름을 입력하세요. 비식별화에만 쓰입니다.")
-    data = await file.read(MAX_UPLOAD_BYTES + 1)
-    if len(data) > MAX_UPLOAD_BYTES:
-        raise invalid("file", "파일이 너무 큽니다 (최대 10MB).")
-    if not data:
-        raise invalid("file", "빈 파일입니다.")
-
-    try:
-        document = await run_in_threadpool(extract_document, data, file.filename or "upload")
-    except ExtractionError as exc:
-        raise invalid("file", str(exc)) from exc
-    if document.needs_ocr:
-        pages = ", ".join(map(str, document.ocr_pages))
-        raise invalid(
-            "file",
-            f"스캔본이라 글자를 읽을 수 없습니다 (OCR 필요, {pages}쪽). 텍스트가 있는 PDF·DOCX로 올려 주세요.",
-        )
-
+    data = await file.read(MAX_ATTACHMENT_BYTES + 1)
     identity = KnownIdentity(
         name=name.strip(),
         aliases=_lines(aliases),
@@ -177,103 +147,31 @@ async def upload_application(
         schools=_lines(schools),
         companies=_lines(companies),
     )
-    candidate = Candidate(
-        pseudonym=next_pseudonym(db), encrypted_identity=runtime.deid.seal(identity)
-    )
-    db.add(candidate)
-    db.flush()
-    application_id = new_id()
-    deidentifier = runtime.deid.deidentifier(db)
     try:
-        deidentified = await run_in_threadpool(
-            deidentify_document, deidentifier, document, candidate_id=candidate.id, known=identity
-        )
-    except OcrRequired as exc:  # extract_document already caught scans; kept for safety
-        raise invalid("file", str(exc)) from exc
-    visible = [b for b in deidentified.blocks if b.kind is not BlockKind.hidden]
-    info = s.DocumentInfo(
-        format=deidentified.format,
-        blocks=len(deidentified.blocks),
-        hidden_blocks=len(deidentified.blocks) - len(visible),
-        images_dropped=deidentified.images_dropped,
-        replacements=deidentified.replacements,
-    )
-    approved = approved_set(posting)
-    try:
-        outcome = await screen_document(
+        outcome = await process_application(
             db,
-            runtime.ai,
-            posting=posting,
-            competencies=approved.competencies if approved else [],
-            application_id=application_id,
-            document_text=render_blocks(visible),
-            known=identity,
+            ApplicationInput(
+                channel=ApplicationChannel.upload,
+                identity=identity,
+                posting_id=posting.id,
+                attachments=(Attachment(filename=file.filename or "upload", data=data),),
+                actor=me,
+            ),
+            ai=runtime.ai,
+            deid=runtime.deid,
+            uploads_dir=runtime.uploads_dir,
         )
-    except (AiOutputInvalid, IdentifierInPrompt) as exc:
-        _failed(db, application_id, posting_id, type(exc).__name__)
-        raise
-    except Exception as exc:
-        log.exception("screening failed")
-        _failed(db, application_id, posting_id, type(exc).__name__)
-        raise ai_failed("AI 선별에 실패했습니다. 잠시 후 다시 올려 주세요.") from exc
-
-    folder = runtime.uploads_dir / candidate.id
-    folder.mkdir(parents=True, exist_ok=True)
-    path = folder / f"{application_id}{_EXTENSIONS.get(document.format, '')}"
-    path.write_bytes(data)
-    created = Application(
-        id=application_id,
-        candidate=candidate,
-        posting=posting,
-        source_file_uri=path.resolve().as_uri(),
-        profile=outcome.profile.model_dump(),
-        document_info=info.model_dump(),
-    )
-    created.screening = Screening(
-        fit_score=outcome.assessment.fit_score,
-        rationale=outcome.assessment.rationale(),
-        status=ScreeningStatus.hold,
-        model=outcome.model,
-        prompt_version=SCREENING_PROMPT,
-    )
-    db.add(created)
-    db.flush()
-    audit(db, me, "application.uploaded", "application", created.id, format=info.format)
-    db.add(
-        AuditLog(
-            actor_type=ActorType.ai,
-            action="screening.batch_completed",
-            target_type="job_posting",
-            target_id=posting.id,
-            model=outcome.model,
-            prompt_version=SCREENING_PROMPT,
-            details={"count": 1},
-        )
-    )
-    try:
-        db.commit()
-    except Exception:
-        path.unlink(missing_ok=True)
-        raise
+    except IntakeRefused as exc:
+        if exc.code == "ai_failed":
+            raise ai_failed("AI 선별에 실패했습니다. 잠시 후 다시 올려 주세요.") from exc
+        if exc.code in _REFUSED_STATUS:
+            raise HTTPException(_REFUSED_STATUS[exc.code], exc.message) from exc
+        raise invalid(exc.field or "file", exc.message) from exc
+    application = outcome.application
+    assert application.screening is not None
     return s.UploadResult(
-        application_id=created.id,
-        candidate=views.candidate_ref(candidate),
-        screening=s.Screening.model_validate(created.screening),
-        document=info,
+        application_id=application.id,
+        candidate=views.candidate_ref(outcome.candidate),
+        screening=s.Screening.model_validate(application.screening),
+        document=s.DocumentInfo.model_validate(outcome.document),
     )
-
-
-def _failed(db: Db, application_id: str, posting_id: str, error: str) -> None:
-    """Nothing of the upload is kept; the failure itself is audited."""
-    db.rollback()
-    db.add(
-        AuditLog(
-            actor_type=ActorType.ai,
-            action="screening.failed",
-            target_type="job_posting",
-            target_id=posting_id,
-            prompt_version=SCREENING_PROMPT,
-            details={"application_id": application_id, "error": error},
-        )
-    )
-    db.commit()

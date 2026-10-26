@@ -23,8 +23,10 @@ from interview_assistant.models.interview import (
     Speaker,
     TranscriptSegment,
 )
+from interview_assistant.models.intake import IntakeEvent, IntakeEventType, IntakeStatus
 from interview_assistant.models.recruiting import (
     Application,
+    ApplicationChannel,
     Candidate,
     CompetencySet,
     JobPosting,
@@ -40,6 +42,7 @@ __all__ = [
     "AiModelSetting",
     "AiScoringStatus",
     "Application",
+    "ApplicationChannel",
     "AuditLog",
     "Availability",
     "AvailabilitySource",
@@ -51,6 +54,9 @@ __all__ = [
     "DeidMapping",
     "EvaluatorType",
     "FollowUpSuggestion",
+    "IntakeEvent",
+    "IntakeEventType",
+    "IntakeStatus",
     "Interviewer",
     "InterviewerRole",
     "InterviewSession",

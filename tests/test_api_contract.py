@@ -7,8 +7,11 @@ import pytest
 
 from interview_assistant.models import (
     ActorType,
+    ApplicationChannel,
     AvailabilitySource,
     EvaluatorType,
+    IntakeEventType,
+    IntakeStatus,
     InterviewerRole,
     PostingStatus,
     QuestionSource,
@@ -50,7 +53,7 @@ def test_every_contract_endpoint_is_served(api):
         if path.startswith("/api")
         for method in ops
     }
-    assert len(documented) == 45
+    assert len(documented) == 52
     assert documented == served
 
 
@@ -66,6 +69,9 @@ def test_every_contract_endpoint_is_served(api):
         ("EVALUATOR_TYPES", EvaluatorType),
         ("AVAILABILITY_SOURCES", AvailabilitySource),
         ("ACTOR_TYPES", ActorType),
+        ("APPLICATION_CHANNELS", ApplicationChannel),
+        ("INTAKE_EVENT_TYPES", IntakeEventType),
+        ("INTAKE_STATUSES", IntakeStatus),
     ],
 )
 def test_enum_values_match_the_frontend(ts_name, enum):

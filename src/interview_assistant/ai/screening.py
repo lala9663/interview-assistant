@@ -55,24 +55,26 @@ class ScreeningOutcome:
     model: str
 
 
-async def screen_document(
-    db: Session,
-    ai: AiGateway,
-    *,
-    posting: JobPosting,
-    competencies: list[dict[str, Any]],
-    application_id: str,
-    document_text: str,
-    known: KnownIdentity | None,
-) -> ScreeningOutcome:
-    common = dict(
+def _common(application_id: str, known: KnownIdentity | None, *texts: str) -> dict[str, Any]:
+    return dict(
         role="screening",
-        candidate_texts=[document_text],
+        candidate_texts=list(texts),
         known=known,
         target_type="application",
         target_id=application_id,
     )
-    profile_result = await ai.generate(
+
+
+async def structure_profile(
+    db: Session,
+    ai: AiGateway,
+    *,
+    application_id: str,
+    document_text: str,
+    known: KnownIdentity | None,
+) -> CandidateProfile:
+    """Profile from free-form documents (uploads, attachments without site form fields)."""
+    result = await ai.generate(
         db,
         AiCall(
             action="profile.extracted",
@@ -80,16 +82,28 @@ async def screen_document(
             system=PROFILE_SYSTEM,
             prompt=profile_prompt(document_text=document_text),
             schema=PROFILE_SCHEMA,
-            **common,
+            **_common(application_id, known, document_text),
         ),
     )
     try:
-        profile = CandidateProfile.model_validate(profile_result.structured or {})
+        return CandidateProfile.model_validate(result.structured or {})
     except ValidationError as exc:
         raise AiOutputInvalid("서류 구조화 결과가 형식에 맞지 않습니다.") from exc
 
+
+async def assess_profile(
+    db: Session,
+    ai: AiGateway,
+    *,
+    posting: JobPosting,
+    competencies: list[dict[str, Any]],
+    application_id: str,
+    profile: CandidateProfile,
+    document_text: str,
+    known: KnownIdentity | None,
+) -> tuple[Assessment, str]:
+    """Fit against the JD and approved competencies. Returns the assessment and the model name."""
     profile_json = profile.model_dump()
-    common["candidate_texts"] = [document_text, json.dumps(profile_json, ensure_ascii=False)]
     assessed = await ai.generate(
         db,
         AiCall(
@@ -104,11 +118,40 @@ async def screen_document(
                 document_text=document_text,
             ),
             schema=SCREENING_SCHEMA,
-            **common,
+            **_common(
+                application_id, known, document_text, json.dumps(profile_json, ensure_ascii=False)
+            ),
         ),
     )
     try:
-        assessment = Assessment.model_validate(assessed.structured or {})
+        return Assessment.model_validate(assessed.structured or {}), assessed.model
     except ValidationError as exc:
         raise AiOutputInvalid("서류 선별 결과가 형식에 맞지 않습니다.") from exc
-    return ScreeningOutcome(profile=profile, assessment=assessment, model=assessed.model)
+
+
+async def screen_document(
+    db: Session,
+    ai: AiGateway,
+    *,
+    posting: JobPosting,
+    competencies: list[dict[str, Any]],
+    application_id: str,
+    document_text: str,
+    known: KnownIdentity | None,
+) -> ScreeningOutcome:
+    """Both calls in one go. The intake service calls them one by one so it can commit the audit
+    rows in between (no write transaction stays open across a model call)."""
+    profile = await structure_profile(
+        db, ai, application_id=application_id, document_text=document_text, known=known
+    )
+    assessment, model = await assess_profile(
+        db,
+        ai,
+        posting=posting,
+        competencies=competencies,
+        application_id=application_id,
+        profile=profile,
+        document_text=document_text,
+        known=known,
+    )
+    return ScreeningOutcome(profile=profile, assessment=assessment, model=model)

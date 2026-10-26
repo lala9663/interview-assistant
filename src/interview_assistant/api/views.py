@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import math
+from collections import Counter
 from collections.abc import Iterable, Sequence
 from datetime import datetime, timedelta, timezone
 
@@ -23,10 +24,13 @@ from interview_assistant.models import (
     ActorType,
     AiScoringStatus,
     Application,
+    ApplicationChannel,
     AuditLog,
     Candidate,
     CompetencySet,
     EvaluatorType,
+    IntakeEvent,
+    IntakeStatus,
     Interviewer,
     InterviewerRole,
     InterviewSession,
@@ -139,6 +143,7 @@ def posting_summary(posting: JobPosting) -> s.PostingSummary:
         title=posting.title,
         job_family=posting.job_family,
         status=posting.status,
+        site_posting_no=posting.site_posting_no,
         created_at=posting.created_at,
         counts=s.PostingCounts(**counts(posting)),
         latest_competency_set=set_brief(latest_set(posting)),
@@ -166,6 +171,7 @@ def application_row(application: Application) -> s.ApplicationRow:
         years_experience=profile.get("years_experience") if application.profile else None,
         top_skills=list(profile.get("skills") or [])[:3],
         stage=stage(application),
+        channel=application.channel.value,
         created_at=application.created_at,
     )
 
@@ -383,6 +389,148 @@ def _target_label(db: Session, row: AuditLog) -> str | None:
             posting = db.get(JobPosting, row.target_id)
             return posting.title if posting else None
     return None
+
+
+def _ms(start: datetime | None, end: datetime | None) -> int | None:
+    if start is None or end is None:
+        return None
+    return max(0, round((as_utc(end) - as_utc(start)).total_seconds() * 1000))
+
+
+def intake_event(row: IntakeEvent, linked: dict[str, JobPosting] | None = None) -> s.IntakeEvent:
+    """A site event for 연동 현황: the pseudonym once a candidate is known, never the name or
+    the applicant number (neither is stored). `linked` (site posting number -> posting) names the
+    posting of events that never got as far as resolving it."""
+    candidate = row.candidate or (row.application.candidate if row.application else None)
+    posting = row.posting or (linked or {}).get(row.posting_no or "")
+    return s.IntakeEvent(
+        id=row.id,
+        event_id=row.event_id,
+        event_type=row.event_type.value if row.event_type else None,
+        status=row.status.value,
+        revision=row.revision,
+        occurred_at=row.occurred_at,
+        received_at=row.received_at,
+        started_at=row.started_at,
+        finished_at=row.finished_at,
+        processing_ms=_ms(row.started_at, row.finished_at),
+        attempts=row.attempts,
+        posting_no=row.posting_no,
+        posting=s.PostingRef(id=posting.id, title=posting.title) if posting else None,
+        application_no=row.application_no,
+        candidate=candidate_ref(candidate) if candidate else None,
+        failure=(
+            s.IntakeFailure(
+                code=row.failure_code,
+                message=row.failure_message or "",
+                fields=list(row.failure_fields or []),
+            )
+            if row.failure_code
+            else None
+        ),
+        dropped_fields=list(row.dropped_fields or []),
+        retriable=row.status is IntakeStatus.failed and row.encrypted_payload is not None,
+        result=row.result,
+    )
+
+
+def _percentile(values: list[int], share: float) -> int | None:
+    if not values:
+        return None
+    ordered = sorted(values)
+    return ordered[min(len(ordered) - 1, math.ceil(share * len(ordered)) - 1)]
+
+
+def linked_postings(db: Session) -> dict[str, JobPosting]:
+    return {p.site_posting_no: p for p in db.scalars(select(JobPosting)).all() if p.site_posting_no}
+
+
+def intake_summary(db: Session, *, configured: bool, workers: int) -> s.IntakeSummary:
+    rows = db.scalars(select(IntakeEvent).where(IntakeEvent.channel == ApplicationChannel.site)).all()
+    postings = linked_postings(db)
+    for row in rows:  # a row resolved to a posting since unlinked still counts under it
+        if row.posting is not None and row.posting_no and row.posting_no not in postings:
+            postings[row.posting_no] = row.posting
+    totals = dict.fromkeys(s.IntakeTotals.model_fields, 0)
+    per: dict[str | None, dict[str, int]] = {}
+    failures: dict[str, list[int]] = {}
+    for row in rows:
+        totals["received"] += 1
+        totals[row.status.value] += 1
+        c = per.setdefault(
+            row.posting_no,
+            dict.fromkeys(("received", "submitted", "updated", "withdrawn", "done", "skipped", "failed", "rejected", "pending"), 0),
+        )
+        c["received"] += 1
+        if row.event_type is not None:
+            c[row.event_type.value] += 1
+        if row.status in (IntakeStatus.queued, IntakeStatus.processing):
+            c["pending"] += 1
+        else:
+            c[row.status.value] += 1
+        if row.status in (IntakeStatus.failed, IntakeStatus.rejected) and row.failure_code:
+            entry = failures.setdefault(row.failure_code, [0, 0])
+            entry[0] += 1
+            entry[1] += row.status is IntakeStatus.failed and row.encrypted_payload is not None
+    active = Counter(
+        a.posting_id
+        for a in db.scalars(
+            select(Application).where(
+                Application.channel == ApplicationChannel.site,
+                Application.withdrawn_at.is_(None),
+                Application.deleted_at.is_(None),
+            )
+        ).all()
+    )
+    posting_rows = []
+    for number in sorted(per, key=lambda n: (n is None, n not in postings, n or "")):
+        posting = postings.get(number)
+        posting_rows.append(
+            s.IntakePostingCount(
+                posting_no=number,
+                posting=s.PostingRef(id=posting.id, title=posting.title) if posting else None,
+                applications=active.get(posting.id, 0) if posting else 0,
+                **per[number],
+            )
+        )
+    for number, posting in postings.items():  # linked postings with nothing received yet
+        if number not in per:
+            posting_rows.append(
+                s.IntakePostingCount(
+                    posting_no=number,
+                    posting=s.PostingRef(id=posting.id, title=posting.title),
+                    applications=active.get(posting.id, 0),
+                    **dict.fromkeys(("received", "submitted", "updated", "withdrawn", "done", "skipped", "failed", "rejected", "pending"), 0),
+                )
+            )
+
+    applied = [r for r in rows if r.status in (IntakeStatus.done, IntakeStatus.skipped) and r.started_at and r.finished_at]
+    took = [m for r in applied if (m := _ms(r.started_at, r.finished_at)) is not None]
+    waited = [m for r in applied if (m := _ms(r.received_at, r.started_at)) is not None]
+    first = min((as_utc(r.received_at) for r in applied), default=None)
+    last = max((as_utc(r.finished_at) for r in applied if r.finished_at), default=None)
+    minutes = (last - first).total_seconds() / 60 if first and last and last > first else None
+    return s.IntakeSummary(
+        configured=configured,
+        workers=workers,
+        totals=s.IntakeTotals(**totals),
+        postings=posting_rows,
+        failures=[
+            s.IntakeFailureCount(code=code, count=n, retriable=r)
+            for code, (n, r) in sorted(failures.items(), key=lambda kv: -kv[1][0])
+        ],
+        timing=s.IntakeTiming(
+            processed=len(took),
+            avg_ms=round(sum(took) / len(took)) if took else None,
+            p50_ms=_percentile(took, 0.5),
+            p95_ms=_percentile(took, 0.95),
+            max_ms=max(took, default=None),
+            avg_wait_ms=round(sum(waited) / len(waited)) if waited else None,
+            first_received_at=first,
+            last_finished_at=last,
+            per_minute=round(len(applied) / minutes, 1) if minutes else None,
+        ),
+    )
 
 
 def feed(db: Session, limit: int) -> list[s.ActivityItem]:

@@ -1,6 +1,9 @@
 import type {
+  ApplicationChannel,
   ApplicationStage,
   AiScoringStatus,
+  IntakeEventType,
+  IntakeStatus,
   InterviewerRole,
   PostingStatus,
   QuestionSource,
@@ -90,3 +93,43 @@ export function parseRationale(rationale: string) {
   }
   return { summary: summary.join(' '), strengths, concerns }
 }
+
+export const CHANNEL_LABEL: Record<ApplicationChannel, string> = {
+  upload: '직접 업로드',
+  site: '사이트 연동',
+}
+
+export const INTAKE_EVENT_LABEL: Record<IntakeEventType, string> = {
+  submitted: '제출',
+  updated: '수정',
+  withdrawn: '철회',
+}
+
+export const INTAKE_STATUS_LABEL: Record<IntakeStatus, string> = {
+  queued: '대기',
+  processing: '처리 중',
+  done: '반영',
+  skipped: '건너뜀',
+  failed: '실패',
+  rejected: '거절',
+}
+
+/** Reason codes of docs/site-intake-spec.md (failed, rejected and skipped events). */
+export const INTAKE_CODE_LABEL: Record<string, string> = {
+  unknown_posting: '모르는 공고 번호',
+  posting_closed: '마감된 공고',
+  unsupported_attachment: '지원하지 않는 첨부 형식',
+  unreadable_attachment: '읽을 수 없는 첨부',
+  ocr_required: '스캔본 (OCR 필요)',
+  missing_field: '필수 칸 누락',
+  invalid_field: '형식이 맞지 않는 칸',
+  forbidden_field: '받지 않는 항목',
+  duplicate_application: '같은 공고 중복 지원',
+  application_withdrawn: '철회된 지원 번호',
+  ai_failed: 'AI 선별 실패',
+  internal_error: '처리 오류',
+  stale_revision: '이미 더 새 버전',
+  withdrawn: '철회로 취소',
+}
+
+export const intakeCodeLabel = (code: string) => INTAKE_CODE_LABEL[code] ?? code

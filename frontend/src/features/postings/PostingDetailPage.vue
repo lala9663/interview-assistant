@@ -15,6 +15,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { POSTING_STATUS_LABEL } from '@/lib/labels'
 
 import CompetencySection from './CompetencySection.vue'
+import SiteLinkCard from './SiteLinkCard.vue'
 
 const route = useRoute()
 const postingId = computed(() => String(route.params.postingId ?? ''))
@@ -42,6 +43,7 @@ const q = usePosting(postingId)
         <span class="flex flex-wrap items-center gap-2">
           <span>{{ q.data.job_family }}</span>
           <Badge :variant="q.data.status === 'open' ? 'success' : 'outline'">{{ POSTING_STATUS_LABEL[q.data.status] }}</Badge>
+          <Badge v-if="q.data.site_posting_no" variant="brand" class="font-mono">사이트 {{ q.data.site_posting_no }}</Badge>
           <span>
             지원 {{ q.data.counts.applications }} · 통과 {{ q.data.counts.passed }} · 면접
             {{ q.data.counts.interviewing + q.data.counts.interviewed }}
@@ -57,6 +59,7 @@ const q = usePosting(postingId)
         </Button>
       </template>
     </PageHeader>
+    <SiteLinkCard :posting="q.data" />
     <Tabs default-value="competency">
       <TabsList>
         <TabsTrigger value="competency">

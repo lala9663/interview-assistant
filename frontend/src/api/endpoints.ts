@@ -5,6 +5,9 @@ import type {
   ApplicationDetail,
   ApplyModelRequest,
   ApplicationRow,
+  IntakeEvent,
+  IntakeEventFilter,
+  IntakeSummary,
   Availability,
   CandidateIndexItem,
   CandidateNote,
@@ -39,6 +42,7 @@ import type {
   SessionSummary,
   SubmitInterviewerScoresRequest,
   TranscriptHistory,
+  UpdatePostingRequest,
   UploadApplicationRequest,
   UploadResult,
 } from './types'
@@ -50,6 +54,7 @@ export const endpoints = {
 
   postings: (signal?: AbortSignal) => api.get<PostingSummary[]>('/postings', signal),
   posting: (id: string, signal?: AbortSignal) => api.get<PostingDetail>(`/postings/${id}`, signal),
+  updatePosting: (id: string, body: UpdatePostingRequest) => api.patch<PostingDetail>(`/postings/${id}`, body),
   competencySets: (postingId: string, signal?: AbortSignal) =>
     api.get<CompetencySet[]>(`/postings/${postingId}/competency-sets`, signal),
   createCompetencySet: (postingId: string, competencies: Competency[]) =>
@@ -116,4 +121,15 @@ export const endpoints = {
   modelDownloads: (signal?: AbortSignal) => api.get<ModelDownload[]>('/admin/models/downloads', signal),
   startDownload: (impl: string, model: string) => api.post<ModelDownload>('/admin/models/downloads', { impl, model }),
   cancelDownload: (impl: string, model: string) => api.delete<ModelDownload>(`/admin/models/downloads/${impl}/${model}`),
+
+  // 관리자 > 연동 현황 (admins only)
+  intakeSummary: (signal?: AbortSignal) => api.get<IntakeSummary>('/admin/intake/summary', signal),
+  intakeEvents: (filter: IntakeEventFilter, signal?: AbortSignal) => {
+    const q = new URLSearchParams({ limit: '500' })
+    if (filter.status) q.set('status', filter.status)
+    if (filter.posting_no) q.set('posting_no', filter.posting_no)
+    return api.get<IntakeEvent[]>(`/admin/intake/events?${q.toString()}`, signal)
+  },
+  retryIntakeEvent: (id: string) => api.post<IntakeEvent>(`/admin/intake/events/${id}/retry`),
+  retryIntake: (body: { failure_code?: string; posting_no?: string }) => api.post<{ requeued: number }>('/admin/intake/retry', body),
 }

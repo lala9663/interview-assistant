@@ -1,5 +1,6 @@
 """What a running app holds: the AI model manager (providers per role, switchable from the admin
-screen), the database, de-identification, the live transcript hub and the background tasks."""
+screen), the database, de-identification, the live transcript hub, the intake queue (applications
+from the recruiting site) and the background tasks."""
 
 from __future__ import annotations
 
@@ -16,6 +17,8 @@ from interview_assistant.ai_models.manager import ModelManager, Providers, Provi
 from interview_assistant.config import Settings, load_providers
 from interview_assistant.db import make_engine, make_session_factory
 from interview_assistant.deid.service import DeidService
+from interview_assistant.intake.events import IntakeContext
+from interview_assistant.intake.worker import IntakeQueue
 from interview_assistant.live.audio import AudioSource, ScriptedCandidate
 from interview_assistant.live.hub import LiveHub
 from interview_assistant.models import InterviewSession
@@ -50,6 +53,7 @@ class Runtime:
     session_factory: sessionmaker[Session]
     deid: DeidService
     hub: LiveHub
+    intake: IntakeQueue
     tasks: set[asyncio.Task[Any]] = field(default_factory=set)
 
     @property
@@ -105,10 +109,20 @@ def build_runtime(
         deid,
         audio or ScriptedCandidate(speed=settings.demo_speed),
     )
+    intake = IntakeQueue(
+        IntakeContext(
+            session_factory=session_factory,
+            deid=deid,
+            uploads_dir=settings.uploads_dir,
+            ai=lambda: models.active.ai,
+        ),
+        workers=settings.intake_workers,
+    )
     return Runtime(
         settings=settings,
         models=models,
         session_factory=session_factory,
         deid=deid,
         hub=hub,
+        intake=intake,
     )

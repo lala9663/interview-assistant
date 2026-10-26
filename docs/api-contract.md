@@ -1,6 +1,6 @@
 # API 계약 (프론트 ↔ 백엔드)
 
-2026-10-25 · v0.3 · 프론트(`frontend/`)가 모의 API(MSW)로 먼저 쓰던 계약을 백엔드(FastAPI, `src/interview_assistant/api/`)가 그대로 구현했다. 모든 경로가 동작하고, AI는 Provider 인터페이스를 거쳐 돈다. 어떤 provider가 어느 역할을 맡을지는 관리자 화면(관리자 > 모델 설정, 2장 마지막 절)에서 서버 재시작 없이 바꾸고, `config/providers*.yaml`은 처음 기동할 때의 기본값만 정한다. 첫 실제 provider로 로컬 Whisper STT(`faster_whisper`)가 붙었다. 프론트는 `npm run dev:api`로 실제 API에 붙는다. 실제 LLM 연결과 품질 검증은 남은 과제다(5장).
+2026-10-26 · v0.4 · 프론트(`frontend/`)가 모의 API(MSW)로 먼저 쓰던 계약을 백엔드(FastAPI, `src/interview_assistant/api/`)가 그대로 구현했다. 모든 경로가 동작하고, AI는 Provider 인터페이스를 거쳐 돈다. 어떤 provider가 어느 역할을 맡을지는 관리자 화면(관리자 > 모델 설정, 2장 마지막 절)에서 서버 재시작 없이 바꾸고, `config/providers*.yaml`은 처음 기동할 때의 기본값만 정한다. 첫 실제 provider로 로컬 Whisper STT(`faster_whisper`)가 붙었다. 지원서는 서류 선별 화면의 업로드와 채용 사이트 연동(서명된 이벤트 수신, 2장 "채용 사이트 연동") 두 통로로 들어오고, 둘 다 같은 처리 함수(`intake/service.py`)를 거친다. 채용 시스템 부서에 넘길 연동 명세는 [site-intake-spec.md](site-intake-spec.md). 프론트는 `npm run dev:api`로 실제 API에 붙는다. 실제 LLM 연결과 품질 검증은 남은 과제다(5장).
 
 - 타입 정의 원본: [`frontend/src/api/types.ts`](../frontend/src/api/types.ts) (모델과 필드 이름·enum 값 동일). 백엔드 응답 스키마: [`api/schemas.py`](../src/interview_assistant/api/schemas.py) (필드 단위로 같다. `tests/test_api_contract.py`가 enum과 이 문서의 경로 목록을 대조한다)
 - 모의 구현: [`frontend/src/mocks/handlers.ts`](../frontend/src/mocks/handlers.ts) (요청 검증, 오류 코드, 스트림 이벤트 순서까지 이 문서와 같다)
@@ -10,14 +10,14 @@
 
 | 항목 | 규칙 |
 | --- | --- |
-| 경로 | 모든 라우트는 `/api` 아래. 라우터는 기능별(`api/routes/`: dashboard, postings, screening, sessions, live, evaluation, schedule, admin)로 나누고 `/api`로 마운트한다. `/health`는 그대로 둔다 (활성 provider 클래스와 `ai_config_revision`) |
-| 형식 | JSON, 필드는 snake_case (Pydantic 필드 이름 그대로). 업로드와 모델 연결 테스트(음성 파일)만 multipart/form-data |
+| 경로 | 모든 라우트는 `/api` 아래. 라우터는 기능별(`api/routes/`: dashboard, postings, screening, sessions, live, evaluation, schedule, admin, intake)로 나누고 `/api`로 마운트한다. `/health`는 그대로 둔다 (활성 provider 클래스와 `ai_config_revision`) |
+| 형식 | JSON, 필드는 snake_case (Pydantic 필드 이름 그대로). 업로드, 모델 연결 테스트(음성 파일), 채용 사이트 이벤트(첨부가 있을 때)만 multipart/form-data |
 | ID | UUID 문자열 (`IdMixin`) |
 | 시각 | 응답은 UTC, 밀리초, `Z` (`2026-10-23T05:30:00.000Z`, JavaScript `toISOString`과 같은 모양). 요청의 시각은 오프셋이 있어야 한다(없으면 422). 화면은 항상 KST로 표시한다 |
 | enum | 모델 값과 동일: `PostingStatus` draft/open/closed, `ScreeningStatus` passed/hold/rejected, `SessionMode` onsite/remote, `SessionStatus` scheduled/in_progress/completed/cancelled, `InterviewerRole` lead/panel, `QuestionSource` preset/ai_suggested/interviewer, `EvaluatorType` ai/interviewer, `AvailabilitySource` manual/calendar, `ActorType` user/system/ai |
 | 오류 | FastAPI 기본 형식 `{"detail": "메시지"}`. 검증 오류는 422 `{"detail": [{"loc": ["body", "field"], "msg": "...", "type": "..."}]}` (Pydantic 기본 메시지도 한국어로 바꿔 보낸다). 없는 자원 404, 상태 충돌(예: 확정본 수정, 진행 중이 아닌 세션에 질문 기록) 409, AI 응답을 쓸 수 없거나 가드가 호출을 막으면 502, 암호화 키가 없어 비식별화를 못 하면 503. 프론트는 `detail` 문자열을 그대로 토스트에 보여 주므로 한국어로 쓴다 |
-| 인증 | Phase 1은 IAP + 사내 SSO 예정(남은 과제). 지금은 `IA_DEV_INTERVIEWER`(사번)의 면접관, 없으면 가장 먼저 등록된 면접관이 로그인한 사람이다. 쓰기 요청의 행위자는 서버가 정한다 (본문으로 받지 않음) |
-| 권한 | `/api/admin/*`는 관리자(`Interviewer.is_admin`)만, 아니면 403 `관리자만 쓸 수 있습니다.` SSO가 붙으면 그룹 클레임으로 이 플래그를 채우고 API는 그대로 둔다. 시드의 김서연(E24017)이 관리자, 0004 이전 DB는 `scripts/grant_admin.py <사번>` |
+| 인증 | Phase 1은 IAP + 사내 SSO 예정(남은 과제). 지금은 `IA_DEV_INTERVIEWER`(사번)의 면접관, 없으면 가장 먼저 등록된 면접관이 로그인한 사람이다. 쓰기 요청의 행위자는 서버가 정한다 (본문으로 받지 않음). 예외: `/api/intake/site/*`는 사람이 아니라 채용 사이트가 부르므로 로그인 대신 공유 키 HMAC 서명과 시각으로 확인한다([site-intake-spec.md](site-intake-spec.md) 4장) |
+| 권한 | `/api/admin/*`(모델 설정, 연동 현황)는 관리자(`Interviewer.is_admin`)만, 아니면 403 `관리자만 쓸 수 있습니다.` SSO가 붙으면 그룹 클레임으로 이 플래그를 채우고 API는 그대로 둔다. 시드의 김서연(E24017)이 관리자, 0004 이전 DB는 `scripts/grant_admin.py <사번>` |
 | 감사 로그 | 모든 쓰기 요청과 AI 호출은 `AuditLog`를 남긴다. AI 호출은 성공·실패·가드 거부 모두 한 줄씩(모델, 프롬프트 버전, 토큰 수). 프롬프트와 응답 본문은 남기지 않는다. 프론트는 `GET /api/activity`로 그중 사람이 볼 항목만 읽는다(`api/views.py`의 `FEED_ACTIONS`) |
 
 ### 비식별 원칙 (응답에 절대 넣지 않는 필드)
@@ -29,6 +29,10 @@
 | `InterviewSession.recording_uri` | `has_recording: bool`로만 노출 |
 | `QAItem.answer_text` | 응답에 없음. `answer_deidentified`만 노출. 수기 답변은 `answer_text`로 받아 서버가 비식별화한다 |
 | `DeidMapping` 전체 | 노출하지 않음. 재식별 API는 만들지 않는다 |
+| `Candidate.site_applicant_hash` | 응답에 없음. 채용 사이트 지원자 번호의 키 해시(같은 사람 찾기용). 번호 자체는 저장하지 않는다 |
+| `IntakeEvent.encrypted_payload`, `fingerprint` | 응답에 없음. 받은 이벤트 원문(암호화, 반영되면 지움)과 내용 해시 |
+
+채용 사이트가 보낸 이름·연락처·생년월일·주소도 업로드 양식 값처럼 `Candidate.encrypted_identity`에 봉인되어 비식별화에만 쓰인다. 연동 현황 화면과 사이트의 상태 조회 응답에도 이름과 지원자 번호는 없다(사이트 응답에는 가명도 없다).
 
 프로필(`Application.profile`), 선별 근거, 전사, 꼬리질문, AI 근거 인용은 모두 비식별 텍스트다. 학교·회사는 `[학교-1]`, `[회사-2]` 같은 토큰으로 오고, 프론트는 토큰을 칩으로 그린다.
 
@@ -59,6 +63,7 @@
 | --- | --- | --- | --- | --- |
 | GET | `/api/postings` | | `PostingSummary[]` (jd_text 제외, counts, latest/approved competency set 요약) | 4 |
 | GET | `/api/postings/{id}` | | `PostingDetail` (JobPosting + counts) | 4 |
+| PATCH | `/api/postings/{id}` | `{site_posting_no}` (null·빈 값이면 연결 해제) | `PostingDetail`. 채용 사이트 공고 번호 연결. 영문·숫자·`._:-` 64자 이하(422), 다른 공고가 쓰는 번호면 409. 감사 로그 `posting.site_linked` {from, to} | 연동 |
 | GET | `/api/postings/{id}/competency-sets` | | `CompetencySet[]` 버전 오름차순 | 4 |
 | POST | `/api/postings/{id}/competency-sets` | `{competencies: Competency[]}` | 201 `CompetencySet` (version = 최신+1, 초안) | 4 |
 | POST | `/api/postings/{id}/competency-sets/generate` | | 201 `CompetencySet` AI 초안 (JD 기반, 최신 버전이 있으면 그것을 다듬음, 감사 로그 actor ai) | 4 |
@@ -67,11 +72,13 @@
 
 `Competency` = `{name, description, bars: {"1": "...", ..., "5": "..."}}` (`CompetencySet.competencies` JSON 그대로). 다섯 단계 모두 필수.
 
+`JobPosting.site_posting_no`(`PostingSummary`·`PostingDetail`에도 있음)는 채용 사이트 공고 번호다. 사이트 이벤트는 공고를 이 번호로 가리킨다. 시드는 P1·P2를 `DS-2026-0101`·`DS-2026-0102`에 연결하고 P3은 비워 둔다(연결 전 이벤트가 `unknown_posting`으로 실패했다가 연결 후 다시 처리되는 흐름을 보이려고).
+
 ### 서류 선별 (FR-01, 03)
 
 | 메서드 | 경로 | 요청 | 응답 | 단계 |
 | --- | --- | --- | --- | --- |
-| GET | `/api/postings/{id}/applications` | | `ApplicationRow[]` {application_id, candidate{id,pseudonym}, screening, years_experience, top_skills, stage, created_at} | 5 |
+| GET | `/api/postings/{id}/applications` | | `ApplicationRow[]` {application_id, candidate{id,pseudonym}, screening, years_experience, top_skills, stage, channel, created_at}. 철회된 지원서는 빠진다 | 5 |
 | POST | `/api/postings/{id}/applications` | multipart: `file`, `name`(필수), `phone`, `email`, `birthdate`, `aliases`, `addresses`, `schools`, `companies` (여러 값은 줄바꿈) | 201 `UploadResult` {application_id, candidate{id,pseudonym}, screening, document} | 5 |
 | GET | `/api/applications/{id}` | | `ApplicationDetail` {application, candidate, posting, screening, sessions[], document} | 5 |
 | PATCH | `/api/screenings/{id}` | `{status}` | `Screening`. 사람이 바꾼 상태, 감사 로그 `screening.status_changed` {from, to} | 5 |
@@ -84,12 +91,14 @@
 
 `stage` 계산: 진행 중 세션 있으면 `interviewing`, 예정 세션 있으면 `interview_scheduled`, 완료 세션이 없으면 `screening`, 완료 세션이 모두 평가 완료면 `evaluated`, 아니면 `interviewed`. 평가 완료 = AI 채점 completed + 세션 면접관 전원 제출.
 
-**업로드** (`POST /api/postings/{id}/applications`, 프론트 서류 선별 화면의 "서류 업로드"):
+`channel`(수신 경로): `upload` 직접 업로드, `site` 채용 사이트 연동. `Application`에도 `channel`과 `withdrawn_at`(사이트에서 철회한 시각)이 있다. 철회된 지원서는 목록·건수·명령 팔레트·면접 잡기 후보에서 빠지고 상세는 그대로 열린다. 면접을 새로 잡으면 409.
 
-1. 파일(최대 10MB)을 형식 판별 후 텍스트 추출(`documents/`, PDF·DOCX·PPTX·HTML). HWP·구형 오피스는 422, 스캔본(텍스트 레이어 없는 쪽)은 OCR이 없어 422로 거부하고 아무것도 남기지 않는다.
+**업로드** (`POST /api/postings/{id}/applications`, 프론트 서류 선별 화면의 "서류 업로드"). 채용 사이트 연동과 같은 처리 함수 `intake/service.py`의 `process_application`을 쓰고 통로만 다르다:
+
+1. 파일(최대 10MB)을 형식 판별 후 텍스트 추출(`documents/`, PDF·DOCX·PPTX·HTML). HWP·구형 오피스는 422, 스캔본(텍스트 레이어 없는 쪽)은 OCR이 없어 422로 거부하고 아무것도 남기지 않는다. 판정은 `intake/service.py`의 `read_attachments` 한 곳이다(사이트 첨부와 같다).
 2. 양식 값(이름 등)을 `KnownIdentity`로 `Candidate.encrypted_identity`에 봉인하고 새 가명(CAND-0021 …)을 붙인다. 이 값은 비식별화에만 쓰인다.
 3. 파일명·속성·본문·표·머리글·노트·링크·숨은 텍스트까지 블록 단위로 비식별화한다. 숨은 텍스트 블록(흰 글씨, 0.5pt, `display:none` 등)은 키워드 채우기·지시문 주입 위험이 있어 선별 프롬프트에서 뺀다. 개수만 `document.hidden_blocks`로 알려 준다.
-4. `screening` 역할 모델로 두 번 호출한다: 프로필 구조화(profile-v0.1) → JD·확정 역량 사전 기준 평가(screening-v0.4). 응답은 스키마로 검증하고, 형식이 틀리면 502로 전체를 되돌린다(실패도 감사 로그).
+4. `screening` 역할 모델로 두 번 호출한다: 프로필 구조화(profile-v0.1) → JD·확정 역량 사전 기준 평가(screening-v0.4). 응답은 스키마로 검증하고, 형식이 틀리면 502로 전체를 되돌린다(만들던 지원자도 지운다, 실패도 감사 로그). 두 호출 사이에 커밋해, 모델을 기다리는 동안 쓰기 트랜잭션을 열어 두지 않는다(SQLite에서 다른 쓰기가 막히지 않게).
 5. 원본 파일은 `uploads/{candidate_id}/{application_id}.{확장자}`에 저장한다(파일 이름에 실명 없음, git 제외, 서빙하지 않음). `Application.source_file_uri`에만 경로가 남는다.
 6. 선별 상태는 AI 권고와 관계없이 `hold`로 시작한다. 통과·보류·탈락은 사람이 정하고(PATCH), AI 권고는 근거 첫 줄 끝 `(AI 권고: 통과)`에 적는다.
 
@@ -141,6 +150,28 @@
 | POST | `/api/schedule/suggestions` | `{interviewer_ids, from, to, duration_minutes, min_interviewers?}` | `ScheduleSuggestion[]` {start_at, end_at, interviewer_ids} 최대 8개, 이른 순 | 후순위 |
 
 후보 계산: 선택한 면접관 중 `min_interviewers`명 이상이 동시에 비는 구간을 구하고, 30분 단위로 맞춘 `duration_minutes` 슬롯을 낸다. 과거 시각은 제외. 프론트 `lib/schedule.ts`의 `commonFreeIntervals`/`suggestSlots`와 같은 규칙이고(`schedule.py`), 그리드의 "공통 빈 시간" 표시는 프론트가 같은 함수로 그린다. 서버는 여기에 더해 예정·진행 중인 면접 시간(시작부터 60분)을 그 면접관의 빈 시간에서 뺀다. 그리드는 가용 시간 원본을 그리므로 잡힌 면접 칸도 비어 보인다(남은 과제).
+
+### 채용 사이트 연동 (수신)
+
+채용 사이트가 직무별로 받은 지원서를 이벤트(제출·수정·철회)로 보내면, 이 시스템은 받자마자 202만 돌려주고 백그라운드 큐에서 처리한다. 한 방향 연동이다: 공식 기록은 채용 사이트이고 이 시스템은 처리용 사본이며 사이트의 상태를 바꾸지 않는다. 사이트 쪽이 지킬 형식(필드, 코드 값, 서명, 재시도, 오류 코드, 받지 않는 항목)은 [site-intake-spec.md](site-intake-spec.md)에 따로 있다. 실제 사이트와는 아직 연결하지 않았고 `scripts/fake_recruiting_site.py`(가짜 채용 사이트)로 검증한다.
+
+| 메서드 | 경로 | 요청 | 응답 | 단계 |
+| --- | --- | --- | --- | --- |
+| POST | `/api/intake/site/events` | 서명 헤더 + multipart(`event` JSON, 첨부마다 part 하나) 또는 JSON(첨부 없는 이벤트) | 202 `SiteEventStatus` {event_id, status queued, dropped_fields, status_url}. 서명·시각 401, 같은 event_id에 다른 내용 409, 받지 않는 항목 422 `forbidden_field`, 필수 누락 422 `missing_field`, 형식 422 `invalid_field`, 너무 큼 413, 키 미설정 503. 같은 이벤트 재전송은 처음 결과 그대로(`duplicate: true`) | 연동 |
+| GET | `/api/intake/site/events/{event_id}` | 서명 헤더(본문 없음) | `SiteEventStatus` {status queued/processing/done/skipped/failed/rejected, code, detail, fields, received_at, finished_at}. 가명·내부 id 없음. 모르는 id 404 | 연동 |
+| GET | `/api/admin/intake/summary` | | `IntakeSummary` {configured, workers, totals, postings[공고 번호별 수신·제출·수정·철회·반영·건너뜀·실패·거절·대기·활성 지원서 수], failures[code, count, retriable], timing{processed, avg/p50/p95/max_ms, avg_wait_ms, per_minute}} (관리자) | 연동 |
+| GET | `/api/admin/intake/events?status=&posting_no=&failure_code=&limit=200` | | `IntakeEvent[]` 최신순 {event_id, event_type, status, revision, 시각들, processing_ms, posting_no, posting, application_no, candidate{id, pseudonym}, failure{code, message, fields}, dropped_fields, retriable}. `posting_no=-`는 번호 없는 이벤트 (관리자) | 연동 |
+| POST | `/api/admin/intake/events/{id}/retry` | | `IntakeEvent` (queued). 실패했고 원문이 남은 이벤트만, 아니면 409. 감사 로그 `intake.retried` (관리자) | 연동 |
+| POST | `/api/admin/intake/retry` | `{failure_code?, posting_no?}` | `{requeued}`. 조건에 맞는 실패 이벤트를 받은 순서대로 다시 큐에 (관리자) | 연동 |
+
+- **통로와 처리 분리**: 통로(업로드 화면, 채용 사이트, 나중에 압축 파일 일괄 가져오기)는 받은 것을 `ApplicationInput`으로 바꾸기만 하고, 처리는 `intake/service.py`의 `process_application` 하나가 한다: 공고 찾기(id 또는 사이트 공고 번호) → 첨부 읽기 → 지원자 찾기(지원자 번호 해시) 또는 만들기 → 비식별화 → 프로필 → 선별 → 지원서 만들기 또는 갱신. 실패하면 만들던 지원자를 지우고, 갱신이면 이전 버전을 그대로 둔다.
+- **사이트 입력 칸이 곧 프로필**: 학력·경력·자격·보유 기술·프로젝트는 이미 정리된 데이터라 모델로 구조화하지 않고 비식별화만 거쳐 프로필로 쓴다(`intake/forms.py`, 요약 문장은 규칙). 자기소개 항목과 첨부(기존 추출·비식별화 경로) 본문은 선별 프롬프트의 서류 텍스트가 된다. 입력 칸 없이 자기소개·첨부만 오면 업로드처럼 모델이 구조화한다.
+- **같은 사람**: 지원자 번호가 같으면 같은 지원자(가명 하나)이고 공고마다 지원서가 붙는다. 번호는 키 해시(`Candidate.site_applicant_hash`)로만 찾고 저장하지 않는다. 지원 번호(`Application.site_application_no`)가 같으면 같은 지원서다. 이름·연락처는 지원서마다 합쳐(바뀐 이름은 별칭으로) 봉인한다.
+- **순서와 철회**: 이벤트마다 지원서 단위 `revision`이 있고, 이미 반영된 것보다 높을 때만 반영한다. 수정이 제출보다 먼저 오면 수정으로 지원서를 만들고 늦게 온 제출은 `skipped`(stale_revision). 철회는 지원서를 목록에서 빼고 예정된 면접을 취소하며, 대기 중인 같은 지원서의 이전 이벤트는 건너뛰고 처리 중인 것은 취소한다. 철회 뒤 같은 지원 번호의 새 버전은 `failed`(application_withdrawn). 철회 후 새 지원 번호로 다시 지원하면 철회된 자리를 다시 쓴다.
+- **수정**: 프로필과 선별을 새로 만든다. 사람이 이미 통과·탈락으로 정한 지원서라도 근거가 바뀌었으므로 보류로 돌리고 감사 로그(`application.updated`의 `screening_reset`)에 남긴다.
+- **큐**: `intake_events` 테이블이 곧 큐다. 워커 `IA_INTAKE_WORKERS`개(기본 4)가 처리하고, 서버가 재시작되면 대기·처리 중이던 이벤트를 다시 처리한다. 한 프로세스 전제(여러 인스턴스는 남은 과제).
+- **데이터 최소화**: 받는 항목은 명세로 고정한다. 받지 않기로 한 항목(사진, 주민등록번호, 가족, 신체, 출신지, 혼인, 재산, 종교, 정치, 건강, 성별)이 오면 이벤트 전체를 거절하고 필드 경로만 남긴다. 명세에 없는 필드는 버리고 경로만 `dropped_fields`에 남긴다. 받은 원문은 암호화해 두었다가 반영되면 지우고(실패한 이벤트만 다시 처리용으로 남김), 첨부는 원본 영역에만 둔다.
+- **감사 로그**: `intake.received`, `intake.rejected`(코드·필드 경로), `intake.signature_rejected`, `intake.done`/`skipped`/`failed`, `intake.retried`(사람), `application.received`/`application.updated`/`application.withdrawn`(system), `screening.completed`(AI). 사이트 이벤트의 선별은 대시보드 활동 피드에 한 건씩 올리지 않는다(연동 현황에서 본다).
 
 ### 관리자 > 모델 설정 (AI provider 교체)
 
@@ -262,11 +293,24 @@ data: {"batch_id":"…"}
 | 관리자 | `Interviewer.is_admin` (기본 false) | SSO 그룹 클레임이 채울 자리. 0004 직후에는 아무도 관리자가 아니라 `scripts/grant_admin.py`나 시드로 준다 |
 | 데모 재시드 | `seed_demo.py --reset`은 모델 설정과 이력을 지우지 않는다 | 모델 설정은 데모 데이터가 아니라 운영 설정이다 |
 
+0005 (`migrations/versions/0005_site_intake.py`, 2026-10-26):
+
+| 항목 | 결정 | 이유 |
+| --- | --- | --- |
+| 공고 연결 | `JobPosting.site_posting_no` (UNIQUE, NULL 허용) | 사이트 이벤트는 공고를 사이트 번호로 가리킨다. 연결 전에는 비워 두고 공고 화면에서 넣는다 |
+| 같은 지원자 | `Candidate.site_applicant_hash` (UNIQUE, 지원자 번호의 HMAC, `crypto.lookup_hash`) | 번호로 사람을 특정할 수 있으므로 저장하지 않고 키 해시로만 찾는다. 암호화 키를 바꾸면 다시 계산해야 한다 |
+| 같은 지원서 | `Application.site_application_no` (UNIQUE) | 같은 지원서가 두 번 와도, 수정이 와도 한 건 |
+| 수신 경로 | `Application.channel` (upload/site, 기존 행은 upload) | 서류 선별 목록의 경로 표시, 통로별 집계 |
+| 철회 | `Application.withdrawn_at` | 공식 기록은 사이트라 지우지 않고 비활성화한다. 원본 보존·삭제 기간은 정보보호와 정할 일 |
+| 수신 이벤트 | `intake_events` (channel+event_id UNIQUE, type, status, revision, 시각들, posting_no, application_no, 해석된 posting·candidate·application FK, fingerprint, encrypted_payload, failure_code·message·fields, dropped_fields, result) | 큐, 멱등성 기록, 연동 현황 이력을 한 테이블로. 작업 큐를 따로 두지 않아 재시작 뒤에도 잃지 않는다 |
+
 SQLite 마이그레이션 주의: batch 모드는 테이블을 복사한 뒤 원본을 지우는데, 외래 키가 켜져 있으면 그 DROP이 자식 행을 연쇄 삭제한다. `migrations/env.py`는 마이그레이션 동안 외래 키를 끄고 끝나면 `PRAGMA foreign_key_check`로 확인한다.
 
 ## 5. 구현 상태와 남은 과제
 
 구현됨 (2026-10-23, fake provider): 면접관 화면용 35개 엔드포인트 전부(SSE 2종, 업로드 포함), 시드(`scripts/seed_demo.py`), 테스트(`tests/test_api_*.py`, `test_live.py`, `test_ai_tasks.py`, `test_seed.py`, `test_schedule.py`, 외부 네트워크 없음). 프론트 7개 화면과 업로드가 `npm run dev:api`로 실제 API에서 동작한다.
+
+구현됨 (2026-10-26): 채용 사이트 연동 수신 6개 엔드포인트와 공고 번호 연결(PATCH 공고), 합계 52개. 통로와 분리된 처리 함수(`intake/`), 백그라운드 큐와 재시작 재개, 연동 현황 화면, 가짜 채용 사이트(`scripts/fake_recruiting_site.py`). 테스트 `tests/test_intake.py`.
 
 구현됨 (2026-10-25): 관리자 > 모델 설정 10개 엔드포인트(합계 45개), DB 저장·이력·되돌리기, 재시작 없는 교체와 세션 고정, 연결 테스트, 모델 다운로드, 로컬 Whisper STT(`faster_whisper`, CPU int8, 한국어). 테스트 `tests/test_model_settings.py`, `test_weights.py`, `test_whisper.py`(모델 파일이 있을 때만). 측정 결과는 [Whisper 측정](whisper-benchmark.md).
 
@@ -279,8 +323,13 @@ SQLite 마이그레이션 주의: batch 모드는 테이블을 복사한 뒤 원
 - **로컬 Whisper 실시간 속도**: 이 노트북(CPU, 배터리)에서는 Whisper 호출 한 번이 30초 창 고정 비용(medium 약 5초)이라 발화 하나 확정까지 medium 약 10초 걸린다. 부분 전사는 호출 비용이 작을 때만 나온다. 실시간은 small·GPU·Chirp 중에서 다시 정할 것([측정](whisper-benchmark.md)).
 - **모델 설정 다중 인스턴스**: 활성 스냅샷은 프로세스 메모리에 있다. 여러 인스턴스면 변경을 다른 인스턴스에 알릴 방법(DB revision 폴링 또는 Pub/Sub)이 필요하다.
 - **여러 워커**: 전사 허브 상태가 프로세스 메모리에 있다. Cloud Run 여러 인스턴스면 Redis Pub/Sub 같은 공유 버스와 듣기 작업 소유권이 필요하다. AI 채점도 백그라운드 태스크라 작업 큐로 옮길 것.
-- **OCR**: 스캔본 업로드는 지금 거부한다.
-- **업로드 보완**: 같은 사람의 재지원 식별(지금은 업로드마다 새 지원자), 바이러스 검사, 원본 파일 보존 기간·삭제.
+- **채용 사이트 실제 연결**: 지금은 가짜 채용 사이트로만 검증했다. 사내망 ↔ GCP 네트워크 경로(사이트 → 이 서버 수신 경로는 IAP 로그인 밖이어야 한다), 채용 시스템 부서의 개발 일정, 정보보호·법무 승인, 지원자 동의 문구가 먼저다. 확인 목록은 [site-intake-spec.md](site-intake-spec.md) 11장.
+- **놓친 이벤트 대조(reconcile)**: 사이트 쪽 조회 API가 있다고 가정한 흐름만 명세에 적었다(site-intake-spec.md 9장). 구현 안 함.
+- **압축 파일 일괄 가져오기**: 연동 승인이 늦어질 때의 대안. 같은 `process_application`에 통로 하나를 더하면 된다(ZIP 안 파일 + 목록 CSV → `ApplicationInput`). 구현 안 함.
+- **수신 큐 여러 인스턴스**: 지금은 프로세스 하나의 워커. 여러 인스턴스면 행 선점(PostgreSQL `FOR UPDATE SKIP LOCKED`)이나 Cloud Tasks·Pub/Sub. 수신 요청 속도 제한도 없다.
+- **보존 기간**: 실패 이벤트 원문, 첨부 원본, 철회된 지원서의 원본을 언제 지울지(정보보호와 결정).
+- **OCR**: 스캔본 업로드는 지금 거부한다. 사이트 첨부의 스캔본은 원문을 남겨 두어 OCR이 붙으면 연동 현황에서 다시 처리할 수 있다.
+- **업로드 보완**: 업로드로 들어온 지원서는 지원자 번호가 없어 매번 새 지원자다(사이트 연동은 번호로 같은 사람을 찾는다). 바이러스 검사, 원본 파일 보존 기간·삭제.
 - **사전 질문 편집·AI 생성 API**: 지금은 시드와 확정 시 이월뿐이다.
 - **스케줄 그리드**: 잡힌 면접 시간을 그리드에서도 빼서 그리기.
 - **DB**: PostgreSQL/MySQL 확정 후 같은 마이그레이션으로 검증.

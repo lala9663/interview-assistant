@@ -177,6 +177,7 @@ class _Seeder:
                 job_family=p["job_family"],
                 jd_text=p["jd_text"],
                 status=PostingStatus(p["status"]),
+                site_posting_no=p.get("site_posting_no"),
                 created_at=self.days_ago(p["createdDaysAgo"], 9),
             )
             self.db.add(posting)

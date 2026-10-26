@@ -1,4 +1,4 @@
-import { BriefcaseBusinessIcon, CalendarDaysIcon, FileSearchIcon, LayoutDashboardIcon, MicIcon, SlidersHorizontalIcon } from '@lucide/vue'
+import { BriefcaseBusinessIcon, CalendarDaysIcon, FileSearchIcon, InboxIcon, LayoutDashboardIcon, MicIcon, SlidersHorizontalIcon } from '@lucide/vue'
 import type { Component } from 'vue'
 
 export interface NavItem {
@@ -23,6 +23,13 @@ export const NAV_ITEMS: NavItem[] = [
     label: '모델 설정',
     icon: SlidersHorizontalIcon,
     keywords: 'admin model llm stt whisper 관리자 모델 전사 임베딩 화자분리',
+    adminOnly: true,
+  },
+  {
+    to: '/admin/intake',
+    label: '연동 현황',
+    icon: InboxIcon,
+    keywords: 'intake site recruiting 채용 사이트 연동 수신 지원서 이벤트 실패 다시 처리',
     adminOnly: true,
   },
 ]

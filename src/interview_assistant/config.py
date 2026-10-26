@@ -53,6 +53,15 @@ class Settings(BaseSettings):
     dev_interviewer: str | None = None
     # Pace of the simulated candidate in live interviews (1 = like the frontend mock, 0 = instant).
     demo_speed: float = 1.0
+    # Recruiting-site intake (docs/site-intake-spec.md): the shared HMAC key the site signs every
+    # request with. Empty: the site endpoints answer 503. `_previous` is accepted too while a key
+    # is being rotated.
+    site_secret: SecretStr | None = None
+    site_secret_previous: SecretStr | None = None
+    # How far a request's signed timestamp may be from the server clock, in seconds.
+    site_clock_skew: int = 300
+    # Background workers applying received events. 0: events wait in the queue (tests, maintenance).
+    intake_workers: int = 4
 
 
 def load_providers(path: Path) -> ProvidersConfig:

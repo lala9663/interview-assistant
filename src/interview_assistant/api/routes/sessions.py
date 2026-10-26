@@ -66,6 +66,8 @@ def create_session(body: s.CreateSessionRequest, db: Db, me: Me) -> s.SessionSum
     application = db.get(Application, body.application_id)
     if application is None or application.deleted_at is not None:
         raise not_found("지원서")
+    if application.withdrawn_at is not None:
+        raise conflict("지원자가 철회한 지원서라 면접을 잡을 수 없습니다.")
     if not body.interviewers:
         raise invalid("interviewers", "면접관을 한 명 이상 지정하세요.")
     if sum(p.role is InterviewerRole.lead for p in body.interviewers) != 1:

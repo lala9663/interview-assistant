@@ -1,6 +1,9 @@
-"""공고·역량 사전 (FR-02): postings, competency-set versions, AI drafts, approval."""
+"""공고·역량 사전 (FR-02): postings, the link to the recruiting site's posting number,
+competency-set versions, AI drafts, approval."""
 
 from __future__ import annotations
+
+import re
 
 from fastapi import APIRouter
 from sqlalchemy import select
@@ -40,6 +43,30 @@ def postings(db: Db) -> list[s.PostingSummary]:
 @router.get("/postings/{posting_id}", response_model=s.PostingDetail)
 def posting(posting_id: str, db: Db) -> s.PostingDetail:
     return views.posting_detail(_posting(db, posting_id))
+
+
+_SITE_POSTING_NO = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._:-]{0,63}$")
+
+
+@router.patch("/postings/{posting_id}", response_model=s.PostingDetail)
+def update_posting(posting_id: str, body: s.UpdatePostingRequest, db: Db, me: Me) -> s.PostingDetail:
+    """Link the posting to the recruiting site's posting number (or unlink with null/""). Site
+    events name their posting by it; events that failed as `unknown_posting` can then be
+    processed again from 연동 현황."""
+    found = _posting(db, posting_id)
+    number = (body.site_posting_no or "").strip() or None
+    if number is not None and not _SITE_POSTING_NO.match(number):
+        raise invalid("site_posting_no", "영문·숫자와 . _ : - 만 쓸 수 있습니다 (64자 이하).")
+    if number is not None:
+        other = db.scalar(select(JobPosting).where(JobPosting.site_posting_no == number))
+        if other is not None and other.id != found.id:
+            raise conflict(f"공고 번호 {number}는 이미 '{other.title}' 공고에 연결되어 있습니다.")
+    before = found.site_posting_no
+    if before != number:
+        found.site_posting_no = number
+        audit(db, me, "posting.site_linked", "job_posting", found.id, **{"from": before, "to": number})
+        db.commit()
+    return views.posting_detail(found)
 
 
 @router.get("/postings/{posting_id}/competency-sets", response_model=list[s.CompetencySet])

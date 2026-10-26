@@ -22,6 +22,9 @@ cp .env.example .env
 | `IA_UPLOADS_DIR`, `IA_RECORDINGS_DIR` | 원본 영역(업로드 서류, 녹음). git 제외, 서빙하지 않는다 |
 | `IA_WEIGHTS_DIR` | 내려받은 모델 가중치(로컬 Whisper). 기본 `weights/`, git 제외 |
 | `IA_DEMO_SPEED` | 가상 지원자 속도. 1이면 프론트 모의 모드와 비슷, 0이면 지연 없음 |
+| `IA_SITE_SECRET`, `IA_SITE_SECRET_PREVIOUS` | 채용 사이트 연동의 공유 HMAC 키([site-intake-spec.md](site-intake-spec.md) 4장). 없으면 사이트 수신 엔드포인트가 503. 키 교체 중에는 이전 키도 받는다. 커밋하지 않는다 |
+| `IA_SITE_CLOCK_SKEW` | 서명 시각 허용 차이(초, 기본 300) |
+| `IA_INTAKE_WORKERS` | 받은 지원서 이벤트를 처리하는 백그라운드 워커 수(기본 4, 0이면 큐에 쌓이기만 한다) |
 | `HF_ENDPOINT`, `HF_TOKEN` | 모델 다운로드에 미러나 토큰이 필요할 때만 |
 
 암호화 키 만들기:
@@ -40,8 +43,19 @@ uv run uvicorn interview_assistant.main:app --reload
 
 - 시드는 프론트 모의 데이터와 같은 가상 데이터(공고 3, 지원자 20, 면접관 5, 진행 중 면접 1, 오늘 일정, 완료 4 중 1건은 AI 채점 중)를 지금 시각 기준으로 깐다. 다른 날 다시 쓰려면 `--reset`으로 다시 넣는다. 지원자 신원도 지어낸 값(010-0000-xxxx, example.com)을 실제처럼 암호화해 넣는다. `--reset`은 모델 설정과 그 이력은 지우지 않는다.
 - 로그인(SSO)은 아직 없다. Alembic 0004 이전에 시드한 DB는 관리자가 없으니 `uv run python scripts/grant_admin.py E24017`로 준다.
-- 서버는 한 프로세스로 띄운다. 실시간 전사 상태와 활성 모델 설정이 메모리에 있어서 `--workers`를 쓰지 않는다.
+- 서버는 한 프로세스로 띄운다. 실시간 전사 상태, 활성 모델 설정, 지원서 수신 큐의 워커가 메모리에 있어서 `--workers`를 쓰지 않는다.
 - API 문서: http://localhost:8000/docs, 계약: [api-contract.md](api-contract.md).
+
+### 가짜 채용 사이트로 연동 확인
+
+`.env`에 `IA_SITE_SECRET`을 넣고 서버를 띄운 뒤, 같은 키로 가짜 채용 사이트가 서명된 지원서 이벤트를 보낸다(키는 `--secret`, 환경변수, `.env` 순으로 읽는다). 시드는 공고 P1·P2를 `DS-2026-0101`·`DS-2026-0102`에 연결하고 P3(`DS-2026-0103`)은 비워 두므로, P3 이벤트는 연동 현황에서 "모르는 공고 번호"로 실패했다가 공고 화면에서 번호를 연결하고 "다시 처리"하면 들어온다.
+
+```bash
+uv run python scripts/fake_recruiting_site.py --url http://127.0.0.1:8000 --count 500
+uv run python scripts/fake_recruiting_site.py --url http://127.0.0.1:8000 --count 500   # 같은 날 다시: 전부 중복으로 응답, 새로 반영 없음
+```
+
+Windows에서는 `localhost` 대신 `127.0.0.1`을 쓴다(`localhost`는 IPv6를 먼저 시도해 요청마다 약 2초 늦어진다). 화면은 관리자 > 연동 현황(`/admin/intake`)과 서류 선별의 "경로" 열.
 
 ### 마이그레이션 만들기
 

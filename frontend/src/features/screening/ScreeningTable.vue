@@ -3,6 +3,7 @@ import { ArrowDownIcon, ArrowUpIcon, ChevronsUpDownIcon, SearchIcon, SearchXIcon
 import { computed, ref } from 'vue'
 
 import type { ApplicationRow } from '@/api/types'
+import ChannelBadge from '@/components/common/ChannelBadge.vue'
 import EmptyState from '@/components/common/EmptyState.vue'
 import FitBar from '@/components/common/FitBar.vue'
 import Pseudonym from '@/components/common/Pseudonym.vue'
@@ -45,6 +46,7 @@ const HEADERS: { label: string; k?: SortKey; class?: string }[] = [
   { label: '경력', k: 'years' },
   { label: '핵심 기술' },
   { label: '진행' },
+  { label: '경로' },
   { label: '접수', k: 'created', class: 'pr-4' },
 ]
 </script>
@@ -64,7 +66,7 @@ const HEADERS: { label: string; k?: SortKey; class?: string }[] = [
       </div>
     </div>
     <div class="overflow-x-auto">
-      <table class="w-full min-w-[760px] text-[13px]">
+      <table class="w-full min-w-[880px] text-[13px]">
         <thead>
           <tr class="border-b bg-subtle text-left text-xs text-muted-foreground">
             <template v-for="h in HEADERS" :key="h.label">
@@ -113,6 +115,7 @@ const HEADERS: { label: string; k?: SortKey; class?: string }[] = [
               </div>
             </td>
             <td class="px-3 py-3"><StageBadge :stage="r.stage" /></td>
+            <td class="px-3 py-3"><ChannelBadge :channel="r.channel" /></td>
             <td class="py-3 pr-4 pl-3 text-muted-foreground tabular">{{ formatDateShort(r.created_at) }}</td>
           </tr>
         </tbody>

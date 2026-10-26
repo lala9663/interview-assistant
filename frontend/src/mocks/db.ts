@@ -6,6 +6,7 @@ import type {
   ActivityItem,
   AiScoringStatus,
   Application,
+  ApplicationChannel,
   ApplicationDetail,
   ApplicationRow,
   ApplicationStage,
@@ -43,6 +44,7 @@ import { addDays, addMinutes, kstDate, kstParts, MINUTE, startOfKstDay, startOfK
 import { ANSWER_BANK, GENERIC_BANK, type SuggestionSeed } from './data/banks'
 import { CANDIDATES, INTERVIEWERS, ME_KEY, pseudonymOf } from './data/people'
 import { P1, P2, POSTING_SEEDS } from './data/postings'
+import { createIntakeState, type IntakeState } from './intake-state'
 import { createModelState, type ModelState } from './models'
 
 export const AI_MODEL = 'claude-opus-5-5'
@@ -121,11 +123,14 @@ export class MockDb {
   genericCursor = new Map<string, number>()
   /** 관리자 > 모델 설정 (mocks/models.ts) */
   models: ModelState
+  /** 관리자 > 연동 현황 (mocks/intake-state.ts) */
+  intake: IntakeState
 
   constructor(now = new Date()) {
     this.now = now
     seed(this)
     this.models = createModelState(now, newId)
+    this.intake = createIntakeState(this, newId)
   }
 
   // ----- lookups ---------------------------------------------------------------------------------
@@ -235,7 +240,7 @@ export class MockDb {
   // ----- views -----------------------------------------------------------------------------------
 
   counts(postingId: string): PostingCounts {
-    const apps = this.applications.filter((a) => a.posting_id === postingId && !a.deleted_at)
+    const apps = this.applications.filter((a) => a.posting_id === postingId && !a.deleted_at && !a.withdrawn_at)
     const c: PostingCounts = { applications: apps.length, passed: 0, hold: 0, rejected: 0, interviewing: 0, interviewed: 0, evaluated: 0 }
     for (const a of apps) {
       const s = this.screeningOf(a.id)
@@ -265,7 +270,7 @@ export class MockDb {
 
   applicationRows(postingId: string): ApplicationRow[] {
     return this.applications
-      .filter((a) => a.posting_id === postingId && !a.deleted_at)
+      .filter((a) => a.posting_id === postingId && !a.deleted_at && !a.withdrawn_at)
       .map((a) => {
         const cand = this.candidate(a.candidate_id)!
         return {
@@ -275,6 +280,7 @@ export class MockDb {
           years_experience: a.profile?.years_experience ?? null,
           top_skills: a.profile?.skills.slice(0, 3) ?? [],
           stage: this.stage(a.id),
+          channel: a.channel,
           created_at: a.created_at,
         }
       })
@@ -300,6 +306,11 @@ export class MockDb {
 
   /** Mock upload: a new candidate with a generic profile, screened as hold (people decide). */
   addUpload(postingId: string, filename: string): UploadResult {
+    return this.addApplication(postingId, filename, 'upload')
+  }
+
+  /** A new candidate and application from an upload or the recruiting site (a retried 연동 event). */
+  addApplication(postingId: string, filename: string, channel: ApplicationChannel): UploadResult {
     const n = this.candidates.length + 1
     const now = new Date()
     const candidate = { id: newId(), pseudonym: pseudonymOf(n), consent_recording: false, consent_at: null, deleted_at: null, created_at: iso(now) }
@@ -316,6 +327,8 @@ export class MockDb {
         projects: [],
         certifications: [],
       },
+      channel,
+      withdrawn_at: null,
       deleted_at: null,
       created_at: iso(now),
     }
@@ -333,7 +346,8 @@ export class MockDb {
       created_at: iso(now),
     }
     const ext = filename.split('.').pop()?.toLowerCase() ?? ''
-    const document = { format: ext === 'htm' ? 'html' : ext, blocks: 6, hidden_blocks: 0, images_dropped: 0, replacements: 4 }
+    const format = channel === 'site' ? 'site' : ext === 'htm' ? 'html' : ext
+    const document = { format, blocks: 6, hidden_blocks: 0, images_dropped: 0, replacements: 4 }
     this.candidates.push(candidate)
     this.applications.push(application)
     this.screenings.push(screening)
@@ -560,7 +574,15 @@ function seed(db: MockDb) {
   }
 
   for (const p of POSTING_SEEDS) {
-    db.postings.push({ id: p.id, title: p.title, job_family: p.job_family, jd_text: p.jd_text, status: p.status, created_at: iso(daysAgo(p.createdDaysAgo, 9)) })
+    db.postings.push({
+      id: p.id,
+      title: p.title,
+      job_family: p.job_family,
+      jd_text: p.jd_text,
+      status: p.status,
+      site_posting_no: p.site_posting_no,
+      created_at: iso(daysAgo(p.createdDaysAgo, 9)),
+    })
     for (const s of p.sets) {
       const created = daysAgo(s.daysAgo, 11)
       db.competencySets.push({
@@ -580,7 +602,16 @@ function seed(db: MockDb) {
     const posting = c.posting === 'P1' ? P1 : P2
     const applied = daysAgo(c.appliedDaysAgo, 9 + (c.n % 8), (c.n * 7) % 60)
     db.candidates.push({ id: candidateIdOf(c.n), pseudonym: pseudonymOf(c.n), consent_recording: false, consent_at: null, deleted_at: null, created_at: iso(applied) })
-    db.applications.push({ id: applicationIdOf(c.n), candidate_id: candidateIdOf(c.n), posting_id: posting.id, profile: c.profile, deleted_at: null, created_at: iso(applied) })
+    db.applications.push({
+      id: applicationIdOf(c.n),
+      candidate_id: candidateIdOf(c.n),
+      posting_id: posting.id,
+      profile: c.profile,
+      channel: 'upload',
+      withdrawn_at: null,
+      deleted_at: null,
+      created_at: iso(applied),
+    })
     const rationale = [c.summaryLine, ...c.strengths.map((s) => `+ ${s}`), ...c.concerns.map((s) => `- ${s}`)].join('\n')
     db.screenings.push({
       id: `f7a8b9c0-0000-4000-9000-${String(c.n).padStart(12, '0')}`,

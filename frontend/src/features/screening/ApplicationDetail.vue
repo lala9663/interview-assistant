@@ -6,6 +6,7 @@ import { toast } from 'vue-sonner'
 
 import { useApplication, useUpdateScreening } from '@/api/queries'
 import { SCREENING_STATUSES, type ScreeningStatus } from '@/api/types'
+import ChannelBadge from '@/components/common/ChannelBadge.vue'
 import DeidText from '@/components/common/DeidText.vue'
 import ErrorState from '@/components/common/ErrorState.vue'
 import FitRing from '@/components/common/FitRing.vue'
@@ -65,8 +66,13 @@ const change = (status: string) => {
           <h2><Pseudonym :value="q.data.candidate.pseudonym" size="lg" /></h2>
         </SheetTitle>
         <SheetDescription class="mt-0.5 truncate">{{ q.data.posting.title }} · 접수 {{ formatDate(q.data.application.created_at) }}</SheetDescription>
+        <ChannelBadge :channel="q.data.application.channel" class="mt-1.5" />
       </div>
     </div>
+
+    <p v-if="q.data.application.withdrawn_at" class="rounded-lg border bg-subtle px-3 py-2 text-[13px] text-muted-foreground" role="status">
+      지원자가 채용 사이트에서 {{ formatDateTime(q.data.application.withdrawn_at) }}에 철회했습니다. 목록과 면접 잡기에서 빠졌습니다.
+    </p>
 
     <div v-if="q.data.screening" class="space-y-2">
       <div class="flex items-center justify-between gap-3">

@@ -62,7 +62,7 @@ def counts(posting: JobPosting) -> dict[str, int]:
         0,
     )
     for application in posting.applications:
-        if application.deleted_at is not None:
+        if application.deleted_at is not None or application.withdrawn_at is not None:
             continue
         c["applications"] += 1
         if application.screening is not None:

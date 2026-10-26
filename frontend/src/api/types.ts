@@ -40,6 +40,10 @@ export type AvailabilitySource = (typeof AVAILABILITY_SOURCES)[number]
 export const ACTOR_TYPES = ['user', 'system', 'ai'] as const
 export type ActorType = (typeof ACTOR_TYPES)[number]
 
+/** 수신 경로: uploaded on the screening screen, or sent by the recruiting site. */
+export const APPLICATION_CHANNELS = ['upload', 'site'] as const
+export type ApplicationChannel = (typeof APPLICATION_CHANNELS)[number]
+
 // ---------------------------------------------------------------------------------------------
 // 1. Entities
 // ---------------------------------------------------------------------------------------------
@@ -51,6 +55,8 @@ export interface JobPosting {
   job_family: string
   jd_text: string
   status: PostingStatus
+  /** 채용 사이트 공고 번호; site events name the posting by it (null: not linked) */
+  site_posting_no: string | null
   created_at: string
 }
 
@@ -104,12 +110,15 @@ export interface CandidateProfile {
   certifications: string[]
 }
 
-/** models.Application without `source_file_uri`. */
+/** models.Application without `source_file_uri` and the site's application number. */
 export interface Application {
   id: string
   candidate_id: string
   posting_id: string
   profile: CandidateProfile | null
+  channel: ApplicationChannel
+  /** withdrawn on the recruiting site: out of every list, detail still opens */
+  withdrawn_at: string | null
   deleted_at: string | null
   created_at: string
 }
@@ -276,6 +285,7 @@ export interface ApplicationRow {
   years_experience: number | null
   top_skills: string[]
   stage: ApplicationStage
+  channel: ApplicationChannel
   created_at: string
 }
 
@@ -741,4 +751,104 @@ export interface ApplyModelRequest extends ModelSpec {
 export interface RevertModelRequest {
   reason: string
   confirm_external: boolean
+}
+
+// --- 관리자 > 연동 현황 (applications from the recruiting site, admin only) ------------------------
+
+export interface UpdatePostingRequest {
+  /** null or '' unlinks the posting */
+  site_posting_no: string | null
+}
+
+export const INTAKE_EVENT_TYPES = ['submitted', 'updated', 'withdrawn'] as const
+export type IntakeEventType = (typeof INTAKE_EVENT_TYPES)[number]
+export const INTAKE_STATUSES = ['queued', 'processing', 'done', 'skipped', 'failed', 'rejected'] as const
+export type IntakeStatus = (typeof INTAKE_STATUSES)[number]
+
+export interface IntakeFailure {
+  /** unknown_posting, posting_closed, unsupported_attachment, ocr_required, forbidden_field ... */
+  code: string
+  message: string
+  /** field paths only, never values */
+  fields: string[]
+}
+
+/** One event the site sent. No name and no applicant number exist to show. */
+export interface IntakeEvent {
+  id: string
+  event_id: string
+  event_type: IntakeEventType | null
+  status: IntakeStatus
+  revision: number | null
+  occurred_at: string | null
+  received_at: string
+  started_at: string | null
+  finished_at: string | null
+  processing_ms: number | null
+  attempts: number
+  posting_no: string | null
+  posting: Pick<JobPosting, 'id' | 'title'> | null
+  application_no: string | null
+  candidate: Pick<Candidate, 'id' | 'pseudonym'> | null
+  failure: IntakeFailure | null
+  /** fields outside the spec that were dropped before storing (paths) */
+  dropped_fields: string[]
+  /** failed with the payload kept: 다시 처리 can queue it again */
+  retriable: boolean
+  result: Record<string, unknown> | null
+}
+
+export interface IntakeTotals {
+  received: number
+  queued: number
+  processing: number
+  done: number
+  skipped: number
+  failed: number
+  rejected: number
+}
+
+export interface IntakePostingCount {
+  posting_no: string | null
+  /** null: no posting carries this number yet */
+  posting: Pick<JobPosting, 'id' | 'title'> | null
+  received: number
+  submitted: number
+  updated: number
+  withdrawn: number
+  done: number
+  skipped: number
+  failed: number
+  rejected: number
+  /** queued + processing */
+  pending: number
+  /** active applications from the site on the posting */
+  applications: number
+}
+
+export interface IntakeTiming {
+  processed: number
+  avg_ms: number | null
+  p50_ms: number | null
+  p95_ms: number | null
+  max_ms: number | null
+  avg_wait_ms: number | null
+  first_received_at: string | null
+  last_finished_at: string | null
+  per_minute: number | null
+}
+
+export interface IntakeSummary {
+  /** the site's signing key is set on the server */
+  configured: boolean
+  workers: number
+  totals: IntakeTotals
+  postings: IntakePostingCount[]
+  failures: { code: string; count: number; retriable: number }[]
+  timing: IntakeTiming
+}
+
+export interface IntakeEventFilter {
+  status?: IntakeStatus
+  posting_no?: string
 }

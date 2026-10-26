@@ -30,6 +30,7 @@ from interview_assistant.models.base import iso_z
 Timestamp = Annotated[datetime, PlainSerializer(iso_z, return_type=str, when_used="json")]
 AiScoringState = Literal["not_started", "running", "completed", "failed"]
 Stage = Literal["screening", "interview_scheduled", "interviewing", "interviewed", "evaluated"]
+Channel = Literal["upload", "site"]
 
 
 class Schema(BaseModel):
@@ -45,6 +46,7 @@ class JobPosting(Schema):
     job_family: str
     jd_text: str
     status: PostingStatus
+    site_posting_no: str | None
     created_at: Timestamp
 
 
@@ -72,6 +74,8 @@ class Application(Schema):
     candidate_id: str
     posting_id: str
     profile: CandidateProfile | None
+    channel: Channel
+    withdrawn_at: Timestamp | None
     deleted_at: Timestamp | None
     created_at: Timestamp
 
@@ -210,6 +214,7 @@ class PostingSummary(Schema):
     title: str
     job_family: str
     status: PostingStatus
+    site_posting_no: str | None
     created_at: Timestamp
     counts: PostingCounts
     latest_competency_set: CompetencySetBrief | None
@@ -227,6 +232,7 @@ class ApplicationRow(BaseModel):
     years_experience: float | None
     top_skills: list[str]
     stage: Stage
+    channel: Channel  # 수신 경로: site 연동 or 직접 upload
     created_at: Timestamp
 
 
@@ -545,6 +551,115 @@ class ModelDownload(BaseModel):
     error: str | None
 
 
+# --- 5. intake: applications from the recruiting site (채용 사이트 연동) ----------------------
+
+IntakeEventTypeValue = Literal["submitted", "updated", "withdrawn"]
+IntakeStatusValue = Literal["queued", "processing", "done", "skipped", "failed", "rejected"]
+
+
+class IntakeFailure(BaseModel):
+    code: str
+    message: str
+    fields: list[str]  # field paths only, never values
+
+
+class IntakeEvent(BaseModel):
+    """One event the site sent, for 관리자 > 연동 현황. No name, no applicant number."""
+
+    id: str
+    event_id: str
+    event_type: IntakeEventTypeValue | None
+    status: IntakeStatusValue
+    revision: int | None
+    occurred_at: Timestamp | None
+    received_at: Timestamp
+    started_at: Timestamp | None
+    finished_at: Timestamp | None
+    processing_ms: int | None
+    attempts: int
+    posting_no: str | None
+    posting: PostingRef | None
+    application_no: str | None
+    candidate: CandidateRef | None
+    failure: IntakeFailure | None
+    dropped_fields: list[str]
+    retriable: bool
+    result: dict[str, Any] | None
+
+
+class IntakeTotals(BaseModel):
+    received: int
+    queued: int
+    processing: int
+    done: int
+    skipped: int
+    failed: int
+    rejected: int
+
+
+class IntakePostingCount(BaseModel):
+    posting_no: str | None
+    posting: PostingRef | None  # null: no posting carries this number yet
+    received: int
+    submitted: int
+    updated: int
+    withdrawn: int
+    done: int
+    skipped: int
+    failed: int
+    rejected: int
+    pending: int  # queued + processing
+    applications: int  # active applications from the site on the posting
+
+
+class IntakeFailureCount(BaseModel):
+    code: str
+    count: int
+    retriable: int  # failed events with the payload kept, which 다시 처리 can queue again
+
+
+class IntakeTiming(BaseModel):
+    processed: int
+    avg_ms: int | None
+    p50_ms: int | None
+    p95_ms: int | None
+    max_ms: int | None
+    avg_wait_ms: int | None  # received -> started
+    first_received_at: Timestamp | None
+    last_finished_at: Timestamp | None
+    per_minute: float | None  # applied events per minute between those two
+
+
+class IntakeSummary(BaseModel):
+    configured: bool  # the site's signing key is set (IA_SITE_SECRET)
+    workers: int
+    totals: IntakeTotals
+    postings: list[IntakePostingCount]
+    failures: list[IntakeFailureCount]
+    timing: IntakeTiming
+
+
+class IntakeRetried(BaseModel):
+    requeued: int
+
+
+class SiteEventStatus(BaseModel):
+    """What the recruiting site gets back (202 and the status lookup): no pseudonym, no ids."""
+
+    event_id: str
+    status: IntakeStatusValue
+    event_type: str | None
+    revision: int | None
+    received_at: str
+    finished_at: str | None
+    dropped_fields: list[str]
+    duplicate: bool
+    code: str | None = None
+    detail: str | None = None
+    fields: list[str] | None = None
+    status_url: str | None = None
+
+
 # --- requests -----------------------------------------------------------------------------
 
 
@@ -554,6 +669,16 @@ class CompetenciesBody(BaseModel):
 
 class ScreeningUpdate(BaseModel):
     status: ScreeningStatus
+
+
+class UpdatePostingRequest(BaseModel):
+    # 채용 사이트 공고 번호; null or "" unlinks the posting.
+    site_posting_no: str | None = Field(default=None, max_length=64)
+
+
+class RetryIntakeRequest(BaseModel):
+    failure_code: str | None = None  # only failures with this code (e.g. unknown_posting)
+    posting_no: str | None = None
 
 
 class PanelMember(BaseModel):
