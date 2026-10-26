@@ -1,0 +1,52 @@
+# 프론트엔드 (면접관 UI)
+
+`frontend/`. Vite + Vue 3 + TypeScript(strict, `vue-tsc`), Tailwind CSS v4 + shadcn-vue 방식 컴포넌트(Reka UI), TanStack Query(`@tanstack/vue-query`), Vue Router, MSW, Chart.js(`vue-chartjs`), vue-sonner, lucide 아이콘(`@lucide/vue`). 명령 팔레트는 Reka UI Listbox, 화면 전환 효과는 Vue `<Transition>`과 CSS만 쓴다. 테스트는 Vitest + Testing Library(Vue) + MSW(node), 린트는 eslint-plugin-vue + typescript-eslint. 폰트는 Pretendard(OFL)를 npm 패키지에서 자체 호스팅한다. Node 24 이상. 이전 React 버전은 git 이력(`93a1780`)에 있다.
+
+## 화면
+
+대시보드, 공고·역량 사전(FR-02), 서류 선별(FR-01·03), 면접 목록, 실시간 면접(FR-04~08), 평가 결과(FR-07·08), 면접관 스케줄(FR-09), 관리자 > 모델 설정(관리자만, [ai-models.md](ai-models.md)). 다크 모드 기본(시스템 설정 따름), Ctrl/⌘+K 명령 팔레트.
+
+```
+frontend/src/
+  api/          # types.ts(모델과 1:1), endpoints, TanStack Query composable, SSE 파서
+  mocks/        # 모의 API: 가상 데이터, 핸들러, 실시간 전사·꼬리질문 스트림 흉내, 모델 설정
+  features/     # 화면: dashboard, postings, screening, sessions, interview(실시간), evaluation, schedule, admin(모델 설정)
+  components/   # 공통 컴포넌트와 ui/ (shadcn-vue 방식)
+```
+
+## 모의 API 모드
+
+```bash
+cd frontend
+npm ci
+npm run dev          # → http://localhost:5173
+```
+
+`VITE_USE_MOCKS=true`(`.env.development`)면 브라우저의 MSW가 `/api` 요청에 답한다. 가상 데이터(공고 3, 지원자 20, 면접관 5, 진행 중 면접 1, 완료 면접 4)는 새로고침하면 처음 상태로 돌아간다. 진행 중 면접 화면을 열면 지원자 답변이 글자 단위로 스트리밍되고, 답변이 끝나면 꼬리질문 후보가 스트리밍된다. 모델 설정 화면도 같은 흐름(다운로드 진행률, 연결 테스트, 외부 전송 경고, 이력·되돌리기)으로 동작한다.
+
+모의 모드에서 `/api`가 모두 502로 실패하면 브라우저가 MSW 서비스 워커를 재시작해 등록이 풀린 것이다. 새로고침하면 된다.
+
+## 백엔드 연결 모드
+
+같은 `/api` 경로를 Vite 프록시로 FastAPI(`localhost:8000`)에 보낸다. 대상은 `frontend/.env.api`의 `VITE_API_PROXY_TARGET`. 데이터는 DB에서 오고 새로고침해도 남는다. [setup.md](setup.md)대로 마이그레이션·시드를 한 뒤:
+
+```bash
+uv run uvicorn interview_assistant.main:app --reload   # 저장소 루트에서
+cd frontend && npm run dev:api                         # → http://localhost:5173
+```
+
+서류 선별 화면의 "서류 업로드"로 PDF·DOCX·PPTX·HTML을 올리면 텍스트 추출 → 비식별화 → 프로필·선별 → 표에 새 가명(CAND-0021 …)으로 들어온다. 이름·연락처는 비식별화에만 쓰인다. 스캔본은 OCR이 없어 거부한다. 테스트용 가상 이력서는 `tests/fixtures/resumes/`에 있다.
+
+## 검사와 빌드
+
+```bash
+npm run check        # 타입 검사 + 린트 + 테스트(Vitest) + 빌드
+npm run build        # dist/ (실제 API용, VITE_USE_MOCKS=false)
+npm run build:mock   # 백엔드 없이 띄우는 데모 빌드
+```
+
+## 의존성과 라이선스
+
+- 버전은 `package.json`에 정확히 고정하고 `package-lock.json`을 커밋한다(공개 후 2주 이상 지난 버전). 의존성을 바꿀 때는 `npm install --before=<2주 전 날짜>`로 설치해 전이 의존성까지 같은 기준을 지킨다.
+- 번들에 들어가는 라이브러리는 MIT·ISC·Apache-2.0·BSD 계열이고 폰트는 OFL-1.1이다.
+- 빌드·테스트에만 쓰고 번들에 들어가지 않는 예외: lightningcss(MPL-2.0, Tailwind v4와 Vite의 CSS 처리), jsdom이 쓰는 mdn-data(CC0-1.0)와 @csstools/*(MIT-0), glob·minimatch·lru-cache 등(BlueOak-1.0.0).
