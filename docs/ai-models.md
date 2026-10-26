@@ -62,7 +62,7 @@ uv run python scripts/bench_whisper.py --manifest clips.json --sizes small mediu
 
 1. PaddleOCR: `uv sync --extra whisper --extra ocr`(paddleocr 3.7.0, paddlepaddle 3.2.2 CPU). 모델 설정 > OCR 엔진 > 변경 > PaddleOCR > 모델 카드의 "다운로드"(mobile 32MB 권장, server 116MB). Hugging Face에서 커밋 고정·sha256 검증으로 받아 `weights/paddleocr/`에 둔다.
 2. Tesseract(비교용): 프로그램을 설치하고(`winget install UB-Mannheim.TesseractOCR`, 다른 곳이면 `TESSERACT_CMD`), 모델 카드의 "다운로드"로 한국어·영어 데이터(best 약 28MB, fast 약 6MB, GitHub tessdata, 커밋 고정·sha256)를 받는다.
-3. 연결 테스트(내장 샘플 또는 스캔 파일), 사유, 적용. 되돌리려면 변경 이력의 "되돌리기".
+3. 연결 테스트(내장 샘플 또는 스캔 파일), 사유, 적용. 되돌리려면 변경 이력의 "되돌리기". PaddleOCR은 서버와 다른 작업 프로세스에서 돌아(faster-whisper와 DLL이 충돌해서, [document-reading.md](document-reading.md)) 테스트·적용 때 그 프로세스를 띄우고 모델을 올리느라 10초 안팎 걸린다.
 
 구형 .doc·.ppt는 LibreOffice가 있어야 읽는다(`winget install TheDocumentFoundation.LibreOffice`, 다른 곳이면 `SOFFICE_CMD`). 없으면 카드에 "프로그램 LibreOffice 없음"이 보이고 그런 서류는 "변환기 없음"으로 거부된다.
 

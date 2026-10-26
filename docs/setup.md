@@ -55,7 +55,7 @@ uv run uvicorn interview_assistant.main:app --reload
 
 - 시드는 프론트 모의 데이터와 같은 가상 데이터(공고 3, 지원자 20, 면접관 5, 진행 중 면접 1, 오늘 일정, 완료 4 중 1건은 AI 채점 중)를 지금 시각 기준으로 깐다. 다른 날 다시 쓰려면 `--reset`으로 다시 넣는다. 지원자 신원도 지어낸 값(010-0000-xxxx, example.com)을 실제처럼 암호화해 넣는다. `--reset`은 모델 설정과 그 이력은 지우지 않는다.
 - 로그인(SSO)은 아직 없다. Alembic 0004 이전에 시드한 DB는 관리자가 없으니 `uv run python scripts/grant_admin.py E24017`로 준다.
-- 서버는 한 프로세스로 띄운다. 실시간 전사 상태, 활성 모델 설정, 지원서 수신 큐의 워커가 메모리에 있어서 `--workers`를 쓰지 않는다.
+- 서버는 한 프로세스로 띄운다. 실시간 전사 상태, 활성 모델 설정, 지원서 수신 큐의 워커가 메모리에 있어서 `--workers`를 쓰지 않는다. OCR 엔진을 PaddleOCR로 쓰면 서버가 작업 프로세스를 하나 더 띄운다(읽는 동안 최대 약 1.8GB, 쉴 때 0.6GB 안팎. faster-whisper와 DLL이 충돌해 따로 돈다, [document-reading.md](document-reading.md)).
 - API 문서: http://localhost:8000/docs, 계약: [api-contract.md](api-contract.md).
 
 ### 가짜 채용 사이트로 연동 확인

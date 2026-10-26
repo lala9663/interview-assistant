@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import importlib.util
 import os
+import sys
 from pathlib import Path
 
 import pytest
@@ -38,7 +39,9 @@ def _check(ocr, deid_config):
 def paddle():
     from interview_assistant.providers.ocr.paddle import PaddleOCRProvider
 
-    return PaddleOCRProvider(weights_dir=WEIGHTS)
+    provider = PaddleOCRProvider(weights_dir=WEIGHTS)
+    yield provider
+    provider.close()
 
 
 @pytest.mark.skipif(not paddle_ready, reason="paddleocr or the PP-OCRv5 model files are missing")
@@ -53,6 +56,7 @@ def test_paddleocr_samples_leak_nothing_and_read_well(paddle, deid_config, no_ex
     assert max(rates.values()) < 0.05, rates  # character error rate below 5% on every sample
     page = reports["R24"].document.pages[0]  # the phone photo
     assert page.tool.startswith("PaddleOCR 3.7.0") and page.confidence > 0.9
+    assert "paddle" not in sys.modules  # it ran in its worker process (tests/test_engines_together.py)
 
 
 @pytest.mark.skipif(not tesseract_ready, reason="tesseract or its tessdata (best) is missing")

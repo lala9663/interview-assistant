@@ -35,6 +35,7 @@ src/interview_assistant/
     audio.py            # 파일 URI, 16kHz PCM 디코딩(PyAV), 조각 내기, 내장 한국어 샘플(samples/, FLEURS CC BY 4.0)
     stt/faster_whisper.py  # 로컬 Whisper STT (CPU int8, 한국어, VAD, stream·transcribe)
     ocr/paddle.py, ocr/tesseract.py  # 로컬 OCR (PP-OCRv5 한국어 CPU, Tesseract kor+eng)
+    isolated.py         # 네이티브 엔진을 작업 프로세스에서 돌리기 (PaddleOCR: 그 DLL이 faster-whisper와 충돌)
     samples/documents/  # 서류 읽기 연결 테스트용 가상 이력서
     fake.py             # 자격증명 없이 도는 구현 (speed로 지연 흉내)
     fake_tasks.py       # fake LLM이 앱 프롬프트에 규칙으로 답하는 부분 (모양만 그럴듯, 품질 아님)

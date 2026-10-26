@@ -86,6 +86,8 @@ OCR도 얼굴 인식도 없이 그림의 모양과 색 분포로 본다. 증명�
 
 PaddleOCR 옵션: 모델(mobile·server), 줄 방향 보정(끔, 똑바른 스캔의 줄을 뒤집어 망가뜨린 적이 있다), 쪽 방향 보정(끔, 옆으로 찍은 휴대폰 사진이 많으면 켠다), 그림 긴 변 제한(2400px), CPU 스레드. paddlepaddle은 3.2.2로 고정했다(3.3.1의 oneDNN이 Windows CPU에서 실패하고, oneDNN 없이 돌리면 4배 느리다).
 
+PaddleOCR은 서버와 다른 작업 프로세스에서 돈다(`providers/isolated.py`). Paddle이 함께 싣는 Intel OpenMP(`libiomp5md.dll`, 2019년 빌드)가 CTranslate2(faster-whisper)가 쓰는 것(2025년 빌드)보다 오래되어, 한 프로세스에서 PaddleOCR이 먼저 올라가면 Whisper가 "WinError 127"로 로드되지 않았다. Windows는 이미 올라간 같은 이름의 DLL을 다시 쓰기 때문이다. 지금은 서버 프로세스가 paddle을 아예 불러오지 않고 쪽 그림을 작업 프로세스에 보내 줄 목록을 받는다. 작업 프로세스는 처음 쓸 때(적용할 때의 워밍업) 뜨고, 죽거나 10분 안에 답하지 않으면 다음 요청에서 다시 뜨며, provider가 내려가거나 서버가 끝나면 같이 끝난다. 두 엔진을 함께 켠 상태는 `tests/test_engines_together.py`가 확인한다.
+
 ### OCR 오독 대책
 
 OCR은 글자를 비슷한 글자로 잘못 읽는다. 잘못 읽은 이름·전화번호는 비식별화 규칙을 비껴가므로 두 겹으로 막는다.
