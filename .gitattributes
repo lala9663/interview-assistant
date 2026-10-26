@@ -1,2 +1,4 @@
 # Generated fixtures are compared byte for byte (and one is EUC-KR): never convert line endings.
 tests/fixtures/resumes/** -text
+# Audio samples (STT connection test) are binary.
+*.wav binary

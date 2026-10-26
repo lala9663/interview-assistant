@@ -8,6 +8,11 @@ rows. The answer closes when the STT stream ends (the candidate stopped talking)
 question or the end of the session interrupts it: QAItem.answer_text keeps the raw text (raw zone),
 answer_deidentified the tokenised one, and subscribers get `qa.answered`.
 
+The STT provider is the one the session pinned when it started (admin > 모델 설정 may switch the
+active one meanwhile); its model name is stored on every candidate segment and in an audit row per
+answer. If it cannot read what the audio source yields (a real STT and the simulated candidate's
+text), the hub reports `stt: down` and the interviewer types the answer instead.
+
 A partial result is published without its last word, and without trailing words holding digits
 or "@": an identifier cut in half ("홍길", "010 1234") would slip past the detectors. The final
 result replaces it whole.
@@ -21,15 +26,18 @@ import asyncio
 import logging
 import re
 import time
-from collections.abc import AsyncIterator
+from collections.abc import AsyncIterator, Callable
 from dataclasses import dataclass, field
 from typing import Any
 
 from sqlalchemy.orm import Session, sessionmaker
 
+from interview_assistant.ai.gateway import model_name
 from interview_assistant.deid.service import DeidService
 from interview_assistant.live.audio import AudioSource, Turn
 from interview_assistant.models import (
+    ActorType,
+    AuditLog,
     InterviewSession,
     QAItem,
     SessionStatus,
@@ -95,17 +103,14 @@ class LiveHub:
     def __init__(
         self,
         session_factory: sessionmaker[Session],
-        stt: STTProvider,
+        stt_for: Callable[[InterviewSession], STTProvider],
         deid: DeidService,
         audio: AudioSource,
-        *,
-        language: str = "ko-KR",
     ) -> None:
         self.session_factory = session_factory
-        self.stt = stt
+        self.stt_for = stt_for  # the session's pinned streaming STT
         self.deid = deid
         self.audio = audio
-        self.language = language
         self._channels: dict[str, _Channel] = {}
 
     def _channel(self, session_id: str) -> _Channel:
@@ -222,6 +227,19 @@ class LiveHub:
             candidate_id = candidate.id
             known = self.deid.identity(candidate)
             turn = Turn(session_id, session.application.posting_id, qa.question)
+            stt = self.stt_for(session)
+            model = model_name(stt)
+            readable = self.audio.format in getattr(stt, "accepts", ())
+            db.add(
+                AuditLog(
+                    actor_type=ActorType.ai,
+                    action="transcript.listened" if readable else "transcript.unsupported_audio",
+                    target_type="interview_session",
+                    target_id=session_id,
+                    model=model,
+                    details={"qa_item_id": qa.id, "audio": self.audio.format},
+                )
+            )
             if announce:
                 start = _elapsed_ms(session)
                 seg = TranscriptSegment(
@@ -234,9 +252,21 @@ class LiveHub:
                     end_ms=start + max(1500, len(qa.question) * _QUESTION_MS_PER_CHAR),
                 )
                 db.add(seg)
-                db.commit()
+            db.commit()
+            if announce:
                 self.publish(session_id, "segment.final", segment_event(seg))
             origin = _elapsed_ms(session)
+
+        if not readable:
+            log.warning(
+                "streaming STT %s cannot read %s audio (session %s): manual answers",
+                model,
+                self.audio.format,
+                session_id,
+            )
+            channel.stt = "down"
+            self.publish(session_id, "status", self.status(session_id))
+            return
 
         heard: list[str] = []
         segment_id: str | None = None
@@ -247,7 +277,8 @@ class LiveHub:
             return deid.deidentify(text, candidate_id=candidate_id, known=known).text
 
         try:
-            async for result in self.stt.stream(self.audio.open(turn), language=self.language):
+            language = str(getattr(stt, "language", "ko-KR"))
+            async for result in stt.stream(self.audio.open(turn), language=language):
                 received = time.monotonic()
                 if not result.is_final:
                     visible = stable_prefix(result.text)
@@ -278,6 +309,7 @@ class LiveHub:
                             text_deidentified=deidentify(db, result.text),
                             start_ms=origin + result.start_ms,
                             end_ms=origin + result.end_ms,
+                            model=model,
                         )
                         db.add(seg)
                         db.commit()

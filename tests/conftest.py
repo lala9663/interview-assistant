@@ -81,6 +81,7 @@ def api_settings(db_path: Path, key: str, tmp_path: Path, **overrides):
         deid_file=ROOT / "config" / "deid.yaml",
         uploads_dir=tmp_path / "uploads",
         recordings_dir=tmp_path / "recordings",
+        weights_dir=tmp_path / "weights",
         dev_interviewer=None,
         demo_speed=0,
     )

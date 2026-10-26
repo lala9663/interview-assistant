@@ -1,0 +1,85 @@
+<script setup lang="ts">
+import { LockIcon, TriangleAlertIcon } from '@lucide/vue'
+import { computed, ref } from 'vue'
+
+import { useMe, useModelCatalog, useModelHistory, useModelSettings } from '@/api/queries'
+import type { ModelRoleState } from '@/api/types'
+import EmptyState from '@/components/common/EmptyState.vue'
+import ErrorState from '@/components/common/ErrorState.vue'
+import Page from '@/components/common/Page.vue'
+import PageHeader from '@/components/common/PageHeader.vue'
+import { Badge } from '@/components/ui/badge'
+import { Card } from '@/components/ui/card'
+import { Skeleton } from '@/components/ui/skeleton'
+
+import ChangeModelDialog from './ChangeModelDialog.vue'
+import ModelHistory from './ModelHistory.vue'
+import RoleCard from './RoleCard.vue'
+
+/** 관리자 > 모델 설정: the AI provider of each role, its tests, changes without a restart, and history. */
+const me = useMe()
+const isAdmin = computed(() => me.data?.is_admin === true)
+const settings = useModelSettings(isAdmin)
+const catalog = useModelCatalog(isAdmin)
+const history = useModelHistory(isAdmin)
+
+const editing = ref<ModelRoleState | null>(null)
+const dialogOpen = ref(false)
+
+function edit(state: ModelRoleState) {
+  editing.value = state
+  dialogOpen.value = true
+}
+</script>
+
+<template>
+  <Page>
+    <PageHeader
+      eyebrow="관리자"
+      title="모델 설정"
+      description="역할마다 AI 모델을 고르고, 테스트하고, 서버 재시작 없이 적용합니다. 진행 중인 면접은 시작할 때의 모델을 끝까지 씁니다."
+    >
+      <template v-if="settings.data" #actions>
+        <Badge variant="outline" class="tabular">설정 rev {{ settings.data.revision }}</Badge>
+      </template>
+    </PageHeader>
+
+    <EmptyState
+      v-if="me.data && !isAdmin"
+      :icon="LockIcon"
+      title="관리자만 볼 수 있습니다"
+      description="모델 설정은 관리자 권한이 있는 계정에서만 바꿀 수 있습니다."
+    />
+    <template v-else>
+      <div
+        v-if="settings.data && !settings.data.persistent"
+        class="mb-4 flex items-start gap-2 rounded-lg border border-[color-mix(in_oklch,var(--warning)_40%,transparent)] bg-[color-mix(in_oklch,var(--warning)_8%,transparent)] px-4 py-3 text-[13px]"
+        role="alert"
+      >
+        <TriangleAlertIcon class="mt-0.5 size-4 shrink-0 text-warning" aria-hidden="true" />
+        모델 설정 테이블이 없어 바꿀 수 없습니다. 서버에서 <code class="font-mono">uv run alembic upgrade head</code>를 실행하세요.
+      </div>
+
+      <ErrorState v-if="settings.isError" :error="settings.error" @retry="settings.refetch()" />
+      <div v-else class="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
+        <template v-if="settings.data">
+          <RoleCard v-for="r in settings.data.roles" :key="r.role" :state="r" @change="edit(r)" />
+        </template>
+        <template v-else>
+          <Skeleton v-for="i in 6" :key="i" class="h-52 rounded-xl" />
+        </template>
+      </div>
+
+      <h2 class="mt-10 mb-3 text-[15px] font-semibold tracking-tight">변경 이력</h2>
+      <Card class="overflow-hidden">
+        <ErrorState v-if="history.isError" :error="history.error" @retry="history.refetch()" />
+        <div v-else-if="!history.data" class="space-y-2 p-4">
+          <Skeleton v-for="i in 4" :key="i" class="h-10" />
+        </div>
+        <ModelHistory v-else :changes="history.data" :catalog="catalog.data ?? []" />
+      </Card>
+    </template>
+
+    <ChangeModelDialog :open="dialogOpen" :state="editing" :catalog="catalog.data ?? []" @close="dialogOpen = false" />
+  </Page>
+</template>

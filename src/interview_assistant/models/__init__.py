@@ -1,5 +1,6 @@
 """ORM models. Import this package so every table is registered on `Base.metadata`."""
 
+from interview_assistant.models.ai_config import AiModelChange, AiModelSetting, ModelChangeKind
 from interview_assistant.models.audit import ActorType, AuditLog
 from interview_assistant.models.base import Base
 from interview_assistant.models.deid import DeidCategory, DeidMapping
@@ -35,6 +36,8 @@ from interview_assistant.models.recruiting import (
 
 __all__ = [
     "ActorType",
+    "AiModelChange",
+    "AiModelSetting",
     "AiScoringStatus",
     "Application",
     "AuditLog",
@@ -52,6 +55,7 @@ __all__ = [
     "InterviewerRole",
     "InterviewSession",
     "JobPosting",
+    "ModelChangeKind",
     "PostingStatus",
     "PresetQuestion",
     "QAItem",

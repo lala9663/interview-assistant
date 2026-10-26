@@ -114,10 +114,15 @@ def _hash01(text: str) -> float:
     return (h % 10000) / 10000
 
 
+# Configuration, not demo data: model settings and their history survive a reseed.
+KEEP_TABLES = frozenset({"ai_model_settings", "ai_model_changes"})
+
+
 def clear(db: Session) -> None:
-    """Delete every row, children first."""
+    """Delete every demo row, children first."""
     for table in reversed(Base.metadata.sorted_tables):
-        db.execute(delete(table))
+        if table.name not in KEEP_TABLES:
+            db.execute(delete(table))
     db.commit()
 
 
@@ -156,6 +161,8 @@ class _Seeder:
                 name=row["name"],
                 job_family=row["job_family"],
                 department=row["department"],
+                # The mock's signed-in interviewer (김서연) administers model settings.
+                is_admin=row["key"] == self.data["me"],
                 # The signed-in interviewer of the mock comes first (fallback "me").
                 created_at=base + timedelta(minutes=0 if row["key"] == self.data["me"] else i + 1),
             )

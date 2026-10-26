@@ -1,11 +1,13 @@
-"""Resolve `impl` names from providers.yaml to provider classes.
+"""Resolve `impl` names to provider classes.
 
-Register a new implementation by adding its import path below. Modules are imported lazily, so
-optional dependencies (anthropic, google-cloud-speech, ...) are only required when selected.
+Register a new implementation by adding its import path below and its entry in catalog.py (what
+the admin screen shows). Modules are imported lazily, so optional dependencies (anthropic,
+google-cloud-speech, faster-whisper ...) are only required when selected.
 """
 
 from __future__ import annotations
 
+from collections.abc import Mapping
 from importlib import import_module
 from typing import Any
 
@@ -19,6 +21,7 @@ _IMPLS: dict[str, dict[str, str]] = {
     "stt": {
         "fake": "interview_assistant.providers.fake:FakeSTT",
         "google_stt_v2": "interview_assistant.providers.stt.google_stt_v2:GoogleSTTv2",
+        "faster_whisper": "interview_assistant.providers.stt.faster_whisper:FasterWhisperSTT",
     },
     "embedding": {
         "fake": "interview_assistant.providers.fake:FakeEmbedding",
@@ -39,7 +42,13 @@ def is_registered(kind: str, impl: str) -> bool:
     return impl in _IMPLS.get(kind, {})
 
 
-def resolve(kind: str, spec: ProviderSpec) -> Any:
+def import_path(kind: str, impl: str) -> str | None:
+    return _IMPLS.get(kind, {}).get(impl)
+
+
+def resolve(kind: str, spec: ProviderSpec, context: Mapping[str, Any] | None = None) -> Any:
+    """Build the provider. `context` holds runtime values (the weights folder ...) a class asks
+    for by listing their names in `context_keys`; they override same-named spec options."""
     try:
         path = _IMPLS[kind][spec.impl]
     except KeyError as e:
@@ -56,4 +65,5 @@ def resolve(kind: str, spec: ProviderSpec) -> Any:
             f"or its dependency is missing ({e})"
         ) from e
     cls = getattr(module, class_name)
-    return cls(**spec.options)
+    wanted = {k: v for k, v in (context or {}).items() if k in getattr(cls, "context_keys", ())}
+    return cls(**{**spec.options, **wanted})

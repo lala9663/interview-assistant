@@ -4,13 +4,13 @@ JD 기반 서류 선별, 실시간 면접 보조(STT + 꼬리질문), 평점, �
 
 - 업무정의서: https://claude.ai/artifact/KHpkqy2oKKChicmheA2byK
 - PoC 환경: Google Cloud (Vertex AI, Speech-to-Text v2, Cloud SQL)
-- 원칙: LLM / STT / 임베딩 / 화자분리는 전부 `config/providers.yaml`에서 교체한다. 업무 로직은 `providers/base.py`의 인터페이스만 호출한다.
+- 원칙: LLM / STT / 임베딩 / 화자분리는 관리자 화면(관리자 > 모델 설정)에서 서버 재시작 없이 교체한다. `config/providers.yaml`은 처음 기동할 때의 기본값이다. 업무 로직은 `providers/base.py`의 인터페이스만 호출한다.
 
 ## 구조
 
 ```
 config/
-  providers.yaml        # PoC 기본값 (GCP)
+  providers.yaml        # PoC 기본값 (GCP). 처음 기동할 때만 읽고, 그 뒤로는 DB의 모델 설정이 이긴다
   providers.fake.yaml   # 자격증명 없이 로컬 실행·테스트용
   deid.yaml             # 비식별화: 토큰 형식, 사전 경로, 탐지기 목록, 예외 목록
   deid/                 # 학교·회사 사전 초안 (공개 기관명)
@@ -19,12 +19,13 @@ src/interview_assistant/
   crypto.py             # 컬럼 암호화 (Fernet, IA_ENCRYPTION_KEY)
   db.py                 # 엔진, 세션 팩토리
   main.py               # FastAPI 앱 (/health, /api 라우터, 시작 시 멈춘 AI 채점 재개)
-  runtime.py            # 앱이 들고 있는 것: provider, DB, 비식별화, AI 게이트웨이, 전사 허브, 백그라운드 작업
+  runtime.py            # 앱이 들고 있는 것: 모델 관리자(역할별 provider), DB, 비식별화, 전사 허브, 백그라운드 작업
+  ai_models/            # 관리자 > 모델 설정: store(활성 설정·이력 DB), manager(revision별 스냅샷, 세션 고정, 원자적 교체), probe(연결 테스트)
   models/               # ORM 모델 17개 (업무정의서 6장 13개 + 비식별 역매핑 + 사전 질문·꼬리질문 후보·전사 구간)
   domain.py             # JSON 컬럼 모양 (역량, 지원자 프로필)
   interviews.py         # 단계(stage)·집계·세션이 쓰는 역량 사전 규칙
   schedule.py           # 공통 빈 시간, 슬롯 후보 (프론트 lib/schedule.ts와 같은 규칙 + 잡힌 면접 제외)
-  api/                  # REST·SSE API (docs/api-contract.md). routes/ 기능별 라우터, schemas.py 응답 스키마, views.py ORM → 응답
+  api/                  # REST·SSE API (docs/api-contract.md). routes/ 기능별 라우터(admin = 모델 설정, 관리자만), schemas.py 응답 스키마, views.py ORM → 응답
   ai/                   # AI 작업: gateway(가드 → provider → 감사 로그), guard, prompts, competency, screening, followups, scoring
   live/                 # 실시간 전사: hub(STT → 비식별화 → SSE), audio(오디오 소스, 지금은 대본 읽는 가상 지원자)
   demo/                 # 데모 데이터(프론트 모의 데이터와 같은 가상 데이터)와 시드, 가상 지원자 대본
@@ -42,12 +43,18 @@ src/interview_assistant/
     pdf.py, word.py, powerpoint.py, webpage.py   # PDF, DOCX, PPTX, HTML 구현
     normalize.py        # NFC, 제로폭 문자 제거, 전각 숫자 변환 (모든 추출 결과에 적용)
   providers/
-    base.py             # LLMProvider, STTProvider, EmbeddingProvider, DiarizationProvider
+    base.py             # LLMProvider, STTProvider, EmbeddingProvider, DiarizationProvider (공통: model, warm_up), 오디오 형식
     registry.py         # impl 이름 -> 구현 클래스
+    catalog.py          # 관리자 화면이 고르는 목록: 역할, 데이터 위치, 옵션 스키마, 요구 조건(네트워크 없이)
+    weights.py          # 모델 가중치: 커밋 고정·sha256, 이어받는 다운로드, 진행률
+    audio.py            # 파일 URI, 16kHz PCM 디코딩(PyAV), 조각 내기, 내장 한국어 샘플(samples/, FLEURS CC BY 4.0)
+    stt/faster_whisper.py  # 로컬 Whisper STT (CPU int8, 한국어, VAD, stream·transcribe)
     fake.py             # 자격증명 없이 도는 구현 (speed로 지연 흉내)
     fake_tasks.py       # fake LLM이 앱 프롬프트에 규칙으로 답하는 부분 (모양만 그럴듯, 품질 아님)
 scripts/
   seed_demo.py          # 데모 데이터 시드 (공고 3, 지원자 20, 면접관 5, 진행 중 1, 완료 4)
+  grant_admin.py        # 면접관에게 관리자 권한 (0004 이전 DB용, SSO 전까지)
+  bench_whisper.py      # 이 PC에서 Whisper 크기별 속도·메모리·CER·스트리밍 지연 측정
   export_mock_data.mjs  # 프론트 모의 데이터 → src/interview_assistant/demo/mock_data.json
   check_leaks.py        # 비식별화 누출 검수 (텍스트 샘플 / --documents 파일 샘플 / --report 검토 리포트)
   make_resume_fixtures.py  # 가상 이력서 20건과 정답 목록 생성
@@ -55,17 +62,19 @@ tests/
   fixtures/deid_samples.yaml  # 합성 텍스트 샘플 20건과 정답 목록
   fixtures/resumes/     # 가상 이력서 파일 20건 (PDF 6, DOCX 4, PPTX 3, HTML 4, 스캔 PDF 3)과 manifest.yaml
 docs/
-  api-contract.md       # 프론트 ↔ 백엔드 REST·SSE 계약, 모델 결정, 남은 과제 (백엔드 구현 완료, fake provider)
+  api-contract.md       # 프론트 ↔ 백엔드 REST·SSE 계약, 모델 결정, 남은 과제
+  whisper-benchmark.md  # 로컬 Whisper 측정 결과 (이 노트북, CPU)
+weights/                # 내려받은 모델 가중치 (git 제외, IA_WEIGHTS_DIR)
 frontend/               # 면접관 UI (Vue 3). 백엔드 없이 모의 API(MSW)로 전 화면 동작
   src/api/              # types.ts(모델과 1:1), endpoints, TanStack Query composable, SSE 파서
   src/mocks/            # 모의 API: 가상 데이터, 핸들러, 실시간 전사·꼬리질문 스트림 흉내
-  src/features/         # 화면: dashboard, postings, screening, sessions, interview(실시간), evaluation, schedule
+  src/features/         # 화면: dashboard, postings, screening, sessions, interview(실시간), evaluation, schedule, admin(모델 설정)
 ```
 
 ## 실행
 
 ```bash
-uv sync
+uv sync --extra whisper   # 로컬 Whisper STT까지. 빼면 관리자 화면에 "패키지 없음"으로 보인다
 cp .env.example .env
 ```
 
@@ -83,7 +92,7 @@ uv run uvicorn interview_assistant.main:app --reload
 ```
 
 - 시드는 프론트 모의 데이터와 같은 가상 데이터를 지금 시각 기준으로 깐다 (진행 중 면접 1, 오늘 일정, 완료 4 중 1건은 AI 채점 중). 다른 날 다시 쓰려면 `--reset`으로 다시 넣는다. 지원자 신원도 지어낸 값(010-0000-xxxx, example.com)을 실제처럼 암호화해 넣는다.
-- 로그인은 아직 없다. `IA_DEV_INTERVIEWER`(사번, 시드의 김서연 = E24017)가 로그인한 면접관이다.
+- 로그인은 아직 없다. `IA_DEV_INTERVIEWER`(사번, 시드의 김서연 = E24017)가 로그인한 면접관이다. 김서연은 관리자라 사이드바에 "모델 설정"이 보인다. Alembic 0004 이전에 시드한 DB면 `uv run python scripts/grant_admin.py E24017`로 관리자를 준다.
 - 서버는 한 프로세스로 띄운다 (실시간 전사 상태가 메모리에 있다). `--workers`를 쓰지 않는다.
 - API 문서: http://localhost:8000/docs, 계약: [docs/api-contract.md](docs/api-contract.md).
 
@@ -95,11 +104,41 @@ uv run pytest
 
 ## AI (fake provider로 연결)
 
-서류 선별, 역량 사전 초안, 꼬리질문, 평점은 모두 `ai/gateway.py`를 거쳐 `config/providers.*.yaml`에 적힌 provider를 부른다. 호출 전에 프롬프트를 비식별 필드로만 만들고 가드가 식별 정보를 다시 확인하며, 호출마다 감사 로그를 남긴다. `providers.yaml`의 `impl`만 실제 구현(`anthropic_vertex` 등, 3단계)으로 바꾸면 실제 모델로 바뀐다. `tests/test_api_privacy.py`가 YAML에만 적힌 provider로 모든 호출이 가는지, 프롬프트에 식별 정보가 없는지 검사한다.
+서류 선별, 역량 사전 초안, 꼬리질문, 평점은 모두 `ai/gateway.py`를 거쳐 역할(`primary`, `screening`)에 정해진 provider를 부른다. 호출 전에 프롬프트를 비식별 필드로만 만들고 가드가 식별 정보를 다시 확인하며, 호출마다 감사 로그를 남긴다. 어떤 provider를 쓸지는 관리자 화면에서 바꾸고(아래 "AI 모델 설정"), 처음 기동할 때만 `config/providers.*.yaml`을 읽는다. 실제 LLM 구현(`anthropic_vertex`, 3단계)이 붙으면 화면에서 고르기만 하면 된다. `tests/test_api_privacy.py`가 YAML로 정한 provider와 화면에서 바꾼 provider 모두로 모든 호출이 가는지, 프롬프트에 식별 정보가 없는지 검사한다.
 
 - fake LLM은 앱의 프롬프트 태그를 읽어 규칙으로 답한다 (`providers/fake_tasks.py`). 화면과 흐름을 확인하는 용도이고, 내용의 품질은 실제 모델 연결 뒤에 검증한다.
 - 실시간 전사는 실제 오디오(11단계, LiveKit) 전까지 `live/audio.py`의 가상 지원자가 데모 대본을 읽고 fake STT가 받아 적는다. 속도는 `speed`(providers.fake.yaml)와 `IA_DEMO_SPEED`, 1이면 프론트 모의 모드와 비슷하다.
 - 업로드한 원본 서류는 `IA_UPLOADS_DIR`(기본 `uploads/`, git 제외)에 지원서 id 이름으로 저장하고 응답에는 내보내지 않는다.
+
+## AI 모델 설정 (관리자)
+
+사이드바 "관리자 > 모델 설정"(또는 Ctrl+K에서 "모델"). 관리자만 보이고, API(`/api/admin/models/*`)도 관리자가 아니면 403이다.
+
+- 역할 6개 카드: LLM 주 모델, LLM 선별용, STT 실시간, STT 사후, 임베딩, 화자분리. 현재 provider와 실제 모델 이름, 사용 가능 여부(안 되면 이유), 데이터 위치 배지(이 PC / 사내 GCP / 외부), 마지막 변경(누가·언제·사유).
+- "변경": provider 선택 → 모델·옵션 → 요구 조건 확인(구현, 패키지, 환경변수·자격증명이 있는지만, 모델 파일) → 연결 테스트 → 사유 → 적용. 회사 밖으로 데이터를 보내는 provider는 경고 단계에서 확인해야 테스트·적용된다. API 키·자격증명은 화면에서 받지 않는다(서버 환경변수·Secret Manager).
+- 적용은 재시작 없이 바로 된다. 진행 중인 면접은 시작할 때의 모델을 끝까지(실시간 전사, 꼬리질문, 종료 뒤 AI 채점까지) 쓰고, 새 면접부터 새 설정을 쓴다. 결과에는 실제 쓴 모델 이름이 남는다.
+- 활성 설정과 변경 이력은 DB(`ai_model_settings`, `ai_model_changes`, Alembic 0004)에 있다. 아래 "변경 이력"에서 이전 설정으로 되돌린다. 모든 테스트·변경·다운로드는 감사 로그에 남는다(테스트는 수치만, 전사·응답 본문 없음).
+- `seed_demo.py --reset`은 모델 설정을 지우지 않는다.
+
+### 로컬 Whisper STT (`faster_whisper`)
+
+OpenAI Whisper를 이 PC의 CPU에서 돌린다(faster-whisper, CTranslate2 int8, MIT). 한국어 고정, 내장 Silero VAD로 발화를 나누고, 실시간(`stream`: 부분·확정 전사)과 사후(`transcribe`: 파일) 둘 다 된다. 음성은 PC 밖으로 나가지 않는다.
+
+1. `uv sync --extra whisper` (faster-whisper, PyAV, onnxruntime …).
+2. 모델 설정 > STT 사후(또는 실시간) > 변경 > "Whisper (로컬)" > 모델 크기 카드의 "다운로드" (small 486MB, medium 1.5GB, large-v3 3.1GB, large-v3-turbo 1.6GB). Hugging Face에서 커밋 고정·sha256 검증으로 받고 `weights/`(git 제외, `IA_WEIGHTS_DIR`)에 둔다. 끊겨도 이어받는다. 미러는 `HF_ENDPOINT`.
+3. "기술 용어 힌트"에 자주 나오는 용어를 적는다(예: 반도체 공정, CMP, 식각, 수율). 30초 창마다 프롬프트로 들어간다.
+4. 연결 테스트: "내장 샘플"(FLEURS 한국어 11.5초, 정답과 비교한 CER), "마이크로 테스트"(브라우저 녹음 5~10초), "파일". 마이크는 Chrome·Edge에서 http://localhost:5173 을 열고 마이크 권한을 허용해야 한다(Claude 앱의 브라우저 창은 마이크를 막는다).
+5. 사유를 적고 적용. 되돌리려면 변경 이력의 "되돌리기".
+
+측정(이 노트북, i7-1360P, GPU 없음, 배터리 상태): [docs/whisper-benchmark.md](docs/whisper-benchmark.md). 요약: 정확도는 medium 이상이 충분하고 small은 한국어에서 눈에 띄게 틀린다. Whisper는 호출마다 30초 창을 통째로 인코딩해 짧은 발화도 같은 비용이 들어서, 이 CPU로는 실시간 전사가 발화 끝 뒤 수 초~십여 초 늦다. 화면의 권장(실시간 medium, 사후 large-v3)은 정확도 기준이다.
+
+지금 실시간 면접 화면의 음성은 가상 지원자 대본(텍스트)이라 fake STT만 받아 적는다. STT 실시간을 Whisper로 바꾸면 새로 시작하는 면접은 수기 답변 입력으로 바뀐다(감사 로그 `transcript.unsupported_audio`). 마이크·WebRTC 입력(`live/audio.AudioSource`가 16kHz PCM을 내는 구현)이 붙으면 같은 설정이 그대로 쓰인다.
+
+측정 다시 하기 (정답 전사가 있는 WAV 목록 JSON):
+
+```bash
+uv run python scripts/bench_whisper.py --manifest clips.json --sizes small medium large-v3-turbo large-v3
+```
 
 ## DB
 
@@ -182,7 +221,7 @@ uv run python scripts/make_resume_fixtures.py --font C:/Windows/Fonts/malgun.ttf
 
 `frontend/`. Vite + Vue 3 + TypeScript(strict, `vue-tsc`), Tailwind CSS v4 + shadcn-vue 방식 컴포넌트(Reka UI), TanStack Query(`@tanstack/vue-query`), Vue Router, MSW, Chart.js(`vue-chartjs`), vue-sonner, lucide 아이콘(`@lucide/vue`). 명령 팔레트는 Reka UI Listbox, 화면 전환 효과는 Vue `<Transition>`과 CSS만 쓴다. 테스트는 Vitest + Testing Library(Vue) + MSW(node), 린트는 eslint-plugin-vue + typescript-eslint. 폰트는 Pretendard(OFL)를 npm 패키지에서 자체 호스팅한다. Node 24 이상. 이전 React 버전은 git 이력(`93a1780`)에 있다.
 
-화면: 대시보드, 공고·역량 사전(FR-02), 서류 선별(FR-01·03), 면접 목록, 실시간 면접(FR-04~08), 평가 결과(FR-07·08), 면접관 스케줄(FR-09). 다크 모드 기본(시스템 설정 따름), Ctrl/⌘+K 명령 팔레트.
+화면: 대시보드, 공고·역량 사전(FR-02), 서류 선별(FR-01·03), 면접 목록, 실시간 면접(FR-04~08), 평가 결과(FR-07·08), 면접관 스케줄(FR-09), 관리자 > 모델 설정(관리자만). 다크 모드 기본(시스템 설정 따름), Ctrl/⌘+K 명령 팔레트.
 
 ```bash
 cd frontend
@@ -213,4 +252,4 @@ npm run build:mock   # 백엔드 없이 띄우는 데모 빌드
 
 ## 진행 순서
 
-[docs/implementation-order.md](docs/implementation-order.md) 참조. 현재 2단계(비식별화) 구현 완료, 사용자 확인(토큰 형식, 사전, 검토 리포트로 20건 수동 검수) 대기. 4~8단계의 API·저장 부분과 9단계 화면 연결은 fake provider로 먼저 구현했다(2026-10-23): [API 계약](docs/api-contract.md)의 모든 경로, 업로드, 실시간 전사·꼬리질문 SSE, AI 채점, 시드. 남은 것은 3단계 실제 LLM Provider 연결과 프롬프트별 품질 검증, 10~11단계 오디오, 로그인(계약 문서 5장).
+[docs/implementation-order.md](docs/implementation-order.md) 참조. 현재 2단계(비식별화) 구현 완료, 사용자 확인(토큰 형식, 사전, 검토 리포트로 20건 수동 검수) 대기. 4~8단계의 API·저장 부분과 9단계 화면 연결은 fake provider로 먼저 구현했다(2026-10-23): [API 계약](docs/api-contract.md)의 모든 경로, 업로드, 실시간 전사·꼬리질문 SSE, AI 채점, 시드. 관리자 > 모델 설정(역할별 provider 선택·테스트·재시작 없는 교체·이력·되돌리기)과 첫 실제 provider인 로컬 Whisper STT를 붙였다(2026-10-25). 남은 것은 3단계 실제 LLM Provider 연결과 프롬프트별 품질 검증, 10~11단계 오디오(마이크·WebRTC 입력), 로그인(계약 문서 5장).

@@ -11,11 +11,13 @@ from fastapi.testclient import TestClient
 from interview_assistant.demo import mock_data
 from interview_assistant.demo.seed import fake_identity
 from interview_assistant.main import create_app
-from interview_assistant.providers import registry
+from interview_assistant.providers import catalog, registry
+from interview_assistant.providers.catalog import DataLocation, ImplInfo, OptionField
 from interview_assistant.providers.fake import FakeLLM
 from tests.api_util import (
     COMPLETED,
     LIVE,
+    P3,
     SCHEDULED,
     get_paths,
     json_keys,
@@ -189,3 +191,63 @@ def test_providers_come_from_the_yaml_and_only_see_deidentified_text(
     org_values = [*taeo["schools"], *taeo["companies"], *_seeded_identity(7).companies]
     for prompt in SpyLLM.prompts:
         _assert_clean(prompt, "prompt", raw + org_values)
+
+
+def test_a_model_switched_at_runtime_still_only_sees_deidentified_text(api, monkeypatch):
+    """Switching the LLM from the admin screen (no restart, no YAML) changes nothing about what a
+    model may see: screening, follow-ups, scoring and drafts of work started after the switch go
+    to the new provider, through the same de-identification and guard."""
+    monkeypatch.setitem(registry._IMPLS["llm"], "spy", f"{__name__}:SpyLLM")
+    spy = ImplInfo(
+        "llm",
+        "spy",
+        "Spy",
+        "",
+        DataLocation.local,
+        "",
+        "test",
+        ("llm.primary", "llm.screening"),
+        options=(OptionField("model", "모델", "string", "spy-runtime"),),
+    )
+    catalog.register(spy)
+    SpyLLM.prompts = []
+    try:
+        for role in ("llm.primary", "llm.screening"):
+            response = api.post(
+                f"/api/admin/models/{role}/apply",
+                json={"impl": "spy", "options": {"model": f"spy-{role}"}, "reason": "비식별 검증"},
+            )
+            assert response.status_code == 200, response.text
+
+        cand11 = _seeded_identity(11)
+        assert upload(api, "이력서_문태오.docx").status_code == 201
+        api.post(f"/api/sessions/{SCHEDULED}/consent", json={"consent_recording": False})
+        api.post(f"/api/sessions/{SCHEDULED}/start")
+        question = f"{cand11.name}님, 연락처 {cand11.phones[0]} 맞으신가요? 가장 큰 성과는?"
+        qa = api.post(
+            f"/api/sessions/{SCHEDULED}/qa-items",
+            json={"question": question, "question_source": "interviewer"},
+        ).json()
+        answer = f"네 {cand11.name}입니다. {cand11.phones[0]}로 연락 주세요. 공정 데이터로 수율을 3% 올렸습니다."
+        api.patch(f"/api/qa-items/{qa['id']}", json={"answer_text": answer})
+        follow = api.post(f"/api/sessions/{SCHEDULED}/follow-ups", json={"qa_item_id": qa["id"]})
+        events = sse_events(follow.text)
+        assert events[0][1]["model"] == "spy-llm.primary" and events[-1][0] == "batch.done"
+        api.post(f"/api/sessions/{SCHEDULED}/end")
+        ev = wait_for(
+            api, f"/api/sessions/{SCHEDULED}/evaluation", lambda b: b["ai"]["status"] == "completed"
+        )
+        assert ev["ai"]["model"] == "spy-llm.primary"
+        assert api.post(f"/api/postings/{P3}/competency-sets/generate").status_code == 201
+        assert (
+            api.get(f"/api/postings/{P2}/applications").json()[-1]["screening"]["model"]
+            == "spy-llm.screening"
+        )
+    finally:
+        catalog.unregister(spy)
+
+    kinds = {"<document>", "<follow_up_request>", "<answer>", "<job_posting>"}
+    assert all(any(k in p for p in SpyLLM.prompts) for k in kinds)
+    taeo = _manifest_identity("이력서_문태오.docx")
+    for prompt in SpyLLM.prompts:
+        _assert_clean(prompt, "prompt", [question, answer, *taeo["schools"], *taeo["companies"]])

@@ -3,6 +3,7 @@ import { api } from './client'
 import type {
   ActivityItem,
   ApplicationDetail,
+  ApplyModelRequest,
   ApplicationRow,
   Availability,
   CandidateIndexItem,
@@ -16,9 +17,18 @@ import type {
   Evaluation,
   Interviewer,
   Me,
+  ModelChange,
+  ModelCheck,
+  ModelDownload,
+  ModelImpl,
+  ModelRoleState,
+  ModelSettings,
+  ModelSpec,
+  ModelTestResult,
   PostingDetail,
   PostingSummary,
   QAItem,
+  RevertModelRequest,
   SchedulableApplication,
   ScheduleSuggestion,
   ScheduleSuggestionRequest,
@@ -87,4 +97,23 @@ export const endpoints = {
   createAvailability: (body: CreateAvailabilityRequest) => api.post<Availability>('/availabilities', body),
   deleteAvailability: (id: string) => api.delete<void>(`/availabilities/${id}`),
   scheduleSuggestions: (body: ScheduleSuggestionRequest) => api.post<ScheduleSuggestion[]>('/schedule/suggestions', body),
+
+  // 관리자 > 모델 설정 (admins only, 403 otherwise)
+  modelSettings: (signal?: AbortSignal) => api.get<ModelSettings>('/admin/models', signal),
+  modelCatalog: (signal?: AbortSignal) => api.get<ModelImpl[]>('/admin/models/catalog', signal),
+  checkModel: (role: string, spec: ModelSpec) => api.post<ModelCheck>(`/admin/models/${role}/check`, spec),
+  /** STT and diarization take `audio` (a recording or file); without it the server's Korean sample. */
+  testModel: (role: string, spec: ModelSpec, opts: { confirmExternal?: boolean; audio?: Blob | null } = {}) => {
+    const form = new FormData()
+    form.append('spec', JSON.stringify(spec))
+    form.append('confirm_external', String(Boolean(opts.confirmExternal)))
+    if (opts.audio) form.append('audio', opts.audio, opts.audio instanceof File ? opts.audio.name : 'recording.webm')
+    return api.postForm<ModelTestResult>(`/admin/models/${role}/test`, form)
+  },
+  applyModel: (role: string, body: ApplyModelRequest) => api.post<ModelRoleState>(`/admin/models/${role}/apply`, body),
+  modelHistory: (signal?: AbortSignal) => api.get<ModelChange[]>('/admin/models/history?limit=50', signal),
+  revertModel: (changeId: string, body: RevertModelRequest) => api.post<ModelRoleState>(`/admin/models/history/${changeId}/revert`, body),
+  modelDownloads: (signal?: AbortSignal) => api.get<ModelDownload[]>('/admin/models/downloads', signal),
+  startDownload: (impl: string, model: string) => api.post<ModelDownload>('/admin/models/downloads', { impl, model }),
+  cancelDownload: (impl: string, model: string) => api.delete<ModelDownload>(`/admin/models/downloads/${impl}/${model}`),
 }

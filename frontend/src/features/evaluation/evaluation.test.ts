@@ -59,7 +59,7 @@ const EV: Evaluation = {
   ai: { status: 'completed', model: 'm', prompt_version: 'v', samples: 3, scores: aiScores, summary: summarizeAiScores(aiScores) },
   interviewers: [
     {
-      interviewer: { id: 'iv1', employee_no: 'E1', name: '면접관A', job_family: null, department: null, created_at: '' },
+      interviewer: { id: 'iv1', employee_no: 'E1', name: '면접관A', job_family: null, department: null, is_admin: false, created_at: '' },
       role: 'lead',
       submitted_at: '2026-10-20T01:00:00Z',
       scores: [
@@ -68,7 +68,7 @@ const EV: Evaluation = {
       ],
     },
     {
-      interviewer: { id: 'iv2', employee_no: 'E2', name: '면접관B', job_family: null, department: null, created_at: '' },
+      interviewer: { id: 'iv2', employee_no: 'E2', name: '면접관B', job_family: null, department: null, is_admin: false, created_at: '' },
       role: 'panel',
       submitted_at: null,
       scores: [],

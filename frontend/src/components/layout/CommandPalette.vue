@@ -4,14 +4,14 @@ import { ListboxContent, ListboxFilter, ListboxGroup, ListboxGroupLabel, Listbox
 import { computed, onScopeDispose, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
 
-import { useCandidateIndex, usePostings, useSessions } from '@/api/queries'
+import { useCandidateIndex, useMe, usePostings, useSessions } from '@/api/queries'
 import { Dialog, DialogContent, DialogDescription, DialogTitle } from '@/components/ui/dialog'
 import { Kbd } from '@/components/ui/kbd'
 import { SCREENING_STATUS_LABEL, SESSION_STATUS_LABEL } from '@/lib/labels'
 import { useTheme, type ThemePreference } from '@/lib/theme'
 import { formatDateTime } from '@/lib/time'
 
-import { NAV_ITEMS } from './nav'
+import { navItemsFor } from './nav'
 
 const open = defineModel<boolean>('open', { default: false })
 
@@ -20,6 +20,7 @@ const { setPreference } = useTheme()
 const candidates = useCandidateIndex(open)
 const sessions = useSessions()
 const postings = usePostings()
+const me = useMe()
 const search = ref('')
 
 const onKey = (e: KeyboardEvent) => {
@@ -42,7 +43,7 @@ function matches(value: string, keywords: readonly string[] = []) {
   return `${value} ${keywords.join(' ')}`.toLowerCase().includes(q)
 }
 
-const navItems = computed(() => NAV_ITEMS.filter((n) => matches(`nav ${n.label}`, [n.keywords ?? '', n.fr ?? ''])))
+const navItems = computed(() => navItemsFor(me.data?.is_admin).filter((n) => matches(`nav ${n.label}`, [n.keywords ?? '', n.fr ?? ''])))
 const sessionItems = computed(() =>
   (sessions.data ?? [])
     .filter((s) => s.status === 'in_progress' || s.status === 'scheduled' || s.status === 'completed')
@@ -103,6 +104,7 @@ const headingClass = 'px-2.5 pt-3 pb-1.5 text-[11px] font-medium text-muted-fore
               <component :is="n.icon" />
               <span class="flex-1">{{ n.label }}</span>
               <span v-if="n.fr" class="text-[11px] text-muted-foreground">{{ n.fr }}</span>
+              <span v-else-if="n.adminOnly" class="text-[11px] text-muted-foreground">관리자</span>
             </ListboxItem>
           </ListboxGroup>
 

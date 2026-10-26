@@ -54,11 +54,11 @@ def transcript_stream(session_id: str, db: Db, runtime: RuntimeDep) -> Streaming
 def follow_ups(
     session_id: str, body: s.FollowUpRequest, db: Db, runtime: RuntimeDep
 ) -> StreamingResponse:
-    get_session(db, session_id)
+    found = get_session(db, session_id)
     return sse(
         follow_up_events(
             runtime.session_factory,
-            runtime.ai,
+            runtime.pinned(found).ai,
             runtime.deid,
             session_id=session_id,
             qa_item_id=body.qa_item_id,

@@ -24,6 +24,10 @@ gcp = [
     "anthropic[vertex]",
     "google-cloud-speech>=2.27",
 ]
+# Local STT on CPU (faster-whisper, MIT). Weights are downloaded from the admin screen.
+whisper = [
+    "faster-whisper>=1.2.1",
+]
 
 [dependency-groups]
 dev = [

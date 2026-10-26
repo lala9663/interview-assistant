@@ -22,6 +22,7 @@ import { BARS_LEVELS, SCREENING_STATUSES } from '@/api/types'
 import { availabilityByInterviewer, suggestSlots } from '@/lib/schedule'
 import { isSameKstDay } from '@/lib/time'
 
+import { adminHandlers } from './admin'
 import { ANSWER_BANK, GENERIC_BANK } from './data/banks'
 import { P1, P2 } from './data/postings'
 import { AI_MODEL, getDb, newId, SCREENING_MODEL, type MockDb, type QAMeta } from './db'
@@ -82,6 +83,7 @@ function sessionOr404(db: MockDb, id: string) {
 }
 
 export const handlers = [
+  ...adminHandlers,
   // ----- me / dashboard / activity ---------------------------------------------------------------
   http.get(`${API}/me`, async () => {
     await latency()

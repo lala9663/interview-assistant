@@ -43,6 +43,17 @@ def current_interviewer(db: Db, runtime: RuntimeDep) -> Interviewer:
 Me = Annotated[Interviewer, Depends(current_interviewer)]
 
 
+def current_admin(me: Me) -> Interviewer:
+    """Admin-only routes (model settings). The flag is `Interviewer.is_admin`; once SSO lands it is
+    set from a group claim and these routes stay as they are."""
+    if not me.is_admin:
+        raise HTTPException(403, "관리자만 쓸 수 있습니다.")
+    return me
+
+
+Admin = Annotated[Interviewer, Depends(current_admin)]
+
+
 def audit(
     db: Session,
     me: Interviewer | None,

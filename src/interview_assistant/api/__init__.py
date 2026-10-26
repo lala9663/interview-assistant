@@ -1,8 +1,10 @@
-"""REST + SSE API under /api (docs/api-contract.md). One router per area of the contract."""
+"""REST + SSE API under /api (docs/api-contract.md). One router per area of the contract;
+`admin` (model settings) is for admins only."""
 
 from fastapi import APIRouter
 
 from interview_assistant.api.routes import (
+    admin,
     dashboard,
     evaluation,
     live,
@@ -13,5 +15,5 @@ from interview_assistant.api.routes import (
 )
 
 router = APIRouter(prefix="/api")
-for module in (dashboard, postings, screening, sessions, live, evaluation, schedule):
+for module in (dashboard, postings, screening, sessions, live, evaluation, schedule, admin):
     router.include_router(module.router)

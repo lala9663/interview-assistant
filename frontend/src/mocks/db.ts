@@ -43,6 +43,7 @@ import { addDays, addMinutes, kstDate, kstParts, MINUTE, startOfKstDay, startOfK
 import { ANSWER_BANK, GENERIC_BANK, type SuggestionSeed } from './data/banks'
 import { CANDIDATES, INTERVIEWERS, ME_KEY, pseudonymOf } from './data/people'
 import { P1, P2, POSTING_SEEDS } from './data/postings'
+import { createModelState, type ModelState } from './models'
 
 export const AI_MODEL = 'claude-opus-5-5'
 export const SCORING_PROMPT = 'score-v0.3'
@@ -118,10 +119,13 @@ export class MockDb {
   transcripts = new Map<string, TranscriptSegment[]>()
   suggestions = new Map<string, RegisteredSuggestion>()
   genericCursor = new Map<string, number>()
+  /** 관리자 > 모델 설정 (mocks/models.ts) */
+  models: ModelState
 
   constructor(now = new Date()) {
     this.now = now
     seed(this)
+    this.models = createModelState(now, newId)
   }
 
   // ----- lookups ---------------------------------------------------------------------------------
@@ -552,7 +556,7 @@ function seed(db: MockDb) {
   }
 
   for (const i of INTERVIEWERS) {
-    db.interviewers.push({ id: i.id, employee_no: i.employee_no, name: i.name, job_family: i.job_family, department: i.department, created_at: iso(daysAgo(120)) })
+    db.interviewers.push({ id: i.id, employee_no: i.employee_no, name: i.name, job_family: i.job_family, department: i.department, is_admin: i.key === ME_KEY, created_at: iso(daysAgo(120)) })
   }
 
   for (const p of POSTING_SEEDS) {

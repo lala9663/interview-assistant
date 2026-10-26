@@ -1,7 +1,8 @@
 """Error bodies in the FastAPI shape the frontend reads (`{"detail": ...}`), in Korean.
 
 404 missing resource, 409 state conflict, 422 validation (`[{loc, msg, type}]`), 502 the AI
-answered unusably or was refused by the guard, 503 de-identification is not configured.
+answered unusably or was refused by the guard, 503 de-identification is not configured or the
+model configured for a role cannot run. 403 admin-only (model settings).
 """
 
 from __future__ import annotations
@@ -12,7 +13,10 @@ from fastapi.responses import JSONResponse
 
 from interview_assistant.ai import AiOutputInvalid
 from interview_assistant.ai.guard import IdentifierInPrompt
+from interview_assistant.ai_models.manager import ChangeRefused
 from interview_assistant.deid.service import DeidUnavailable
+from interview_assistant.providers.base import ProviderUnavailable
+from interview_assistant.providers.catalog import SpecError
 
 
 def _object_particle(word: str) -> str:
@@ -82,6 +86,19 @@ def install(app: FastAPI) -> None:
     @app.exception_handler(AiOutputInvalid)
     async def _bad_ai(_: Request, exc: AiOutputInvalid) -> JSONResponse:
         return JSONResponse({"detail": f"AI 응답을 쓸 수 없습니다: {exc}"}, status_code=502)
+
+    @app.exception_handler(ProviderUnavailable)
+    async def _no_model(_: Request, exc: ProviderUnavailable) -> JSONResponse:
+        return JSONResponse({"detail": str(exc)}, status_code=503)
+
+    @app.exception_handler(SpecError)
+    async def _bad_spec(_: Request, exc: SpecError) -> JSONResponse:
+        detail = [{"loc": ["body", exc.field], "msg": exc.message, "type": "value_error"}]
+        return JSONResponse({"detail": detail}, status_code=422)
+
+    @app.exception_handler(ChangeRefused)
+    async def _refused(_: Request, exc: ChangeRefused) -> JSONResponse:
+        return JSONResponse({"detail": exc.message}, status_code=exc.status)
 
     @app.exception_handler(IdentifierInPrompt)
     async def _guarded(_: Request, exc: IdentifierInPrompt) -> JSONResponse:

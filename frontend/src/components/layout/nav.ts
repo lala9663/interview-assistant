@@ -1,4 +1,4 @@
-import { BriefcaseBusinessIcon, CalendarDaysIcon, FileSearchIcon, LayoutDashboardIcon, MicIcon } from '@lucide/vue'
+import { BriefcaseBusinessIcon, CalendarDaysIcon, FileSearchIcon, LayoutDashboardIcon, MicIcon, SlidersHorizontalIcon } from '@lucide/vue'
 import type { Component } from 'vue'
 
 export interface NavItem {
@@ -8,6 +8,8 @@ export interface NavItem {
   /** FR ids the screen covers (shown in the command palette) */
   fr?: string
   keywords?: string
+  /** shown to admins only (the API answers 403 to everyone else anyway) */
+  adminOnly?: boolean
 }
 
 export const NAV_ITEMS: NavItem[] = [
@@ -16,4 +18,14 @@ export const NAV_ITEMS: NavItem[] = [
   { to: '/screening', label: '서류 선별', icon: FileSearchIcon, fr: 'FR-01·03', keywords: 'screening 지원자 candidate' },
   { to: '/sessions', label: '면접', icon: MicIcon, fr: 'FR-04~08', keywords: 'interview session live 평가 evaluation' },
   { to: '/schedule', label: '면접관 스케줄', icon: CalendarDaysIcon, fr: 'FR-09', keywords: 'schedule calendar 일정 가용' },
+  {
+    to: '/admin/models',
+    label: '모델 설정',
+    icon: SlidersHorizontalIcon,
+    keywords: 'admin model llm stt whisper 관리자 모델 전사 임베딩 화자분리',
+    adminOnly: true,
+  },
 ]
+
+/** The menu a person sees: admin-only items need `is_admin`. */
+export const navItemsFor = (isAdmin: boolean | undefined) => NAV_ITEMS.filter((n) => !n.adminOnly || isAdmin)

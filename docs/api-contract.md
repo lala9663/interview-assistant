@@ -1,6 +1,6 @@
 # API 계약 (프론트 ↔ 백엔드)
 
-2026-10-23 · v0.2 · 프론트(`frontend/`)가 모의 API(MSW)로 먼저 쓰던 계약을 백엔드(FastAPI, `src/interview_assistant/api/`)가 그대로 구현했다. 모든 경로가 동작하고, AI는 Provider 인터페이스를 거쳐 fake provider로 돈다(`config/providers.fake.yaml`). 프론트는 `npm run dev:api`로 실제 API에 붙는다. 실제 모델 연결과 품질 검증은 남은 과제다(5장).
+2026-10-25 · v0.3 · 프론트(`frontend/`)가 모의 API(MSW)로 먼저 쓰던 계약을 백엔드(FastAPI, `src/interview_assistant/api/`)가 그대로 구현했다. 모든 경로가 동작하고, AI는 Provider 인터페이스를 거쳐 돈다. 어떤 provider가 어느 역할을 맡을지는 관리자 화면(관리자 > 모델 설정, 2장 마지막 절)에서 서버 재시작 없이 바꾸고, `config/providers*.yaml`은 처음 기동할 때의 기본값만 정한다. 첫 실제 provider로 로컬 Whisper STT(`faster_whisper`)가 붙었다. 프론트는 `npm run dev:api`로 실제 API에 붙는다. 실제 LLM 연결과 품질 검증은 남은 과제다(5장).
 
 - 타입 정의 원본: [`frontend/src/api/types.ts`](../frontend/src/api/types.ts) (모델과 필드 이름·enum 값 동일). 백엔드 응답 스키마: [`api/schemas.py`](../src/interview_assistant/api/schemas.py) (필드 단위로 같다. `tests/test_api_contract.py`가 enum과 이 문서의 경로 목록을 대조한다)
 - 모의 구현: [`frontend/src/mocks/handlers.ts`](../frontend/src/mocks/handlers.ts) (요청 검증, 오류 코드, 스트림 이벤트 순서까지 이 문서와 같다)
@@ -10,13 +10,14 @@
 
 | 항목 | 규칙 |
 | --- | --- |
-| 경로 | 모든 라우트는 `/api` 아래. 라우터는 기능별(`api/routes/`: dashboard, postings, screening, sessions, live, evaluation, schedule)로 나누고 `/api`로 마운트한다. `/health`는 그대로 둔다 |
-| 형식 | JSON, 필드는 snake_case (Pydantic 필드 이름 그대로). 업로드만 multipart/form-data |
+| 경로 | 모든 라우트는 `/api` 아래. 라우터는 기능별(`api/routes/`: dashboard, postings, screening, sessions, live, evaluation, schedule, admin)로 나누고 `/api`로 마운트한다. `/health`는 그대로 둔다 (활성 provider 클래스와 `ai_config_revision`) |
+| 형식 | JSON, 필드는 snake_case (Pydantic 필드 이름 그대로). 업로드와 모델 연결 테스트(음성 파일)만 multipart/form-data |
 | ID | UUID 문자열 (`IdMixin`) |
 | 시각 | 응답은 UTC, 밀리초, `Z` (`2026-10-23T05:30:00.000Z`, JavaScript `toISOString`과 같은 모양). 요청의 시각은 오프셋이 있어야 한다(없으면 422). 화면은 항상 KST로 표시한다 |
 | enum | 모델 값과 동일: `PostingStatus` draft/open/closed, `ScreeningStatus` passed/hold/rejected, `SessionMode` onsite/remote, `SessionStatus` scheduled/in_progress/completed/cancelled, `InterviewerRole` lead/panel, `QuestionSource` preset/ai_suggested/interviewer, `EvaluatorType` ai/interviewer, `AvailabilitySource` manual/calendar, `ActorType` user/system/ai |
 | 오류 | FastAPI 기본 형식 `{"detail": "메시지"}`. 검증 오류는 422 `{"detail": [{"loc": ["body", "field"], "msg": "...", "type": "..."}]}` (Pydantic 기본 메시지도 한국어로 바꿔 보낸다). 없는 자원 404, 상태 충돌(예: 확정본 수정, 진행 중이 아닌 세션에 질문 기록) 409, AI 응답을 쓸 수 없거나 가드가 호출을 막으면 502, 암호화 키가 없어 비식별화를 못 하면 503. 프론트는 `detail` 문자열을 그대로 토스트에 보여 주므로 한국어로 쓴다 |
 | 인증 | Phase 1은 IAP + 사내 SSO 예정(남은 과제). 지금은 `IA_DEV_INTERVIEWER`(사번)의 면접관, 없으면 가장 먼저 등록된 면접관이 로그인한 사람이다. 쓰기 요청의 행위자는 서버가 정한다 (본문으로 받지 않음) |
+| 권한 | `/api/admin/*`는 관리자(`Interviewer.is_admin`)만, 아니면 403 `관리자만 쓸 수 있습니다.` SSO가 붙으면 그룹 클레임으로 이 플래그를 채우고 API는 그대로 둔다. 시드의 김서연(E24017)이 관리자, 0004 이전 DB는 `scripts/grant_admin.py <사번>` |
 | 감사 로그 | 모든 쓰기 요청과 AI 호출은 `AuditLog`를 남긴다. AI 호출은 성공·실패·가드 거부 모두 한 줄씩(모델, 프롬프트 버전, 토큰 수). 프롬프트와 응답 본문은 남기지 않는다. 프론트는 `GET /api/activity`로 그중 사람이 볼 항목만 읽는다(`api/views.py`의 `FEED_ACTIONS`) |
 
 ### 비식별 원칙 (응답에 절대 넣지 않는 필드)
@@ -35,7 +36,8 @@
 
 ### AI 호출 원칙
 
-- 업무 코드는 `ai/gateway.py`의 `AiGateway`만 부른다. 모델은 역할(`primary`, `screening`)로 `config/providers.yaml`에서 고르므로, 실제 모델로 바꾸는 것은 설정 변경이다.
+- 업무 코드는 `ai/gateway.py`의 `AiGateway`만 부른다. 모델은 역할(`primary`, `screening`)로 고르고, 역할마다 어떤 provider를 쓸지는 관리자 화면에서 바꾼다(DB 설정, 2장 마지막 절). 실제 모델로 바꾸는 것은 코드 수정이 아니라 설정 변경이다.
+- 면접 세션은 시작할 때의 모델 설정(revision)에 고정된다. 실시간 전사, 꼬리질문, 종료 뒤 AI 채점까지 그 provider로 끝낸다. 서류 선별·역량 사전 초안은 요청 시점의 활성 설정을 쓴다. 결과에는 실제 쓴 모델 이름이 남는다: `Score.model`, `FollowUpSuggestion.model`, `Screening.model`, `TranscriptSegment.model`(STT), 감사 로그 `model`(역량 사전 초안 포함).
 - 프롬프트는 비식별 필드로만 만든다. 그래도 호출 직전에 가드(`ai/guard.py`)가 지원자 텍스트에 그 지원자의 이름·연락처·학교·회사가 남았는지, 전화·이메일·주민번호 모양이 있는지 다시 보고, 남았으면 호출하지 않는다(감사 로그에 거부 사유 범주만).
 - 프롬프트는 입력을 태그(`<answer>…</answer>`)로 감싸고, 태그 안 지시문은 따르지 않게 한다. 버전은 `ai/prompts.py`(competency-v0.2, profile-v0.1, screening-v0.4, followup-v0.2, score-v0.3).
 
@@ -140,6 +142,31 @@
 
 후보 계산: 선택한 면접관 중 `min_interviewers`명 이상이 동시에 비는 구간을 구하고, 30분 단위로 맞춘 `duration_minutes` 슬롯을 낸다. 과거 시각은 제외. 프론트 `lib/schedule.ts`의 `commonFreeIntervals`/`suggestSlots`와 같은 규칙이고(`schedule.py`), 그리드의 "공통 빈 시간" 표시는 프론트가 같은 함수로 그린다. 서버는 여기에 더해 예정·진행 중인 면접 시간(시작부터 60분)을 그 면접관의 빈 시간에서 뺀다. 그리드는 가용 시간 원본을 그리므로 잡힌 면접 칸도 비어 보인다(남은 과제).
 
+### 관리자 > 모델 설정 (AI provider 교체)
+
+역할 6개(`llm.primary` LLM 주 모델, `llm.screening` LLM 선별용, `stt.streaming` STT 실시간, `stt.batch` STT 사후, `embedding`, `diarization`)마다 provider를 고르고, 테스트하고, 재시작 없이 적용한다. 모두 관리자만(403).
+
+| 메서드 | 경로 | 요청 | 응답 | 단계 |
+| --- | --- | --- | --- | --- |
+| GET | `/api/admin/models` | | `ModelSettings` {revision, persistent, roles: ModelRoleState[6]} (spec, impl_label, 실제 model 이름, data_location, status ready/unavailable와 이유, requirements, note, last_change, pinned_sessions) | 3 |
+| GET | `/api/admin/models/catalog` | | `ModelImpl[]` 등록된 구현마다 역할, 데이터 위치, 라이선스, 옵션 스키마(모델 선택지의 크기·다운로드 여부·역할별 권장), 역할별 기본값·안내, 이 PC의 요구 조건 | 3 |
+| POST | `/api/admin/models/{role}/check` | `{impl, options}` | `ModelCheck` {spec(검증·기본값 채움), data_location, external, requirements, ready, same_as_active}. 옵션이 스키마에 없거나 범위 밖이면 422. provider를 부르지 않는다 | 3 |
+| POST | `/api/admin/models/{role}/test` | multipart: `spec`(JSON `{impl, options}`), `confirm_external`, `audio`(STT·화자분리만, 선택, 60초·10MB 이하) | `ModelTestResult` {ok, model, latency_ms, summary, output, error, audio: sample/upload}. 요구 조건 미충족 409, 외부 전송인데 확인 없음 409, 모델 로드 실패는 200 ok=false | 3 |
+| POST | `/api/admin/models/{role}/apply` | `{impl, options, reason, confirm_external}` | `ModelRoleState`. 새 provider를 만들고 워밍업(가중치 로드)한 뒤 바꿔 끼운다. 같은 설정·요구 조건 미충족·외부 전송 확인 없음 409, 사유 없음 422, 로드 실패 502 | 3 |
+| GET | `/api/admin/models/history?role=&limit=50` | | `ModelChange[]` 최신순 {revision, occurred_at, role, kind initial/apply/rollback, actor, previous, new, 표시 이름, reason, reverts_change_id, details} | 3 |
+| POST | `/api/admin/models/history/{change_id}/revert` | `{reason, confirm_external}` | `ModelRoleState`. 그 변경 직전 설정으로 되돌리고 rollback으로 기록. 처음 설정(이전 없음)·이미 같은 설정 409 | 3 |
+| GET | `/api/admin/models/downloads` | | `ModelDownload[]` {impl, model, status missing/downloading/done/failed/cancelled, total_bytes, downloaded_bytes, error}. 진행 중이면 프론트가 1초마다 다시 읽는다 | 3 |
+| POST | `/api/admin/models/downloads` | `{impl, model}` | 202 `ModelDownload`. Hugging Face에서 백그라운드로 받는다(커밋 고정, sha256 검증, 끊기면 이어받기) | 3 |
+| DELETE | `/api/admin/models/downloads/{impl}/{model}` | | `ModelDownload` (취소, 받던 파일 삭제) | 3 |
+
+- **저장**: 활성 설정은 `ai_model_settings`(역할별 spec), 이력은 `ai_model_changes`(전역 revision, 누가·언제·이전·새 값·사유). 처음 기동할 때 YAML 값을 `initial`로 넣고, 그 뒤 YAML은 DB에 없는 역할의 기본값으로만 쓴다. spec에 자격증명은 없다.
+- **교체**: 역할 하나를 바꾸면 revision이 올라가고 6개 역할 전체의 새 스냅샷(`ProviderSet`, 자체 AI 게이트웨이)이 활성이 된다. 참조 하나를 바꾸는 원자적 교체라 이미 시작한 요청·백그라운드 작업은 들고 있던 스냅샷으로 끝난다. 세션은 `InterviewSession.ai_config_revision`으로 시작 때의 스냅샷을 다시 찾는다(재시작 뒤에는 이력으로 재구성). 같은 spec의 provider 인스턴스는 스냅샷끼리 공유해 Whisper 가중치를 한 번만 올리고, 활성·진행 중 세션 어디에도 안 쓰이는 인스턴스는 내린다.
+- **요구 조건**: 네트워크 없이 본다. 구현 여부, 패키지 설치(`uv sync --extra whisper` 등), 환경변수·자격증명 파일이 있는지(값은 읽지도 보내지도 않음), 모델 파일을 받았는지. 미충족이면 테스트·적용 모두 409이고 화면에 이유와 해결 방법이 나온다. Google·Vertex 계열은 "구현 전", "자격증명 없음"으로 보인다.
+- **보안**: API 키·자격증명은 화면에서 받지 않는다(서버 환경변수·Secret Manager). 데이터가 이 PC·사내 GCP 밖으로 나가는 provider(`data_location: external`)는 테스트에 `confirm_external`, 적용에 `confirm_external`과 사유가 있어야 한다. provider가 무엇이든 LLM 입력은 같은 비식별화·가드를 거친다(`tests/test_api_privacy.py`가 런타임 교체 뒤에도 검사). 테스트용 음성은 임시 폴더에 두었다가 테스트가 끝나면 지운다.
+- **감사 로그**: `model.tested`(결과·지연·CER 같은 수치만, 전사·응답 본문 없음), `model.applied`, `model.reverted`, `model.download_started`, `model.download_cancelled`. LLM 연결 테스트 호출 자체도 게이트웨이가 `model.connection_test`(actor ai)로 남긴다. 실시간 전사는 답변마다 `transcript.listened`(쓴 STT 모델).
+- **연결 테스트**: LLM은 지원자 데이터가 없는 고정 프롬프트(`connection-test-v0.1`)로 구조화 출력(JSON)과 간단한 지시 수행을 본다. STT는 내장 한국어 샘플(FLEURS ko_kr, CC BY 4.0, 정답과 비교해 CER) 또는 관리자가 올린 녹음을 역할의 실제 경로로 전사한다(사후 = `transcribe`, 실시간 = 16kHz PCM 조각을 `stream`). 임베딩은 벡터 차원, 화자분리는 구간 수.
+- **실시간 STT와 오디오 입력**: STT provider는 받을 수 있는 입력 형식(`accepts`)을 밝힌다. 실제 음성은 16kHz 모노 16비트 PCM(`PCM16_16K`)이고, 지금 실시간 면접의 가상 지원자는 텍스트를 보내므로 fake STT만 받아 적는다. 실시간 STT를 실제 모델로 바꾸면 새로 시작하는 면접은 `stt: down`(수기 답변)이 되고 감사 로그에 `transcript.unsupported_audio`가 남는다. 마이크·WebRTC 입력(`live/audio.AudioSource`가 PCM을 내는 구현)이 붙으면 같은 교체가 그대로 쓰인다.
+
 ## 3. 스트리밍: SSE로 정한 이유와 이벤트 형식
 
 실시간 전사와 꼬리질문 둘 다 **SSE (text/event-stream)**로 한다. WebSocket은 쓰지 않는다.
@@ -207,7 +234,7 @@ data: {"batch_id":"…"}
 - 클라이언트가 연결을 끊으면(새 요청, 화면 이탈) 서버는 모델 스트림을 닫아 호출을 취소한다.
 - 프론트는 받은 후보를 자동으로 질문으로 만들지 않는다.
 
-## 4. 모델 결정 (Alembic 0003)
+## 4. 모델 결정 (Alembic 0003, 0004)
 
 프론트 계약이 요구했지만 1단계 모델에 자리가 없던 항목을 `migrations/versions/0003_api_support.py`로 채웠다. 모델은 17개(업무정의서 6장 13개 + 비식별 역매핑 + 아래 3개)다.
 
@@ -225,18 +252,32 @@ data: {"batch_id":"…"}
 | 숨은 텍스트·지시문 | `Application.document_info` JSON (format, blocks, hidden_blocks, images_dropped, replacements, 개수만). `ApplicationDetail.document`로 노출 | 숨은 텍스트는 비식별화는 하되(토큰 일관성) 선별 프롬프트에서는 뺀다. 화면에는 개수만 알린다 |
 | 예약된 면접과 가용 시간 | 스케줄 후보 계산에서 예정·진행 중 면접 60분을 뺀다 | 세션에는 종료 예정 시각이 없어 60분으로 둔다. 가용 시간 원본은 바꾸지 않는다 |
 
+0004 (`migrations/versions/0004_ai_model_settings.py`, 2026-10-25):
+
+| 항목 | 결정 | 이유 |
+| --- | --- | --- |
+| AI 모델 설정 | `ai_model_settings`(역할 PK, spec JSON, revision)와 `ai_model_changes`(전역 revision UNIQUE, kind, actor_id, previous, new, reason, reverts_change_id, details) | 활성 값은 바로 읽고, 이력은 지우지 않는다. 전역 revision 하나로 "그 시점 설정 전체"를 이력에서 재구성할 수 있어 세션 고정이 컬럼 하나로 끝난다 |
+| 세션의 모델 고정 | `InterviewSession.ai_config_revision` (시작할 때. 그 전부터 진행 중이던 세션은 기동할 때) | 면접 도중이나 채점 도중에 모델이 바뀌어 결과가 섞이면 안 된다. 역량 사전 고정(`competency_set_id`)과 같은 방식 |
+| STT 결과의 모델 | `TranscriptSegment.model` | 다른 AI 결과(`Score`, `FollowUpSuggestion`, `Screening`)처럼 실제 쓴 모델을 남긴다 |
+| 관리자 | `Interviewer.is_admin` (기본 false) | SSO 그룹 클레임이 채울 자리. 0004 직후에는 아무도 관리자가 아니라 `scripts/grant_admin.py`나 시드로 준다 |
+| 데모 재시드 | `seed_demo.py --reset`은 모델 설정과 이력을 지우지 않는다 | 모델 설정은 데모 데이터가 아니라 운영 설정이다 |
+
 SQLite 마이그레이션 주의: batch 모드는 테이블을 복사한 뒤 원본을 지우는데, 외래 키가 켜져 있으면 그 DROP이 자식 행을 연쇄 삭제한다. `migrations/env.py`는 마이그레이션 동안 외래 키를 끄고 끝나면 `PRAGMA foreign_key_check`로 확인한다.
 
 ## 5. 구현 상태와 남은 과제
 
-구현됨 (2026-10-23, fake provider): 위 35개 엔드포인트 전부(SSE 2종, 업로드 포함), 시드(`scripts/seed_demo.py`), 테스트(`tests/test_api_*.py`, `test_live.py`, `test_ai_tasks.py`, `test_seed.py`, `test_schedule.py`, 외부 네트워크 없음). 프론트 7개 화면과 업로드가 `npm run dev:api`로 실제 API에서 동작한다.
+구현됨 (2026-10-23, fake provider): 면접관 화면용 35개 엔드포인트 전부(SSE 2종, 업로드 포함), 시드(`scripts/seed_demo.py`), 테스트(`tests/test_api_*.py`, `test_live.py`, `test_ai_tasks.py`, `test_seed.py`, `test_schedule.py`, 외부 네트워크 없음). 프론트 7개 화면과 업로드가 `npm run dev:api`로 실제 API에서 동작한다.
+
+구현됨 (2026-10-25): 관리자 > 모델 설정 10개 엔드포인트(합계 45개), DB 저장·이력·되돌리기, 재시작 없는 교체와 세션 고정, 연결 테스트, 모델 다운로드, 로컬 Whisper STT(`faster_whisper`, CPU int8, 한국어). 테스트 `tests/test_model_settings.py`, `test_weights.py`, `test_whisper.py`(모델 파일이 있을 때만). 측정 결과는 [Whisper 측정](whisper-benchmark.md).
 
 남은 과제:
 
 - **실제 모델 연결 (3단계)**: `anthropic_vertex` LLM provider(구조화 출력, 스트리밍, 토큰 집계, 프롬프트 캐싱). 지금 fake LLM은 규칙으로 그럴듯한 모양만 만든다(`providers/fake_tasks.py`). 연결 뒤 프롬프트별 품질 검증(역량 사전 초안, 프로필 구조화 정확도, 선별 근거, 꼬리질문 적합성, 채점 일치도)이 필요하다. 스트림 provider가 토큰 수를 돌려주게 인터페이스를 넓힐 것.
 - **실제 GCP 호출**: Vertex AI, Speech-to-Text v2(10단계 배치, 11단계 스트리밍), 임베딩. GCP 프로젝트가 아직 없다.
 - **로그인·SSO**: IAP + 사내 SSO, `GET /api/me`를 세션에서. 지금은 `IA_DEV_INTERVIEWER`. 면접관 점수는 본인 것만 쓰게 막기(지금은 패널이면 누구 것이든 가능).
-- **실제 오디오·WebRTC (11단계)**: LiveKit 통화, 참가자 트랙 → 스트리밍 STT. `live/audio.py`의 `AudioSource` 구현으로 붙인다. 녹음 파일 저장(지금 `recording_uri`는 저장 예정 위치만 가리킨다), 대면 면접 화자분리.
+- **실제 오디오·WebRTC (11단계)**: LiveKit 통화 또는 대면 마이크, 참가자 트랙 → 스트리밍 STT. `live/audio.py`의 `AudioSource`를 16kHz PCM(`PCM16_16K`)을 내는 구현으로 붙이면 관리자 화면에서 고른 실시간 STT(예: `faster_whisper`)가 그대로 쓰인다. 녹음 파일 저장(지금 `recording_uri`는 저장 예정 위치만 가리킨다), 대면 면접 화자분리.
+- **로컬 Whisper 실시간 속도**: 이 노트북(CPU, 배터리)에서는 Whisper 호출 한 번이 30초 창 고정 비용(medium 약 5초)이라 발화 하나 확정까지 medium 약 10초 걸린다. 부분 전사는 호출 비용이 작을 때만 나온다. 실시간은 small·GPU·Chirp 중에서 다시 정할 것([측정](whisper-benchmark.md)).
+- **모델 설정 다중 인스턴스**: 활성 스냅샷은 프로세스 메모리에 있다. 여러 인스턴스면 변경을 다른 인스턴스에 알릴 방법(DB revision 폴링 또는 Pub/Sub)이 필요하다.
 - **여러 워커**: 전사 허브 상태가 프로세스 메모리에 있다. Cloud Run 여러 인스턴스면 Redis Pub/Sub 같은 공유 버스와 듣기 작업 소유권이 필요하다. AI 채점도 백그라운드 태스크라 작업 큐로 옮길 것.
 - **OCR**: 스캔본 업로드는 지금 거부한다.
 - **업로드 보완**: 같은 사람의 재지원 식별(지금은 업로드마다 새 지원자), 바이러스 검사, 원본 파일 보존 기간·삭제.

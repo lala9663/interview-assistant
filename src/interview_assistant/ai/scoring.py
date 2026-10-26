@@ -156,6 +156,9 @@ async def score_session(
                     Score.session_id == session_id, Score.evaluator_type == EvaluatorType.ai
                 )
             )
+            # No write transaction stays open while the model is called (SQLite would lock every
+            # other writer, model setting changes included, for the whole scoring).
+            db.commit()
             scored, model = 0, None
             for qa in session.qa_items:
                 if not qa.answer_deidentified or not competencies:

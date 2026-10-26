@@ -11,7 +11,7 @@ import { Tooltip } from '@/components/ui/tooltip'
 import { cn } from '@/lib/utils'
 
 import CommandPalette from './CommandPalette.vue'
-import { NAV_ITEMS } from './nav'
+import { navItemsFor } from './nav'
 import ThemeToggle from './ThemeToggle.vue'
 
 const USE_MOCKS = import.meta.env.VITE_USE_MOCKS === 'true'
@@ -25,6 +25,8 @@ const liveSession = computed(() => {
   return s && !route.path.endsWith(`${s.id}/live`) ? s : null
 })
 const paletteOpen = ref(false)
+const mainNav = computed(() => navItemsFor(me.data?.is_admin).filter((n) => !n.adminOnly))
+const adminNav = computed(() => navItemsFor(me.data?.is_admin).filter((n) => n.adminOnly))
 
 const isActive = (to: string) => (to === '/' ? route.path === '/' : route.path === to || route.path.startsWith(`${to}/`))
 
@@ -66,8 +68,11 @@ const errorMessage = computed(() => (renderError.value instanceof Error ? render
         </RouterLink>
       </div>
       <nav class="flex flex-1 flex-col gap-0.5 px-2 pt-2" aria-label="주요 메뉴">
+        <template v-for="group in [mainNav, adminNav]" :key="group === adminNav ? 'admin' : 'main'">
+        <p v-if="group === adminNav && group.length > 0" class="mt-4 hidden px-2.5 pb-1 text-[11px] font-medium text-muted-foreground lg:block">관리자</p>
+        <div v-if="group === adminNav && group.length > 0" class="mx-2.5 mt-3 mb-1 border-t lg:hidden" aria-hidden="true"></div>
         <RouterLink
-          v-for="item in NAV_ITEMS"
+          v-for="item in group"
           :key="item.to"
           :to="item.to"
           :aria-current="isActive(item.to) ? 'page' : undefined"
@@ -82,6 +87,7 @@ const errorMessage = computed(() => (renderError.value instanceof Error ? render
           <span class="hidden truncate lg:block">{{ item.label }}</span>
           <span v-if="item.fr" class="ml-auto hidden text-[10.5px] font-normal text-muted-foreground/70 lg:block">{{ item.fr }}</span>
         </RouterLink>
+        </template>
       </nav>
       <Tooltip v-if="liveSession" content="진행 중인 면접으로 돌아가기" side="right">
         <RouterLink

@@ -16,6 +16,7 @@ export const routes: RouteRecordRaw[] = [
       { path: 'sessions/:sessionId/live', component: () => import('@/features/interview/LiveInterviewPage.vue') },
       { path: 'sessions/:sessionId/evaluation', component: () => import('@/features/evaluation/EvaluationPage.vue') },
       { path: 'schedule', component: () => import('@/features/schedule/SchedulePage.vue') },
+      { path: 'admin/models', component: () => import('@/features/admin/ModelSettingsPage.vue') },
       { path: ':pathMatch(.*)*', component: NotFound },
     ],
   },

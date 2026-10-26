@@ -2,6 +2,11 @@
 
 Step 11 plugs in the remote participant's WebRTC track (LiveKit) or the room microphone. Until then
 `ScriptedCandidate` simulates the candidate for demos and tests.
+
+A source declares the format it yields (`format`): real sources 16 kHz mono 16-bit PCM, which any
+STT provider reads; the simulated candidate plain text, which only FakeSTT reads. The hub checks
+the pair before listening, so switching the streaming STT never feeds a provider what it cannot
+decode.
 """
 
 from __future__ import annotations
@@ -12,6 +17,7 @@ from collections.abc import AsyncIterator
 from dataclasses import dataclass
 
 from interview_assistant.demo.script import DemoScript, split_sentences
+from interview_assistant.providers.base import PCM16_16K, SIMULATED_TEXT
 
 
 @dataclass(frozen=True)
@@ -22,6 +28,8 @@ class Turn:
 
 
 class AudioSource(ABC):
+    format: str = PCM16_16K
+
     @abstractmethod
     def open(self, turn: Turn) -> AsyncIterator[bytes]:
         """Audio of the candidate answering `turn`; ends when they stop talking."""
@@ -31,6 +39,8 @@ class ScriptedCandidate(AudioSource):
     """Answers with the demo dataset's script: UTF-8 text, one sentence per chunk, with a pause
     before the answer and between sentences. Only FakeSTT can transcribe this "audio"; a real STT
     provider needs a real AudioSource. `speed` 1 matches the frontend mock, 0 is instant."""
+
+    format = SIMULATED_TEXT
 
     def __init__(self, script: DemoScript | None = None, speed: float = 1.0) -> None:
         self.script = script or DemoScript()

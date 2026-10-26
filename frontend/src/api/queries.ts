@@ -7,9 +7,11 @@ import { reactive, toValue, type MaybeRefOrGetter } from 'vue'
 
 import { endpoints } from './endpoints'
 import type {
+  ApplyModelRequest,
   Competency,
   CreateQARequest,
   CreateSessionRequest,
+  RevertModelRequest,
   ScheduleSuggestionRequest,
   ScreeningStatus,
   SessionStatus,
@@ -34,6 +36,10 @@ export const qk = {
   evaluation: (id: string) => ['sessions', id, 'evaluation'] as const,
   interviewers: ['interviewers'] as const,
   availabilities: (from: string, to: string) => ['availabilities', from, to] as const,
+  modelSettings: ['admin', 'models'] as const,
+  modelCatalog: ['admin', 'models', 'catalog'] as const,
+  modelHistory: ['admin', 'models', 'history'] as const,
+  modelDownloads: ['admin', 'models', 'downloads'] as const,
 }
 
 // ----- queries -------------------------------------------------------------------------------------
@@ -318,5 +324,94 @@ export function useAvailabilityMutations() {
   return {
     create: reactive(useMutation({ mutationFn: endpoints.createAvailability, onSuccess: invalidate })),
     remove: reactive(useMutation({ mutationFn: endpoints.deleteAvailability, onSuccess: invalidate })),
+  }
+}
+
+// ----- 관리자 > 모델 설정 ----------------------------------------------------------------------------
+
+export const useModelSettings = (enabled: MaybeRefOrGetter<boolean> = true) =>
+  reactive(
+    useQuery(() => ({
+      queryKey: qk.modelSettings,
+      queryFn: ({ signal }) => endpoints.modelSettings(signal),
+      enabled: toValue(enabled),
+      staleTime: 0,
+    })),
+  )
+
+export const useModelCatalog = (enabled: MaybeRefOrGetter<boolean> = true) =>
+  reactive(
+    useQuery(() => ({
+      queryKey: qk.modelCatalog,
+      queryFn: ({ signal }) => endpoints.modelCatalog(signal),
+      enabled: toValue(enabled),
+      staleTime: 0,
+    })),
+  )
+
+export const useModelHistory = (enabled: MaybeRefOrGetter<boolean> = true) =>
+  reactive(
+    useQuery(() => ({
+      queryKey: qk.modelHistory,
+      queryFn: ({ signal }) => endpoints.modelHistory(signal),
+      enabled: toValue(enabled),
+      staleTime: 0,
+    })),
+  )
+
+/** Polls every second while a download runs; the catalog's "downloaded" flags refresh when one ends. */
+export function useModelDownloads(enabled: MaybeRefOrGetter<boolean> = true) {
+  const qc = useQueryClient()
+  let running = false
+  return reactive(
+    useQuery(() => ({
+      queryKey: qk.modelDownloads,
+      queryFn: async ({ signal }) => {
+        const list = await endpoints.modelDownloads(signal)
+        const now = list.some((d) => d.status === 'downloading')
+        if (running && !now) void qc.invalidateQueries({ queryKey: qk.modelCatalog })
+        running = now
+        return list
+      },
+      enabled: toValue(enabled),
+      staleTime: 0,
+      refetchInterval: (q) => (q.state.data?.some((d) => d.status === 'downloading') ? 1000 : false),
+    })),
+  )
+}
+
+function useInvalidateModels() {
+  const qc = useQueryClient()
+  return () => {
+    void qc.invalidateQueries({ queryKey: ['admin', 'models'] })
+  }
+}
+
+export function useApplyModel() {
+  const invalidate = useInvalidateModels()
+  return reactive(
+    useMutation({
+      mutationFn: ({ role, body }: { role: string; body: ApplyModelRequest }) => endpoints.applyModel(role, body),
+      onSuccess: invalidate,
+    }),
+  )
+}
+
+export function useRevertModel() {
+  const invalidate = useInvalidateModels()
+  return reactive(
+    useMutation({
+      mutationFn: ({ changeId, body }: { changeId: string; body: RevertModelRequest }) => endpoints.revertModel(changeId, body),
+      onSuccess: invalidate,
+    }),
+  )
+}
+
+export function useModelDownloadMutations() {
+  const qc = useQueryClient()
+  const refresh = () => void qc.invalidateQueries({ queryKey: qk.modelDownloads })
+  return {
+    start: reactive(useMutation({ mutationFn: (m: { impl: string; model: string }) => endpoints.startDownload(m.impl, m.model), onSuccess: refresh })),
+    cancel: reactive(useMutation({ mutationFn: (m: { impl: string; model: string }) => endpoints.cancelDownload(m.impl, m.model), onSuccess: refresh })),
   }
 }

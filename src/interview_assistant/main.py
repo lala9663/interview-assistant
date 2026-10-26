@@ -1,8 +1,10 @@
-"""FastAPI entry point. Providers are resolved once at startup from the configured YAML.
+"""FastAPI entry point.
 
     uv run uvicorn interview_assistant.main:app --reload
 
-The API lives under /api (interview_assistant.api); /health reports which providers are loaded.
+The API lives under /api (interview_assistant.api); /health reports the active providers. Which
+provider serves each AI role is stored in the database and switched from the admin screen without
+a restart; the providers YAML only seeds the first start (ai_models/).
 """
 
 from __future__ import annotations
@@ -35,7 +37,8 @@ log = logging.getLogger(__name__)
 
 
 def _resume_scoring(runtime: Runtime) -> None:
-    """AI scoring that was running when the server stopped starts again."""
+    """AI scoring that was running when the server stopped starts again, on the providers the
+    session pinned."""
     with runtime.session_factory() as db:
         ids = db.scalars(
             select(InterviewSession.id).where(
@@ -43,7 +46,17 @@ def _resume_scoring(runtime: Runtime) -> None:
             )
         ).all()
     for session_id in ids:
-        runtime.spawn(score_session(runtime.session_factory, runtime.ai, runtime.deid, session_id))
+        with runtime.session_factory() as db:
+            session = db.get(InterviewSession, session_id)
+            if session is None:
+                continue
+            providers = runtime.pinned(session)
+            session.ai_config_revision = providers.revision
+            db.commit()
+        runtime.spawn(
+            score_session(runtime.session_factory, providers.ai, runtime.deid, session_id),
+            then=runtime.models.evict,
+        )
 
 
 def create_app(
@@ -62,13 +75,13 @@ def create_app(
         )
         app.state.settings = settings
         app.state.runtime = runtime
-        app.state.providers = runtime.providers
         if runtime.deid.cipher is None:
             log.warning("IA_ENCRYPTION_KEY is not set: uploads and free-text writes will fail (503)")
         try:
             _resume_scoring(runtime)
         except Exception:  # an empty or unmigrated database must not stop the server
             log.exception("could not resume AI scoring")
+        runtime.spawn(runtime.models.warm_up_active())
         yield
         for task in list(runtime.tasks):
             task.cancel()
@@ -80,10 +93,12 @@ def create_app(
 
     @app.get("/health")
     async def health() -> dict:
-        p: Providers = app.state.providers
+        runtime: Runtime = app.state.runtime
+        p = runtime.providers
         return {
             "status": "ok",
             "version": __version__,
+            "ai_config_revision": runtime.models.active.revision,
             "providers": {
                 "llm": {role: type(x).__name__ for role, x in p.llm.items()},
                 "stt": {role: type(x).__name__ for role, x in p.stt.items()},

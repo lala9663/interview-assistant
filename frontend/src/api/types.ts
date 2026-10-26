@@ -134,6 +134,8 @@ export interface Interviewer {
   name: string
   job_family: string | null
   department: string | null
+  /** may change AI model settings (관리자 > 모델 설정); SSO will set it from a group */
+  is_admin: boolean
   created_at: string
 }
 
@@ -576,4 +578,167 @@ export interface CreateSessionRequest {
   mode: SessionMode
   scheduled_at: string
   interviewers: { interviewer_id: string; role: InterviewerRole }[]
+}
+
+// --- 관리자 > 모델 설정 (admin only) ------------------------------------------------------------
+
+/** Where a provider sends data: this PC, the company GCP project, or an API outside the company. */
+export const DATA_LOCATIONS = ['local', 'gcp', 'external'] as const
+export type DataLocation = (typeof DATA_LOCATIONS)[number]
+
+/** The six AI roles, in display order. */
+export const MODEL_ROLES = ['llm.primary', 'llm.screening', 'stt.streaming', 'stt.batch', 'embedding', 'diarization'] as const
+export type ModelRole = (typeof MODEL_ROLES)[number]
+
+export type ModelKind = 'llm' | 'stt' | 'embedding' | 'diarization'
+export type ModelChangeKind = 'initial' | 'apply' | 'rollback'
+export type ModelOptionType = 'string' | 'text' | 'integer' | 'number' | 'boolean' | 'select'
+export type ModelOptionValue = string | number | boolean
+export type DownloadStatus = 'missing' | 'downloading' | 'done' | 'failed' | 'cancelled'
+
+export interface ModelSpec {
+  impl: string
+  options: Record<string, ModelOptionValue>
+}
+
+/** What this machine lacks for a provider. Never carries a secret, only whether it exists. */
+export interface ModelRequirement {
+  key: string
+  label: string
+  ok: boolean
+  detail: string
+  fix: string | null
+}
+
+export interface ModelOptionChoice {
+  value: string
+  label: string
+  note: string
+  /** weights to download for this choice */
+  size_bytes: number | null
+  recommended_for: string[]
+  /** null: nothing to download */
+  downloaded: boolean | null
+}
+
+export interface ModelOptionField {
+  key: string
+  label: string
+  type: ModelOptionType
+  default: ModelOptionValue | null
+  help: string
+  minimum: number | null
+  maximum: number | null
+  max_length: number
+  choices: ModelOptionChoice[]
+  /** shown for these roles only (empty: every role) */
+  roles: string[]
+  /** shown, not editable */
+  fixed: boolean
+}
+
+export interface ModelImpl {
+  kind: ModelKind
+  impl: string
+  label: string
+  description: string
+  data_location: DataLocation
+  data_note: string
+  license: string
+  roles: string[]
+  options: ModelOptionField[]
+  role_defaults: Record<string, Record<string, ModelOptionValue>>
+  role_notes: Record<string, string>
+  /** machine-level requirements (package, credentials ...); downloads are per model choice */
+  requirements: ModelRequirement[]
+}
+
+export interface ModelActor {
+  id: string
+  employee_no: string
+  name: string
+}
+
+export interface ModelChange {
+  id: string
+  revision: number
+  occurred_at: string
+  role: string
+  role_label: string
+  kind: ModelChangeKind
+  /** null: the system (first start, seeded from the providers YAML) */
+  actor: ModelActor | null
+  previous: ModelSpec | null
+  new: ModelSpec
+  previous_label: string | null
+  new_label: string
+  reason: string | null
+  reverts_change_id: string | null
+  details: Record<string, unknown> | null
+}
+
+export interface ModelRoleState {
+  role: ModelRole
+  label: string
+  description: string
+  kind: ModelKind
+  spec: ModelSpec
+  impl_label: string
+  /** the model name stored next to results and in the audit log */
+  model: string
+  data_location: DataLocation
+  status: 'ready' | 'unavailable'
+  status_detail: string | null
+  requirements: ModelRequirement[]
+  note: string | null
+  last_change: ModelChange | null
+  /** interviews in progress (or being scored) still on an earlier config of this role */
+  pinned_sessions: number
+}
+
+export interface ModelSettings {
+  revision: number
+  /** false: the settings tables are missing and nothing can be saved */
+  persistent: boolean
+  roles: ModelRoleState[]
+}
+
+export interface ModelCheck {
+  role: string
+  spec: ModelSpec
+  data_location: DataLocation
+  external: boolean
+  requirements: ModelRequirement[]
+  ready: boolean
+  same_as_active: boolean
+}
+
+export interface ModelTestResult {
+  ok: boolean
+  model: string
+  latency_ms: number
+  summary: string
+  /** role-specific: text / expected_text / cer / realtime_factor (STT), structured (LLM), dimensions ... */
+  output: Record<string, unknown>
+  error: string | null
+  audio: 'sample' | 'upload' | null
+}
+
+export interface ModelDownload {
+  impl: string
+  model: string
+  status: DownloadStatus
+  total_bytes: number
+  downloaded_bytes: number
+  error: string | null
+}
+
+export interface ApplyModelRequest extends ModelSpec {
+  reason: string
+  confirm_external: boolean
+}
+
+export interface RevertModelRequest {
+  reason: string
+  confirm_external: boolean
 }

@@ -1,6 +1,7 @@
 """Provider interfaces. Business logic depends only on these ABCs.
 
-Which implementation is used is decided by config/providers.yaml (see registry.py).
+Which implementation serves each role is an admin setting (admin > 모델 설정, `ai_models/`), seeded
+from config/providers.yaml; registry.py maps `impl` names to classes.
 """
 
 from __future__ import annotations
@@ -9,6 +10,29 @@ from abc import ABC, abstractmethod
 from collections.abc import AsyncIterator, Sequence
 from dataclasses import dataclass
 from typing import Any
+
+
+# Audio formats an STT provider's `stream` can read. Real audio is 16 kHz mono signed 16-bit
+# little-endian PCM in chunks of any size. The simulated candidate (live.audio.ScriptedCandidate)
+# sends UTF-8 text, one utterance per chunk, which only FakeSTT understands.
+PCM16_16K = "audio/pcm;rate=16000"
+SIMULATED_TEXT = "text/plain"
+SAMPLE_RATE = 16000
+
+
+class Provider:
+    """What every provider has. `model` names what produced a result: it goes into the audit log
+    and next to stored AI output (scores, suggestions, screening, transcript segments)."""
+
+    model: str = ""
+
+    async def warm_up(self) -> None:
+        """Load weights or open clients before the provider is put in service (the admin screen
+        swaps providers only after this succeeds). Default: nothing to do."""
+
+
+class ProviderUnavailable(RuntimeError):
+    """The provider configured for a role cannot run (package missing, weights deleted ...)."""
 
 
 @dataclass
@@ -20,7 +44,7 @@ class LLMResult:
     output_tokens: int
 
 
-class LLMProvider(ABC):
+class LLMProvider(Provider, ABC):
     """Text generation. `schema` requests a JSON object validated against that JSON Schema."""
 
     @abstractmethod
@@ -52,8 +76,11 @@ class TranscriptSegment:
     is_final: bool = True
 
 
-class STTProvider(ABC):
-    """Speech to text. `stream` yields partial and final segments; `transcribe` is the batch path."""
+class STTProvider(Provider, ABC):
+    """Speech to text. `stream` yields partial and final segments; `transcribe` is the batch path
+    (`audio_uri` is a file:// URI in the raw zone). `accepts` lists the `stream` input formats."""
+
+    accepts: frozenset[str] = frozenset({PCM16_16K})
 
     @abstractmethod
     def stream(
@@ -73,7 +100,7 @@ class STTProvider(ABC):
     ) -> list[TranscriptSegment]: ...
 
 
-class EmbeddingProvider(ABC):
+class EmbeddingProvider(Provider, ABC):
     dimensions: int
 
     @abstractmethod
@@ -87,6 +114,6 @@ class SpeakerTurn:
     end_ms: int
 
 
-class DiarizationProvider(ABC):
+class DiarizationProvider(Provider, ABC):
     @abstractmethod
     async def diarize(self, audio_uri: str) -> list[SpeakerTurn]: ...

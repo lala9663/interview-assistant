@@ -26,7 +26,7 @@ router = APIRouter(tags=["evaluation"])
 @router.get("/sessions/{session_id}/evaluation", response_model=s.Evaluation)
 def evaluation(session_id: str, db: Db, runtime: RuntimeDep) -> s.Evaluation:
     found = get_session(db, session_id)
-    return views.evaluation(db, found, model_name(runtime.ai.llm("primary")))
+    return views.evaluation(db, found, model_name(runtime.pinned(found).ai.llm("primary")))
 
 
 @router.put("/sessions/{session_id}/scores/{interviewer_id}", response_model=s.Evaluation)
@@ -88,4 +88,5 @@ def submit_scores(
     )
     db.commit()
     db.expire_all()
-    return views.evaluation(db, get_session(db, session_id), model_name(runtime.ai.llm("primary")))
+    found = get_session(db, session_id)
+    return views.evaluation(db, found, model_name(runtime.pinned(found).ai.llm("primary")))

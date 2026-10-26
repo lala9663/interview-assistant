@@ -28,6 +28,12 @@ class ProvidersConfig(BaseModel):
     embedding: ProviderSpec
     diarization: ProviderSpec
 
+    def by_role(self) -> dict[str, ProviderSpec]:
+        """Flat role keys as the admin screen and the settings table name them: "llm.primary"."""
+        roles = {f"llm.{k}": v for k, v in self.llm.items()}
+        roles |= {f"stt.{k}": v for k, v in self.stt.items()}
+        return roles | {"embedding": self.embedding, "diarization": self.diarization}
+
 
 class Settings(BaseSettings):
     model_config = SettingsConfigDict(env_prefix="IA_", env_file=".env", extra="ignore")
@@ -40,6 +46,8 @@ class Settings(BaseSettings):
     # Raw zone on disk: uploaded application files and (step 11) recordings. Never served.
     uploads_dir: Path = Path("uploads")
     recordings_dir: Path = Path("recordings")
+    # Local model weights (faster-whisper ...), downloaded from the admin screen. Git-ignored.
+    weights_dir: Path = Path("weights")
     # Until SSO (Phase 1): employee number of the interviewer the API treats as signed in.
     # Empty: the first interviewer created.
     dev_interviewer: str | None = None

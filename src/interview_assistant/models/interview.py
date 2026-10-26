@@ -17,6 +17,7 @@ from sqlalchemy import (
     Text,
     UniqueConstraint,
     event,
+    false,
 )
 from sqlalchemy.orm import Mapped, Session, mapped_column, relationship
 
@@ -80,6 +81,10 @@ class Interviewer(IdMixin, TimestampMixin, Base):
     name: Mapped[str] = mapped_column(String(100), nullable=False)
     job_family: Mapped[str | None] = mapped_column(String(100))
     department: Mapped[str | None] = mapped_column(String(100))
+    # May change AI model settings (admin > 모델 설정). SSO will map a group onto this flag.
+    is_admin: Mapped[bool] = mapped_column(
+        Boolean, default=False, server_default=false(), nullable=False
+    )
 
     availabilities: Mapped[list[Availability]] = relationship(
         back_populates="interviewer", cascade="all, delete-orphan"
@@ -112,6 +117,10 @@ class InterviewSession(IdMixin, TimestampMixin, Base):
     )
     ai_scoring_started_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     ai_scoring_finished_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    # The AI model config revision (ai_model_changes.revision) in force when the session started.
+    # Live transcription, follow-ups and the AI scoring after it all use those providers, even if
+    # an admin switches models meanwhile. Null: not started yet (or started before 0004).
+    ai_config_revision: Mapped[int | None] = mapped_column(Integer)
 
     application: Mapped[Application] = relationship(back_populates="sessions")
     competency_set: Mapped[CompetencySet | None] = relationship()
@@ -300,5 +309,7 @@ class TranscriptSegment(IdMixin, TimestampMixin, Base):
     text_deidentified: Mapped[str] = mapped_column(Text, nullable=False)
     start_ms: Mapped[int] = mapped_column(Integer, nullable=False)  # since the session started
     end_ms: Mapped[int] = mapped_column(Integer, nullable=False)
+    # The STT model that recognised a candidate segment (null for typed interviewer questions).
+    model: Mapped[str | None] = mapped_column(String(100))
 
     session: Mapped[InterviewSession] = relationship(back_populates="transcript")

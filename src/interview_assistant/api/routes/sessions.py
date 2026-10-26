@@ -4,6 +4,10 @@ Every free text a person sends here (typed questions, manual answers, notes) is 
 before it is stored where the API can return it; a manual answer's raw text stays in
 QAItem.answer_text. Questions start the live transcript when the candidate consented to
 recording; ending the session closes the open answer and starts AI scoring in the background.
+
+A session pins the AI model config in force when it starts (`ai_config_revision`): the live
+transcript, follow-ups and the AI scoring after it all use those providers, whatever an admin
+switches meanwhile. New sessions pick up the new config.
 """
 
 from __future__ import annotations
@@ -134,6 +138,7 @@ def start_session(session_id: str, db: Db, me: Me, runtime: RuntimeDep) -> s.Ses
     found.started_at = utcnow()
     pinned = approved_set(found.application.posting)
     found.competency_set_id = pinned.id if pinned else None
+    found.ai_config_revision = runtime.models.active.revision
     if found.application.candidate.consent_recording:
         # Where the recording will live (raw zone). Nothing writes it until step 11 (audio).
         found.recording_uri = (runtime.recordings_dir / f"{found.id}.webm").resolve().as_uri()
@@ -173,6 +178,8 @@ async def end_session(session_id: str, db: Db, me: Me, runtime: RuntimeDep) -> s
     await runtime.hub.interrupt(session_id)
     db.expire_all()
     close_unanswered(db, found)
+    providers = runtime.pinned(found)
+    found.ai_config_revision = providers.revision  # sessions started before pinning existed
     found.status = SessionStatus.completed
     found.ended_at = utcnow()
     found.ai_scoring_status = AiScoringStatus.running
@@ -184,12 +191,15 @@ async def end_session(session_id: str, db: Db, me: Me, runtime: RuntimeDep) -> s
             action="score.ai_started",
             target_type="interview_session",
             target_id=found.id,
-            model=model_name(runtime.ai.llm("primary")),
+            model=model_name(providers.ai.llm("primary")),
         )
     )
     db.commit()
     await runtime.hub.end(session_id)
-    runtime.spawn(score_session(runtime.session_factory, runtime.ai, runtime.deid, session_id))
+    runtime.spawn(
+        score_session(runtime.session_factory, providers.ai, runtime.deid, session_id),
+        then=runtime.models.evict,
+    )
     return views.session_detail(db, found)
 
 

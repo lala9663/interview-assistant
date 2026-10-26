@@ -93,6 +93,7 @@ class Interviewer(Schema):
     name: str
     job_family: str | None
     department: str | None
+    is_admin: bool
     created_at: Timestamp
 
 
@@ -408,6 +409,142 @@ class ScheduleSuggestion(BaseModel):
     interviewer_ids: list[str]
 
 
+# --- 4. admin: AI model settings (관리자 > 모델 설정) ----------------------------------------
+
+DataLocationValue = Literal["local", "gcp", "external"]
+ModelChangeKindValue = Literal["initial", "apply", "rollback"]
+DownloadStatus = Literal["missing", "downloading", "done", "failed", "cancelled"]
+
+
+class ModelSpec(BaseModel):
+    impl: str
+    options: dict[str, Any] = {}
+
+
+class ModelRequirement(BaseModel):
+    key: str
+    label: str
+    ok: bool
+    detail: str
+    fix: str | None
+
+
+class ModelOptionChoice(BaseModel):
+    value: str
+    label: str
+    note: str
+    size_bytes: int | None
+    recommended_for: list[str]
+    downloaded: bool | None  # null: nothing to download
+
+
+class ModelOptionField(BaseModel):
+    key: str
+    label: str
+    type: Literal["string", "text", "integer", "number", "boolean", "select"]
+    default: Any
+    help: str
+    minimum: float | None
+    maximum: float | None
+    max_length: int
+    choices: list[ModelOptionChoice]
+    roles: list[str]
+    fixed: bool
+
+
+class ModelImpl(BaseModel):
+    kind: str
+    impl: str
+    label: str
+    description: str
+    data_location: DataLocationValue
+    data_note: str
+    license: str
+    roles: list[str]
+    options: list[ModelOptionField]
+    role_defaults: dict[str, dict[str, Any]]
+    role_notes: dict[str, str]
+    # What this machine lacks regardless of the options (package, credentials ...). Downloads
+    # per model are in the "model" option's choices.
+    requirements: list[ModelRequirement]
+
+
+class ModelActor(Schema):
+    id: str
+    employee_no: str
+    name: str
+
+
+class ModelChange(BaseModel):
+    id: str
+    revision: int
+    occurred_at: Timestamp
+    role: str
+    role_label: str
+    kind: ModelChangeKindValue
+    actor: ModelActor | None
+    previous: ModelSpec | None
+    new: ModelSpec
+    previous_label: str | None
+    new_label: str
+    reason: str | None
+    reverts_change_id: str | None
+    details: dict[str, Any] | None
+
+
+class ModelRoleState(BaseModel):
+    role: str
+    label: str
+    description: str
+    kind: str
+    spec: ModelSpec
+    impl_label: str
+    model: str  # the model name results and the audit log carry
+    data_location: DataLocationValue
+    status: Literal["ready", "unavailable"]
+    status_detail: str | None
+    requirements: list[ModelRequirement]
+    note: str | None
+    last_change: ModelChange | None
+    # Interviews in progress (or being scored) that still use an earlier config of this role.
+    pinned_sessions: int
+
+
+class ModelSettings(BaseModel):
+    revision: int
+    persistent: bool  # false: the settings tables are missing, nothing can be saved
+    roles: list[ModelRoleState]
+
+
+class ModelCheck(BaseModel):
+    role: str
+    spec: ModelSpec
+    data_location: DataLocationValue
+    external: bool
+    requirements: list[ModelRequirement]
+    ready: bool
+    same_as_active: bool
+
+
+class ModelTestResult(BaseModel):
+    ok: bool
+    model: str
+    latency_ms: int
+    summary: str
+    output: dict[str, Any]
+    error: str | None
+    audio: Literal["sample", "upload"] | None
+
+
+class ModelDownload(BaseModel):
+    impl: str
+    model: str
+    status: DownloadStatus
+    total_bytes: int
+    downloaded_bytes: int
+    error: str | None
+
+
 # --- requests -----------------------------------------------------------------------------
 
 
@@ -485,3 +622,23 @@ class ScheduleSuggestionRequest(BaseModel):
     to: AwareDatetime
     duration_minutes: int = Field(ge=15, le=480)
     min_interviewers: int | None = None
+
+
+class ModelSpecRequest(BaseModel):
+    impl: str
+    options: dict[str, Any] = {}
+
+
+class ApplyModelRequest(ModelSpecRequest):
+    reason: str = ""
+    confirm_external: bool = False
+
+
+class RevertModelRequest(BaseModel):
+    reason: str = ""
+    confirm_external: bool = False
+
+
+class DownloadRequest(BaseModel):
+    impl: str
+    model: str

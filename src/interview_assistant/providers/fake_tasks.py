@@ -32,9 +32,15 @@ def respond(title: str | None, prompt: str, rng: random.Random) -> dict[str, Any
         "CandidateProfile": extract_profile,
         "ScreeningAssessment": assess_screening,
         "AnswerScores": score_answer,
+        "ConnectionTest": connection_test,
     }
     handler = handlers.get(title or "")
     return handler(prompt, rng) if handler else None
+
+
+def connection_test(prompt: str, rng: random.Random) -> dict[str, Any]:
+    numbers = [int(n) for n in re.findall(r"-?\d+", tag(prompt, "numbers") or "")]
+    return {"echo": tag(prompt, "echo") or "", "sum": sum(numbers)}
 
 
 # --- 역량 사전 ------------------------------------------------------------------------------
