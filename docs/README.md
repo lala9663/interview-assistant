@@ -17,5 +17,6 @@
 | [embedding-benchmark.md](embedding-benchmark.md) | 이 노트북에서 잰 BGE-M3 속도·메모리, 한국어 검색 적중률, 임계값 보정 |
 | [whisper-benchmark.md](whisper-benchmark.md) | 이 노트북에서 잰 Whisper 크기별 속도·메모리·정확도 |
 | [ocr-benchmark.md](ocr-benchmark.md) | 이 노트북에서 잰 PaddleOCR·Tesseract 쪽당 속도·메모리·한국어 정확도 |
+| [reference/](reference/README.md) | 참고 자료: 라이브러리·모델·클라우드 서비스(라이선스·비용·데이터 위치), STT·화자분리 비교, 음성 품질, 용어집 |
 
 작성 예정: 역량 사전 v1 (Phase 1, 대상 직군 확정 후).

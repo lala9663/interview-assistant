@@ -67,6 +67,7 @@ cd frontend && npm run check    # 타입 검사 + 린트 + 테스트 + 빌드
 | [docs/embedding-benchmark.md](docs/embedding-benchmark.md) | 이 노트북에서 잰 BGE-M3 속도·메모리, 한국어 검색 적중률, 임계값 보정 |
 | [docs/whisper-benchmark.md](docs/whisper-benchmark.md) | 이 노트북에서 잰 Whisper 크기별 속도·메모리·정확도 |
 | [docs/ocr-benchmark.md](docs/ocr-benchmark.md) | 이 노트북에서 잰 PaddleOCR·Tesseract 쪽당 속도·메모리·한국어 정확도 |
+| [docs/reference/](docs/reference/README.md) | 참고 자료: 라이브러리·모델·클라우드 서비스(라이선스·비용·데이터 위치), STT·화자분리 비교, 음성 품질, 용어집 |
 | [docs/implementation-order.md](docs/implementation-order.md) | 13단계 구현 순서와 체크리스트 |
 
 ## 구조
