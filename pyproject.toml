@@ -20,6 +20,8 @@ dependencies = [
     # HWP 5.x (MIT; pinned: documents/hwp.py walks its record tree) and OLE containers (BSD)
     "syhwp==0.0.8",
     "olefile>=0.47",
+    # Vectors in memory for retrieval (question bank, rubric anchors); see retrieval/.
+    "numpy>=2.0",
 ]
 
 [project.optional-dependencies]
@@ -30,6 +32,12 @@ gcp = [
 # Local STT on CPU (faster-whisper, MIT). Weights are downloaded from the admin screen.
 whisper = [
     "faster-whisper>=1.2.1",
+]
+# Local embeddings on CPU (BGE-M3 ONNX export, MIT; ONNX Runtime MIT, tokenizers Apache-2.0). The
+# same packages faster-whisper already brings. Weights are downloaded from the admin screen.
+embedding = [
+    "onnxruntime>=1.20",
+    "tokenizers>=0.20",
 ]
 # Local OCR on CPU (PaddleOCR PP-OCRv5, Apache-2.0). paddlepaddle stays at 3.2.x: 3.3.1's oneDNN
 # path fails on Windows CPUs (docs/document-reading.md). Models come from the admin screen.

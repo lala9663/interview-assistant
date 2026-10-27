@@ -306,13 +306,22 @@ class Availability(IdMixin, TimestampMixin, Base):
     interviewer: Mapped[Interviewer] = relationship(back_populates="availabilities")
 
 
-class FollowUpSuggestion(IdMixin, TimestampMixin, Base):
-    """One AI follow-up suggestion (FR-06), kept whether or not the interviewer used it.
+class SuggestionSource(str, enum.Enum):
+    bank = "bank"  # an approved question-bank question found for the answer (shown first)
+    ai = "ai"  # written by the LLM for this answer
 
-    Suggestions streamed together share `batch_id`. `grounding` quotes the de-identified answer
-    the suggestion builds on and `rationale` says why the model proposed it. When the interviewer
+
+class FollowUpSuggestion(IdMixin, TimestampMixin, Base):
+    """One follow-up suggestion (FR-06), kept whether or not the interviewer used it.
+
+    Suggestions shown together share `batch_id`. `source` says where it came from: the question
+    bank (`bank_item_id`, `retrieval_score`) or the LLM. `grounding` quotes the de-identified
+    answer the suggestion builds on and `rationale` says why it was proposed. When the interviewer
     picks one, `used_qa_item_id` points at the question it became and `edited` says whether the
-    wording was changed; the AI's original wording stays in `question`.
+    wording was changed; the original wording stays in `question`. `latency_ms` is how long after
+    the request it appeared. A candidate that meant the same as a question already asked (this
+    interview, earlier rounds, or a suggestion shown before it) is kept with `discarded` =
+    "duplicate", `duplicate_of` and `similarity`, and was never shown or was taken back.
     """
 
     __tablename__ = "follow_up_suggestions"
@@ -333,6 +342,20 @@ class FollowUpSuggestion(IdMixin, TimestampMixin, Base):
     )
     edited: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
     used_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    source: Mapped[SuggestionSource] = mapped_column(
+        enum_column(SuggestionSource),
+        default=SuggestionSource.ai,
+        server_default=SuggestionSource.ai.value,
+        nullable=False,
+    )
+    bank_item_id: Mapped[str | None] = mapped_column(
+        ForeignKey("question_bank_items.id", ondelete="SET NULL")
+    )
+    retrieval_score: Mapped[float | None] = mapped_column(Float)
+    latency_ms: Mapped[int | None] = mapped_column(Integer)
+    discarded: Mapped[str | None] = mapped_column(String(20))
+    duplicate_of: Mapped[str | None] = mapped_column(Text)
+    similarity: Mapped[float | None] = mapped_column(Float)
 
     qa_item: Mapped[QAItem] = relationship(foreign_keys=[qa_item_id])
     used_qa_item: Mapped[QAItem | None] = relationship(foreign_keys=[used_qa_item_id])

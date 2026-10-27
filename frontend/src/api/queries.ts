@@ -8,6 +8,7 @@ import { reactive, toValue, type MaybeRefOrGetter } from 'vue'
 import { endpoints } from './endpoints'
 import type {
   ApplyModelRequest,
+  BankQuestionBody,
   Competency,
   CreateCheckPointRequest,
   CreateRoundRequest,
@@ -16,7 +17,9 @@ import type {
   CreateQARequest,
   CreateSessionRequest,
   PresetQuestionBody,
+  QuestionBankFilter,
   RevertModelRequest,
+  RubricExampleBody,
   ScheduleSuggestionRequest,
   ScreeningStatus,
   SessionStatus,
@@ -50,6 +53,10 @@ export const qk = {
   modelDownloads: ['admin', 'models', 'downloads'] as const,
   intakeSummary: ['admin', 'intake', 'summary'] as const,
   intakeEvents: (filter: IntakeEventFilter) => ['admin', 'intake', 'events', filter] as const,
+  questionBank: (filter: QuestionBankFilter) => ['question-bank', filter] as const,
+  rubricExamples: (filter: { job_family?: string; competency?: string }) => ['rubric-examples', filter] as const,
+  embeddingIndex: ['admin', 'embedding-index'] as const,
+  followUpMetrics: (days: number) => ['admin', 'follow-up-metrics', days] as const,
 }
 
 // ----- queries -------------------------------------------------------------------------------------
@@ -493,6 +500,7 @@ function useInvalidateModels() {
   const qc = useQueryClient()
   return () => {
     void qc.invalidateQueries({ queryKey: ['admin', 'models'] })
+    void qc.invalidateQueries({ queryKey: qk.embeddingIndex }) // a new embedding model starts a reindex
   }
 }
 
@@ -581,3 +589,95 @@ export function useModelDownloadMutations() {
     cancel: reactive(useMutation({ mutationFn: (m: { impl: string; model: string }) => endpoints.cancelDownload(m.impl, m.model), onSuccess: refresh })),
   }
 }
+
+// ----- 질문 은행·평점 기준 예시 ----------------------------------------------------------------------
+
+export const useQuestionBank = (filter: MaybeRefOrGetter<QuestionBankFilter>) =>
+  reactive(
+    useQuery(() => {
+      const f = toValue(filter)
+      return {
+        queryKey: qk.questionBank(f),
+        queryFn: ({ signal }) => endpoints.questionBank(f, signal),
+        placeholderData: keepPreviousData,
+      }
+    }),
+  )
+
+/** Approving or retiring changes what is searched: the embedding index status refreshes too. */
+export function useBankMutations() {
+  const qc = useQueryClient()
+  const refresh = () => {
+    void qc.invalidateQueries({ queryKey: ['question-bank'] })
+    void qc.invalidateQueries({ queryKey: qk.embeddingIndex })
+  }
+  const m = <A, R>(fn: (a: A) => Promise<R>) => reactive(useMutation({ mutationFn: fn, onSuccess: refresh }))
+  return {
+    create: m((body: BankQuestionBody) => endpoints.createQuestion(body)),
+    update: m(({ id, body }: { id: string; body: BankQuestionBody }) => endpoints.updateQuestion(id, body)),
+    approve: m(({ id, confirm }: { id: string; confirm: boolean }) => endpoints.approveQuestion(id, confirm)),
+    retire: m((id: string) => endpoints.retireQuestion(id)),
+    restore: m((id: string) => endpoints.restoreQuestion(id)),
+    aiCheck: m((id: string) => endpoints.aiCheckQuestion(id)),
+    importCsv: m(({ file, dryRun }: { file: File; dryRun: boolean }) => endpoints.importQuestions(file, dryRun)),
+  }
+}
+
+export const useRubricExamples = (filter: MaybeRefOrGetter<{ job_family?: string; competency?: string }>) =>
+  reactive(
+    useQuery(() => {
+      const f = toValue(filter)
+      return { queryKey: qk.rubricExamples(f), queryFn: ({ signal }) => endpoints.rubricExamples(f, signal), placeholderData: keepPreviousData }
+    }),
+  )
+
+export function useRubricMutations() {
+  const qc = useQueryClient()
+  const refresh = () => {
+    void qc.invalidateQueries({ queryKey: ['rubric-examples'] })
+    void qc.invalidateQueries({ queryKey: qk.embeddingIndex })
+  }
+  const m = <A, R>(fn: (a: A) => Promise<R>) => reactive(useMutation({ mutationFn: fn, onSuccess: refresh }))
+  return {
+    create: m((body: RubricExampleBody) => endpoints.createRubric(body)),
+    update: m(({ id, body }: { id: string; body: RubricExampleBody }) => endpoints.updateRubric(id, body)),
+    approve: m((id: string) => endpoints.approveRubric(id)),
+    retire: m((id: string) => endpoints.retireRubric(id)),
+    restore: m((id: string) => endpoints.restoreRubric(id)),
+  }
+}
+
+// ----- 관리자: 임베딩 색인, 꼬리질문 지표 ----------------------------------------------------------------
+
+/** Polls every second while an index is being built, every 15 s otherwise. */
+export const useEmbeddingIndex = (enabled: MaybeRefOrGetter<boolean> = true) =>
+  reactive(
+    useQuery(() => ({
+      queryKey: qk.embeddingIndex,
+      queryFn: ({ signal }) => endpoints.embeddingIndex(signal),
+      enabled: toValue(enabled),
+      staleTime: 0,
+      refetchInterval: (q) => (q.state.data?.indexes.some((i) => i.status === 'building') ? 1000 : 15_000),
+    })),
+  )
+
+export function useRebuildIndex() {
+  const qc = useQueryClient()
+  return reactive(
+    useMutation({ mutationFn: () => endpoints.rebuildIndex(), onSuccess: (d) => qc.setQueryData(qk.embeddingIndex, d) }),
+  )
+}
+
+export const useFollowUpMetrics = (days: MaybeRefOrGetter<number>, enabled: MaybeRefOrGetter<boolean> = true) =>
+  reactive(
+    useQuery(() => {
+      const d = toValue(days)
+      return {
+        queryKey: qk.followUpMetrics(d),
+        queryFn: ({ signal }) => endpoints.followUpMetrics(d, signal),
+        enabled: toValue(enabled),
+        staleTime: 0,
+        refetchInterval: 15_000,
+      }
+    }),
+  )

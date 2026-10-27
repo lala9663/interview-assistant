@@ -95,6 +95,13 @@ class Unavailable:
     async def embed(self, *args: Any, **kwargs: Any) -> Any:
         raise self._fail()
 
+    async def encode(self, *args: Any, **kwargs: Any) -> Any:
+        raise self._fail()
+
+    @property
+    def index_key(self) -> str:
+        return self.model
+
     async def diarize(self, *args: Any, **kwargs: Any) -> Any:
         raise self._fail()
 
@@ -204,6 +211,8 @@ class ModelManager:
         self._sets: dict[int, ProviderSet] = {}
         self._active: ProviderSet | None = None
         self._lock = asyncio.Lock()
+        # Called with the role key after a change is swapped in (retrieval rebuilds its index).
+        self.listeners: list[Callable[[str], None]] = []
 
     @property
     def active(self) -> ProviderSet:
@@ -469,4 +478,9 @@ class ModelManager:
             if self._tested is not None and self._tested[0] in self._instances:
                 self._tested = None
             self.evict()
-            return new, change
+        for listener in self.listeners:
+            try:
+                listener(prepared.role.key)
+            except Exception:
+                log.exception("model change listener failed")
+        return new, change

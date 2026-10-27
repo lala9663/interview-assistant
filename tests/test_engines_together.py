@@ -22,7 +22,7 @@ from pathlib import Path
 
 import pytest
 
-from interview_assistant.providers.weights import PADDLEOCR, WHISPER, is_complete
+from interview_assistant.providers.weights import BGE_M3, PADDLEOCR, WHISPER, is_complete
 
 from .conftest import ROOT
 
@@ -105,3 +105,25 @@ def test_paddleocr_first_then_whisper_in_a_fresh_process():
     result = json.loads(out[-1])
     assert result["lines"] > 10 and result["again"] == result["lines"]
     assert result["text"].strip() and result["paddle"] is False
+
+
+@pytest.mark.skipif(
+    importlib.util.find_spec("onnxruntime") is None or not is_complete(BGE_M3["bge-m3"], WEIGHTS),
+    reason="onnxruntime or the BGE-M3 model files are missing",
+)
+def test_bge_m3_joins_ocr_and_whisper(api):
+    """All three local engines on at once through the admin API, each still answering."""
+    api.runtime.settings.weights_dir = WEIGHTS
+    for role, spec, reason in (
+        ("document.ocr", OCR, "스캔본 읽기"),
+        ("stt.batch", STT, "로컬 Whisper"),
+        ("embedding", {"impl": "bge_m3", "options": {"model": "bge-m3"}}, "질문 은행 검색"),
+    ):
+        state = api.post(f"/api/admin/models/{role}/apply", json={**spec, "reason": reason}).json()
+        assert state["status"] == "ready", state
+    embedded = _test(api, "embedding", {"impl": "bge_m3", "options": {"model": "bge-m3"}})
+    assert embedded["output"]["dimensions"] == 1024 and embedded["output"]["sparse"]
+    assert embedded["output"]["similar"] > embedded["output"]["unrelated"]
+    assert _test(api, "stt.batch", STT)["output"]["text"].strip()
+    assert _test(api, "document.ocr", OCR)["output"]["cer"] < 0.05
+    assert not _paddle_loaded()

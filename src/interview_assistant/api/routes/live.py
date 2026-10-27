@@ -62,5 +62,6 @@ def follow_ups(
             runtime.deid,
             session_id=session_id,
             qa_item_id=body.qa_item_id,
+            retrieval=runtime.retrieval,
         )
     )

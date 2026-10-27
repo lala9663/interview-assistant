@@ -106,7 +106,7 @@ def test_ai_draft_goes_through_the_provider_and_is_audited(api):
     assert len(names) == 4 and all(len(c["bars"]) == 5 for c in body["competencies"])
     [log] = _audits(api, "competency_set.generated")[-1:]
     assert log.actor_type.value == "ai" and log.model == "fake-llm"
-    assert log.prompt_version == "competency-v0.3" and log.target_id == body["id"]
+    assert log.prompt_version == "competency-v0.4" and log.target_id == body["id"]
     assert log.input_tokens and log.output_tokens
 
 
@@ -320,7 +320,7 @@ def test_manual_mode_interview_from_consent_to_scores(api):
     ev = wait_for(
         api, f"/api/sessions/{SCHEDULED}/evaluation", lambda b: b["ai"]["status"] == "completed"
     )
-    assert ev["ai"]["model"] == "fake-llm" and ev["ai"]["prompt_version"] == "score-v0.3"
+    assert ev["ai"]["model"] == "fake-llm" and ev["ai"]["prompt_version"] == "score-v0.4"
     [score] = ev["ai"]["scores"]
     assert score["qa_item_id"] == qa["id"] and score["competency"] == preset["competency"]
     assert score["evidence"] in answered["answer_deidentified"]
@@ -389,10 +389,13 @@ def test_live_interview_transcript_follow_ups_and_scoring(api):
     events = sse_events(stream.text)
     names = [e for e, _ in events]
     assert names[0] == "batch.start" and names[-1] == "batch.done"
-    assert names.count("suggestion.start") == names.count("suggestion.done") == 3
+    assert names.count("suggestion.start") == names.count("suggestion.done")
     batch = events[0][1]
-    assert batch["model"] == "fake-llm" and batch["prompt_version"] == "followup-v0.3"
-    done = [d for e, d in events if e == "suggestion.done"]
+    assert batch["model"] == "fake-llm" and batch["prompt_version"] == "followup-v0.4"
+    # Question-bank suggestions come first, finished at once; then the model's three, streamed.
+    sources = [d["source"] for e, d in events if e == "suggestion.done"]
+    assert sources == ["bank"] * (len(sources) - 3) + ["ai"] * 3
+    done = [d for e, d in events if e == "suggestion.done" and d["source"] == "ai"]
     for d in done:
         streamed = "".join(
             x["text"]
@@ -407,7 +410,7 @@ def test_live_interview_transcript_follow_ups_and_scoring(api):
         stored = db.scalars(
             select(FollowUpSuggestion).where(FollowUpSuggestion.batch_id == batch["batch_id"])
         ).all()
-        assert sorted(x.position for x in stored) == [0, 1, 2]
+        assert sorted(x.position for x in stored) == list(range(len(sources)))
 
     chosen = done[1]
     used = api.post(

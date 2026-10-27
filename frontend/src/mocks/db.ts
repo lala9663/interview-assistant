@@ -57,6 +57,7 @@ import { STEP_STATUSES } from '@/api/types'
 import { summarizeAiScores } from '@/lib/scoring'
 import { addDays, addMinutes, kstDate, kstParts, MINUTE, startOfKstDay, startOfKstWeek } from '@/lib/time'
 
+import { createBankState, type BankState } from './bank-state'
 import { ANSWER_BANK, GENERIC_BANK, type SuggestionSeed } from './data/banks'
 import { CANDIDATES, INTERVIEWERS, ME_KEY, pseudonymOf } from './data/people'
 import { P1, P2, POSTING_SEEDS, type PresetSeed } from './data/postings'
@@ -64,8 +65,8 @@ import { createIntakeState, type IntakeState } from './intake-state'
 import { createModelState, type ModelState } from './models'
 
 export const AI_MODEL = 'claude-opus-5-5'
-export const SCORING_PROMPT = 'score-v0.3'
-export const FOLLOWUP_PROMPT = 'followup-v0.3'
+export const SCORING_PROMPT = 'score-v0.4'
+export const FOLLOWUP_PROMPT = 'followup-v0.4'
 export const CHECKPOINT_PROMPT = 'checkpoint-v0.1'
 export const SCREENING_MODEL = 'claude-haiku-5-5'
 export const SCORING_SAMPLES = 3
@@ -121,6 +122,7 @@ export interface RegisteredSuggestion extends SuggestionSeed {
   batch_id: string
   suggestion_id: string
   qa_item_id: string
+  source: 'bank' | 'ai'
 }
 
 export class MockDb {
@@ -160,12 +162,15 @@ export class MockDb {
   models: ModelState
   /** 관리자 > 연동 현황 (mocks/intake-state.ts) */
   intake: IntakeState
+  /** 질문 은행, 평점 기준 예시, embedding index, follow-up metrics (mocks/bank-state.ts) */
+  bank: BankState
 
   constructor(now = new Date()) {
     this.now = now
     seed(this)
     this.models = createModelState(now, newId)
     this.intake = createIntakeState(this, newId)
+    this.bank = createBankState(now)
   }
 
   // ----- lookups ---------------------------------------------------------------------------------

@@ -1,4 +1,14 @@
-import { BriefcaseBusinessIcon, CalendarDaysIcon, FileSearchIcon, InboxIcon, LayoutDashboardIcon, MicIcon, SlidersHorizontalIcon } from '@lucide/vue'
+import {
+  BriefcaseBusinessIcon,
+  CalendarDaysIcon,
+  ChartColumnIcon,
+  FileSearchIcon,
+  InboxIcon,
+  LayoutDashboardIcon,
+  LibraryBigIcon,
+  MicIcon,
+  SlidersHorizontalIcon,
+} from '@lucide/vue'
 import type { Component } from 'vue'
 
 export interface NavItem {
@@ -19,6 +29,12 @@ export const NAV_ITEMS: NavItem[] = [
   { to: '/sessions', label: '면접', icon: MicIcon, fr: 'FR-04~08', keywords: 'interview session live 평가 evaluation' },
   { to: '/schedule', label: '면접관 스케줄', icon: CalendarDaysIcon, fr: 'FR-09', keywords: 'schedule calendar 일정 가용' },
   {
+    to: '/question-bank',
+    label: '질문 은행',
+    icon: LibraryBigIcon,
+    keywords: 'question bank 질문 은행 꼬리질문 평점 기준 예시 rubric 금지 질문 csv',
+  },
+  {
     to: '/admin/models',
     label: '모델 설정',
     icon: SlidersHorizontalIcon,
@@ -30,6 +46,13 @@ export const NAV_ITEMS: NavItem[] = [
     label: '연동 현황',
     icon: InboxIcon,
     keywords: 'intake site recruiting 채용 사이트 연동 수신 지원서 이벤트 실패 다시 처리',
+    adminOnly: true,
+  },
+  {
+    to: '/admin/follow-up-metrics',
+    label: '꼬리질문 지표',
+    icon: ChartColumnIcon,
+    keywords: 'metrics follow-up 꼬리질문 지표 채택률 질문 은행 중복 임베딩 색인',
     adminOnly: true,
   },
 ]

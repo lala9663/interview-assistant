@@ -13,6 +13,7 @@ import hashlib
 import json
 import math
 import random
+import re
 import time
 import wave
 from collections.abc import AsyncIterator, Sequence
@@ -26,6 +27,7 @@ from interview_assistant.providers.base import (
     SAMPLE_RATE,
     SIMULATED_TEXT,
     DiarizationProvider,
+    Embedding,
     EmbeddingProvider,
     LLMProvider,
     LLMResult,
@@ -200,19 +202,57 @@ class FakeSTT(STTProvider):
         ]
 
 
+def _terms(text: str) -> list[str]:
+    """Words and the two-character pieces of longer words: enough lexical overlap for a fake."""
+    terms: list[str] = []
+    for word in re.findall(r"\w+", text.lower()):
+        terms.append(word)
+        if len(word) > 2:
+            terms.extend(word[i : i + 2] for i in range(len(word) - 1))
+    return terms
+
+
+def _bucket(term: str, size: int) -> int:
+    return int.from_bytes(hashlib.sha256(term.encode("utf-8")).digest()[:8], "big") % size
+
+
 class FakeEmbedding(EmbeddingProvider):
-    def __init__(self, dimensions: int = 8, model: str = "fake-embedding", **_: Any) -> None:
+    """Feature hashing of words and character pairs: texts that share words land close, so
+    retrieval, duplicate filtering and reindexing run end to end without model weights. It knows
+    no meaning (a paraphrase with other words is far)."""
+
+    def __init__(
+        self,
+        dimensions: int = 256,
+        model: str = "fake-ngram",
+        sparse_weight: float = 0.3,
+        duplicate_threshold: float = 0.8,
+        min_score: float = 0.15,
+        **_: Any,
+    ) -> None:
         self.model = model
         self.dimensions = dimensions
+        self.sparse_weight = sparse_weight
+        self.duplicate_threshold = duplicate_threshold
+        self.min_score = min_score
+
+    def _one(self, text: str) -> Embedding:
+        dense = [0.0] * self.dimensions
+        counts: dict[int, float] = {}
+        for term in _terms(text):
+            h = _bucket(term, 1 << 30)
+            dense[h % self.dimensions] += 1.0 if h & (1 << 29) else -1.0
+            if len(term) >= 2:
+                counts[h] = counts.get(h, 0.0) + 1.0
+        norm = math.sqrt(sum(v * v for v in dense)) or 1.0
+        total = math.sqrt(sum(c * c for c in counts.values())) or 1.0
+        return Embedding([v / norm for v in dense], {k: c / total for k, c in counts.items()})
 
     async def embed(self, texts: Sequence[str]) -> list[list[float]]:
-        vectors: list[list[float]] = []
-        for text in texts:
-            digest = hashlib.sha256(text.encode("utf-8")).digest()
-            raw = [b / 255.0 for b in digest[: self.dimensions]]
-            norm = math.sqrt(sum(v * v for v in raw)) or 1.0
-            vectors.append([v / norm for v in raw])
-        return vectors
+        return [self._one(t).dense for t in texts]
+
+    async def encode(self, texts: Sequence[str]) -> list[Embedding]:
+        return [self._one(t) for t in texts]
 
 
 class FakeOCR(OCRProvider):

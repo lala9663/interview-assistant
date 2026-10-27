@@ -12,7 +12,9 @@
 | [frontend.md](frontend.md) | 프론트 스택, 모의·연결 모드, 검사, 의존성 규칙 |
 | [ai-models.md](ai-models.md) | 관리자 > 모델 설정 사용법, 로컬 Whisper·OCR 설치·다운로드·테스트 |
 | [document-reading.md](document-reading.md) | 서류 읽기: 형식별 지원 현황, 쪽마다 텍스트·OCR 고르는 규칙, 깨짐·증명사진 판정, OCR 오독 대책, HWP 도구 결정, 알려진 한계 |
-| [model-selection.md](model-selection.md) | 모델 선택 기준, 답변→꼬리질문 간격 예상, STT 선택지, 면접 방식별 오디오·화자 구분, 회사 확인 항목 |
+| [model-selection.md](model-selection.md) | 모델 선택 기준, 답변→꼬리질문 간격 예상, STT 선택지, 면접 방식별 오디오·화자 구분, 임베딩(BGE-M3) 결정, 회사 확인 항목 |
+| [question-bank.md](question-bank.md) | 질문 은행·평점 기준 예시: 어디에 쓰고 쓰지 않나, 금지 질문 규칙 목록, CSV 형식 |
+| [embedding-benchmark.md](embedding-benchmark.md) | 이 노트북에서 잰 BGE-M3 속도·메모리, 한국어 검색 적중률, 임계값 보정 |
 | [whisper-benchmark.md](whisper-benchmark.md) | 이 노트북에서 잰 Whisper 크기별 속도·메모리·정확도 |
 | [ocr-benchmark.md](ocr-benchmark.md) | 이 노트북에서 잰 PaddleOCR·Tesseract 쪽당 속도·메모리·한국어 정확도 |
 

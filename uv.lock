@@ -1147,8 +1147,8 @@ name = "httpcore2"
 version = "2.16.0"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
-    { name = "h11" },
-    { name = "truststore" },
+    { name = "h11", marker = "sys_platform != 'emscripten'" },
+    { name = "truststore", marker = "sys_platform != 'emscripten'" },
 ]
 sdist = { url = "https://files.pythonhosted.org/packages/c0/61/afa9d6b7452f9eca73f73d45324eb0bb52f098fd5e6049bf6b8263be9b4e/httpcore2-2.16.0.tar.gz", hash = "sha256:c72cd0413563b17e1cd8354677dff887466f8ec2551679759e93126534428643", size = 69886, upload-time = "2026-10-21T07:09:45.31Z" }
 wheels = [
@@ -1338,6 +1338,7 @@ dependencies = [
     { name = "beautifulsoup4" },
     { name = "cryptography" },
     { name = "fastapi" },
+    { name = "numpy" },
     { name = "olefile" },
     { name = "pdfplumber" },
     { name = "pydantic" },
@@ -1352,6 +1353,10 @@ dependencies = [
 ]
 
 [package.optional-dependencies]
+embedding = [
+    { name = "onnxruntime" },
+    { name = "tokenizers" },
+]
 gcp = [
     { name = "anthropic", extra = ["vertex"] },
     { name = "google-cloud-speech" },
@@ -1382,7 +1387,9 @@ requires-dist = [
     { name = "fastapi", specifier = ">=0.115" },
     { name = "faster-whisper", marker = "extra == 'whisper'", specifier = ">=1.2.1" },
     { name = "google-cloud-speech", marker = "extra == 'gcp'", specifier = ">=2.27" },
+    { name = "numpy", specifier = ">=2.0" },
     { name = "olefile", specifier = ">=0.47" },
+    { name = "onnxruntime", marker = "extra == 'embedding'", specifier = ">=1.20" },
     { name = "paddleocr", marker = "extra == 'ocr'", specifier = "==3.7.0" },
     { name = "paddlepaddle", marker = "extra == 'ocr'", specifier = "==3.2.2" },
     { name = "pdfplumber", specifier = ">=0.11.10" },
@@ -1394,9 +1401,10 @@ requires-dist = [
     { name = "pyyaml", specifier = ">=6.0" },
     { name = "sqlalchemy", specifier = ">=2.0" },
     { name = "syhwp", specifier = "==0.0.8" },
+    { name = "tokenizers", marker = "extra == 'embedding'", specifier = ">=0.20" },
     { name = "uvicorn", extras = ["standard"], specifier = ">=0.30" },
 ]
-provides-extras = ["gcp", "whisper", "ocr"]
+provides-extras = ["gcp", "whisper", "embedding", "ocr"]
 
 [package.metadata.requires-dev]
 dev = [

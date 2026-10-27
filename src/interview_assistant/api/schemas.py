@@ -1024,3 +1024,180 @@ class RevertModelRequest(BaseModel):
 class DownloadRequest(BaseModel):
     impl: str
     model: str
+
+
+# --- 질문 은행·평점 기준 예시·임베딩 색인 (retrieval) -------------------------------------------
+
+BankStatusValue = Literal["draft", "approved", "retired"]
+
+
+class BankFlag(BaseModel):
+    """A prohibited-question warning: rule match or AI check (question_rules.py)."""
+
+    category: str
+    label: str
+    basis: str
+    matched: str
+    source: Literal["rule", "ai"]
+    note: str = ""
+
+
+class BankPerson(Schema):
+    id: str
+    name: str
+
+
+class QuestionBankItem(BaseModel):
+    id: str
+    job_family: str
+    competency: str
+    round_position: int | None
+    question: str
+    intent: str
+    follow_ups: list[str]
+    status: BankStatusValue
+    flags: list[BankFlag]
+    source: Literal["manual", "csv", "seed"]
+    created_by: BankPerson | None
+    approved_by: BankPerson | None
+    created_at: Timestamp
+    updated_at: Timestamp
+    approved_at: Timestamp | None
+    retired_at: Timestamp | None
+
+
+class BankFamily(BaseModel):
+    """A job family with the competencies used in it: the bank's, and those of postings' dictionaries."""
+
+    job_family: str
+    competencies: list[str]
+
+
+class QuestionBankList(BaseModel):
+    items: list[QuestionBankItem]
+    families: list[BankFamily]
+    counts: dict[str, int]  # draft / approved / retired, of the filtered list
+    total: int
+
+
+class BankQuestionBody(BaseModel):
+    job_family: str = Field(max_length=100)
+    competency: str = Field(max_length=100)
+    round_position: int | None = Field(default=None, ge=1, le=6)
+    question: str
+    intent: str = Field(default="", max_length=200)
+    follow_ups: list[str] = []
+
+
+class BankCheckRequest(BaseModel):
+    question: str
+    follow_ups: list[str] = []
+
+
+class BankCheckResult(BaseModel):
+    flags: list[BankFlag]
+
+
+class ApproveRequest(BaseModel):
+    # Approve although the question has prohibited-question warnings (recorded in the audit log).
+    confirm_warnings: bool = False
+
+
+class ImportRowIssue(BaseModel):
+    row: int  # 1-based data row (the header is row 0)
+    message: str
+
+
+class ImportResult(BaseModel):
+    dry_run: bool
+    rows: int
+    created: int
+    skipped: int  # same question already in the bank for that job family and competency
+    errors: list[ImportRowIssue]
+    warnings: list[ImportRowIssue]  # prohibited-question warnings on imported drafts
+
+
+class RubricOverlap(BaseModel):
+    """An approved example of the same competency at another score that reads almost the same:
+    two anchors that close make the levels ambiguous."""
+
+    id: str
+    score: int
+    similarity: float
+
+
+class RubricExample(BaseModel):
+    id: str
+    job_family: str
+    competency: str
+    score: int
+    question: str
+    answer: str
+    rationale: str
+    status: BankStatusValue
+    source: Literal["manual", "csv", "seed"]
+    created_by: BankPerson | None
+    approved_by: BankPerson | None
+    created_at: Timestamp
+    updated_at: Timestamp
+    approved_at: Timestamp | None
+    retired_at: Timestamp | None
+    overlaps: list[RubricOverlap] = []
+
+
+class RubricExampleBody(BaseModel):
+    job_family: str = Field(max_length=100)
+    competency: str = Field(max_length=100)
+    score: int = Field(ge=1, le=5)
+    question: str = ""
+    answer: str
+    rationale: str = ""
+
+
+class RubricList(BaseModel):
+    items: list[RubricExample]
+    families: list[BankFamily]
+    counts: dict[str, int]
+
+
+class EmbeddingIndexState(BaseModel):
+    index_key: str
+    model: str
+    dimensions: int
+    status: Literal["building", "ready", "failed"]
+    total: int
+    done: int
+    started_at: Timestamp
+    finished_at: Timestamp | None
+    error: str | None
+    serving: bool  # searches use this one now
+
+
+class EmbeddingIndexStatus(BaseModel):
+    """관리자 > 모델 설정 > 임베딩: what searches use now and any index being built."""
+
+    active_model: str | None  # the embedding role's provider now
+    active_index_key: str | None
+    serving_index_key: str | None
+    counts: dict[str, int]  # vectors searched now, by owner type
+    indexes: list[EmbeddingIndexState]
+
+
+class SourceMetrics(BaseModel):
+    source: Literal["bank", "ai"]
+    shown: int
+    used: int
+    edited: int
+    adoption_rate: float | None
+    batches: int  # batches with at least one suggestion of this source
+    first_ms_median: int | None  # request -> first card of this source, per batch
+    first_ms_p90: int | None
+
+
+class FollowUpMetrics(BaseModel):
+    since: Timestamp
+    days: int
+    batches: int
+    sources: list[SourceMetrics]
+    duplicates: dict[str, int]  # bank / ai / total candidates dropped as already asked
+    retrieval_model: str | None

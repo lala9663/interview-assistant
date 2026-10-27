@@ -13,6 +13,7 @@ import { Card } from '@/components/ui/card'
 import { Skeleton } from '@/components/ui/skeleton'
 
 import ChangeModelDialog from './ChangeModelDialog.vue'
+import EmbeddingIndexPanel from './EmbeddingIndexPanel.vue'
 import ModelHistory from './ModelHistory.vue'
 import RoleCard from './RoleCard.vue'
 
@@ -83,6 +84,7 @@ function edit(state: ModelRoleState) {
               <Skeleton v-for="i in 3" :key="i" class="h-52 rounded-xl" />
             </template>
           </div>
+          <EmbeddingIndexPanel v-if="g.key === 'ai' && isAdmin" class="mt-4" />
         </section>
       </template>
 

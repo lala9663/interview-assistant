@@ -1,9 +1,17 @@
-"""FR-06: stream 2-3 follow-up suggestions for one answer (POST /api/sessions/{id}/follow-ups).
+"""FR-06: follow-up suggestions for one answer (POST /api/sessions/{id}/follow-ups, SSE).
 
-The model writes tagged blocks (prompts.FOLLOWUP_FORMAT); `SuggestionParser` turns its token
-stream into the SSE events of docs/api-contract.md 3.2 as text arrives, so the question appears
-while it is being written. Every finished suggestion is stored (FollowUpSuggestion) whether or not
-the interviewer uses it. Suggestions are never turned into questions here.
+First the question bank: the de-identified answer is embedded (after the guard cleared it) and up
+to two approved bank questions or follow-up examples close to it are shown at once, marked as such.
+Then the LLM streams its own 2-3, with the closest bank questions in the prompt as examples. The
+model writes tagged blocks (prompts.FOLLOWUP_FORMAT); `SuggestionParser` turns its token stream into
+the SSE events of docs/api-contract.md 3.2 as text arrives.
+
+A candidate that means the same as a question already asked in this interview or an earlier round,
+or as a suggestion shown before it (dense similarity at or above the embedding role's
+`duplicate_threshold`), is left out: a bank one before it is shown, a model one once it is complete
+(`suggestion.discarded` takes back the card that was being written). Every candidate is stored
+(FollowUpSuggestion) with its source, timing and, if dropped, what it duplicated. Suggestions are
+never turned into questions here.
 
 In round 2 and later the prompt also carries the earlier rounds' Q&A (de-identified, as stored),
 so the model does not ask again what an earlier round asked and digs deeper instead. Those texts
@@ -12,7 +20,9 @@ are declared to the guard like the current answer.
 
 from __future__ import annotations
 
+import logging
 import re
+import time
 from collections.abc import AsyncIterator, Sequence
 from dataclasses import dataclass, field
 from typing import Any
@@ -20,18 +30,35 @@ from typing import Any
 from sqlalchemy.orm import Session, sessionmaker
 
 from interview_assistant.ai.gateway import AiCall, AiGateway
-from interview_assistant.ai.guard import IdentifierInPrompt
+from interview_assistant.ai.guard import IdentifierInPrompt, check_prompt
 from interview_assistant.ai.prompts import (
     FOLLOWUP_PROMPT,
     FOLLOWUP_SYSTEM,
+    RETRIEVAL_VERSION,
     followup_prompt,
 )
 from interview_assistant.deid.service import DeidService
-from interview_assistant.interviews import earlier_round_qa, session_competency_set
-from interview_assistant.models import FollowUpSuggestion, QAItem
+from interview_assistant.interviews import (
+    earlier_round_qa,
+    earlier_sessions,
+    session_competency_set,
+)
+from interview_assistant.models import (
+    ActorType,
+    AuditLog,
+    FollowUpSuggestion,
+    QAItem,
+    SuggestionSource,
+)
 from interview_assistant.models.base import new_id
+from interview_assistant.retrieval.bank import BankMatch, bank_matches, duplicate_of
+from interview_assistant.retrieval.service import Retrieval
 
-MAX_SUGGESTIONS = 3
+log = logging.getLogger(__name__)
+
+MAX_SUGGESTIONS = 3  # from the model, shown (duplicates do not count)
+BANK_SUGGESTIONS = 2  # from the question bank, shown first
+BANK_EXAMPLES = 4  # bank questions given to the model as examples
 CONTEXT_ANSWERS = 2  # earlier answers given to the model as context
 
 Event = tuple[str, dict[str, Any]]
@@ -152,6 +179,46 @@ def _pick_competency(name: str, names: Sequence[str], target: str | None) -> str
     return target if target in names else names[0]
 
 
+@dataclass
+class _Shown:
+    """A question the interviewer already has in front of them: asked, or suggested in this batch."""
+
+    text: str
+    vector: list[float]
+
+
+async def _retrieve(
+    retrieval: Retrieval | None,
+    session_factory: sessionmaker[Session],
+    *,
+    answer: str,
+    asked: list[str],
+    job_family: str,
+    competencies: list[str],
+    round_position: int,
+) -> tuple[list[BankMatch], list[_Shown], int]:
+    """Bank questions close to the answer, and the asked questions' vectors (for duplicates)."""
+    if retrieval is None or retrieval.serving is None:
+        return [], [], 0
+    started = time.perf_counter()
+    try:
+        embeddings = await retrieval.encode([answer, *asked])
+        with session_factory() as db:
+            matches = await bank_matches(
+                retrieval,
+                db,
+                embeddings[0],
+                job_family=job_family,
+                competencies=competencies,
+                round_position=round_position,
+            )
+    except Exception:
+        log.exception("question-bank retrieval failed; follow-ups continue without it")
+        return [], [], round((time.perf_counter() - started) * 1000)
+    shown = [_Shown(q, e.dense) for q, e in zip(asked, embeddings[1:], strict=True)]
+    return matches, shown, round((time.perf_counter() - started) * 1000)
+
+
 async def follow_up_events(
     session_factory: sessionmaker[Session],
     ai: AiGateway,
@@ -159,7 +226,13 @@ async def follow_up_events(
     *,
     session_id: str,
     qa_item_id: str,
+    retrieval: Retrieval | None = None,
 ) -> AsyncIterator[Event]:
+    started = time.perf_counter()
+
+    def elapsed() -> int:
+        return round((time.perf_counter() - started) * 1000)
+
     batch_id = new_id()
     with session_factory() as db:
         qa = db.get(QAItem, qa_item_id)
@@ -179,8 +252,66 @@ async def follow_up_events(
             if q.seq < qa.seq and q.answer_deidentified
         ][-CONTEXT_ANSWERS:]
         earlier_rounds = earlier_round_qa(session)
+        # Every question the candidate already heard: this interview and earlier rounds.
+        asked = list(
+            dict.fromkeys(
+                [q.question for q in session.qa_items]
+                + [q.question for s in earlier_sessions(session) for q in s.qa_items]
+            )
+        )
         answer = qa.answer_deidentified
         target = qa.target_competency
+        question = qa.question
+        job_family = session.application.posting.job_family
+        round_position = session.round.position
+        known = deid.identity(session.application.candidate)
+        candidate_texts = [
+            answer,
+            question,
+            *(t for pair in earlier for t in pair),
+            *(t for _, q, a in earlier_rounds for t in (q, a)),
+        ]
+
+    # Candidate text is embedded only once the guard passed it (as it would for the LLM).
+    try:
+        check_prompt("", [*candidate_texts, *asked], known)
+        cleared = True
+    except IdentifierInPrompt:
+        cleared = False
+    matches, shown, retrieval_ms = (
+        await _retrieve(
+            retrieval,
+            session_factory,
+            answer=answer,
+            asked=asked,
+            job_family=job_family,
+            competencies=names,
+            round_position=round_position,
+        )
+        if cleared
+        else ([], [], 0)
+    )
+    retrieved = retrieval is not None and retrieval.serving is not None and cleared
+    retrieval_model = retrieval.model if retrieved and retrieval is not None else None
+    threshold = retrieval.threshold("duplicate_threshold", 0.9) if retrieval else 1.0
+    minimum = retrieval.threshold("min_score", 0.5) if retrieval else 0.0
+    picks: list[tuple[BankMatch, _Shown]] = []
+    rows: list[dict[str, Any]] = []  # every candidate, stored at the end of its life
+    for match in matches:
+        if match.score < minimum or len(picks) >= BANK_SUGGESTIONS:
+            continue
+        same = duplicate_of(match.embedding, [(s.text, s.vector) for s in shown], threshold)
+        if same is not None:
+            rows.append(_bank_row(match, answer, batch_id, None, retrieval_model, discarded=same))
+            continue
+        picks.append((match, _Shown(match.text, match.embedding)))
+        shown.append(_Shown(match.text, match.embedding))
+    examples = [
+        (m.item.competency, m.item.question, list(m.item.follow_ups or []))
+        for m in matches[:BANK_EXAMPLES]
+    ]
+
+    with session_factory() as db:
         call = AiCall(
             action="followup.generated",
             prompt_version=FOLLOWUP_PROMPT,
@@ -190,22 +321,20 @@ async def follow_up_events(
                 target_competency=target,
                 previous=earlier,
                 earlier_rounds=earlier_rounds,
-                question=qa.question,
+                question=question,
                 answer=answer,
+                examples=examples,
+                already_suggested=[m.text for m, _ in picks],
             ),
-            candidate_texts=[
-                answer,
-                qa.question,
-                *(t for pair in earlier for t in pair),
-                *(t for _, q, a in earlier_rounds for t in (q, a)),
-            ],
-            known=deid.identity(session.application.candidate),
+            candidate_texts=candidate_texts,
+            known=known,
             target_type="interview_session",
             target_id=session_id,
             details={
-                "qa_item_id": qa.id,
+                "qa_item_id": qa_item_id,
                 "batch_id": batch_id,
                 "earlier_round_answers": len(earlier_rounds),
+                "bank_examples": len(examples),
             },
         )
         try:
@@ -214,6 +343,26 @@ async def follow_up_events(
             db.commit()
             yield "error", {"message": "답변에 식별 정보가 남아 있어 AI에 보내지 않았습니다."}
             return
+        if retrieved and retrieval is not None and retrieval.serving is not None:
+            db.add(
+                AuditLog(
+                    actor_type=ActorType.ai,
+                    action="followup.retrieved",
+                    target_type="interview_session",
+                    target_id=session_id,
+                    model=retrieval.model,
+                    prompt_version=RETRIEVAL_VERSION,
+                    details={
+                        "qa_item_id": qa_item_id,
+                        "batch_id": batch_id,
+                        "index_key": retrieval.serving.key,
+                        "matches": len(matches),
+                        "shown": len(picks),
+                        "duplicates": len(rows),
+                        "retrieval_ms": retrieval_ms,
+                    },
+                )
+            )
         db.commit()
 
     yield (
@@ -223,20 +372,57 @@ async def follow_up_events(
             "qa_item_id": qa_item_id,
             "model": model,
             "prompt_version": FOLLOWUP_PROMPT,
+            "retrieval_model": retrieval_model,
         },
     )
-    parser = SuggestionParser()
     index = 0
+    for match, _ in picks:
+        row = _bank_row(match, answer, batch_id, index, retrieval_model)
+        row["latency_ms"] = elapsed()
+        competency = match.item.competency
+        yield (
+            "suggestion.start",
+            {
+                "batch_id": batch_id,
+                "suggestion_id": row["id"],
+                "index": index,
+                "competency": competency,
+                "source": "bank",
+            },
+        )
+        done = {
+            "batch_id": batch_id,
+            "suggestion_id": row["id"],
+            "index": index,
+            "competency": competency,
+            "question": row["question"],
+            "rationale": row["rationale"],
+            "grounding": row["grounding"],
+            "source": "bank",
+            "bank_item_id": match.item.id,
+            "score": round(match.score, 3),
+        }
+        rows.append(row)
+        yield "suggestion.done", done
+        index += 1
+    _store(session_factory, rows, qa_item_id)
+    rows = []
+
+    parser = SuggestionParser()
+    written = 0  # model suggestions shown (duplicates do not count)
     suggestion_id = ""
     competency = ""
+    shown_at = 0
+    discarded = 0
     try:
         async for chunk in stream:
             for event in parser.feed(chunk):
-                if index >= MAX_SUGGESTIONS:
+                if written >= MAX_SUGGESTIONS:
                     break
                 if event.kind == "start":
                     suggestion_id = new_id()
                     competency = _pick_competency(event.fields["competency"], names, target)
+                    shown_at = elapsed()
                     yield (
                         "suggestion.start",
                         {
@@ -244,6 +430,7 @@ async def follow_up_events(
                             "suggestion_id": suggestion_id,
                             "index": index,
                             "competency": competency,
+                            "source": "ai",
                         },
                     )
                 elif event.kind == "delta":
@@ -264,38 +451,114 @@ async def follow_up_events(
                         "question": _squash(event.fields.get("question", "")),
                         "rationale": _squash(event.fields.get("rationale", "")),
                         "grounding": ground(event.fields.get("grounding", ""), answer),
+                        "source": "ai",
                     }
-                    _store(session_factory, done, qa_item_id, model)
-                    yield "suggestion.done", done
+                    row = {
+                        "id": suggestion_id,
+                        "batch_id": batch_id,
+                        "position": index,
+                        "competency": competency,
+                        "question": done["question"],
+                        "rationale": done["rationale"],
+                        "grounding": done["grounding"],
+                        "model": model,
+                        "prompt_version": FOLLOWUP_PROMPT,
+                        "source": SuggestionSource.ai,
+                        "latency_ms": shown_at,
+                    }
                     index += 1
-            if index >= MAX_SUGGESTIONS:
+                    vector = await _vector(retrieval, done["question"], known) if cleared else None
+                    same = (
+                        duplicate_of(vector, [(s.text, s.vector) for s in shown], threshold)
+                        if vector is not None
+                        else None
+                    )
+                    if same is not None:
+                        row |= {"discarded": "duplicate", "duplicate_of": same[0], "similarity": round(same[1], 3)}
+                        _store(session_factory, [row], qa_item_id)
+                        discarded += 1
+                        yield (
+                            "suggestion.discarded",
+                            {
+                                "batch_id": batch_id,
+                                "suggestion_id": suggestion_id,
+                                "reason": "duplicate",
+                                "duplicate_of": same[0],
+                                "similarity": round(same[1], 3),
+                            },
+                        )
+                        continue
+                    if vector is not None:
+                        shown.append(_Shown(done["question"], vector))
+                    _store(session_factory, [row], qa_item_id)
+                    yield "suggestion.done", done
+                    written += 1
+            if written >= MAX_SUGGESTIONS:
                 break
     except Exception:
+        log.exception("follow-up stream failed")
         yield "error", {"message": "꼬리질문 생성 중 오류가 발생했습니다."}
         return
     finally:
         aclose = getattr(stream, "aclose", None)
         if aclose is not None:
             await aclose()  # stops the model call when the client goes away
-    yield "batch.done", {"batch_id": batch_id}
+    yield "batch.done", {"batch_id": batch_id, "discarded": discarded}
 
 
-def _store(
-    session_factory: sessionmaker[Session], done: dict[str, Any], qa_item_id: str, model: str
-) -> None:
+async def _vector(retrieval: Retrieval | None, text: str, known: Any) -> list[float] | None:
+    """A model-written question's vector for the duplicate check (guarded like candidate text)."""
+    if retrieval is None or retrieval.serving is None or not text:
+        return None
+    try:
+        check_prompt("", [text], known)
+        [embedding] = await retrieval.encode([text])
+    except Exception:
+        return None
+    return embedding.dense
+
+
+def _bank_row(
+    match: BankMatch,
+    answer: str,
+    batch_id: str,
+    index: int | None,
+    model: str | None,
+    *,
+    discarded: tuple[str, float] | None = None,
+) -> dict[str, Any]:
+    item = match.item
+    if match.part == 0:
+        rationale = f"질문 은행 · {item.intent}" if item.intent else "질문 은행의 검수된 질문"
+    else:
+        rationale = f"질문 은행 '{_squash(item.question)}'의 꼬리질문 예시"
+    row: dict[str, Any] = {
+        "id": new_id(),
+        "batch_id": batch_id,
+        "position": index if index is not None else -1,
+        "competency": item.competency,
+        "question": _squash(match.text),
+        "rationale": rationale,
+        "grounding": ground(match.text, answer),
+        "model": model,
+        "prompt_version": RETRIEVAL_VERSION,
+        "source": SuggestionSource.bank,
+        "bank_item_id": item.id,
+        "retrieval_score": round(match.score, 4),
+    }
+    if discarded is not None:
+        row |= {
+            "discarded": "duplicate",
+            "duplicate_of": discarded[0],
+            "similarity": round(discarded[1], 3),
+        }
+    return row
+
+
+def _store(session_factory: sessionmaker[Session], rows: list[dict[str, Any]], qa_item_id: str) -> None:
+    if not rows:
+        return
     with session_factory() as db:
-        db.add(
-            FollowUpSuggestion(
-                id=done["suggestion_id"],
-                batch_id=done["batch_id"],
-                qa_item_id=qa_item_id,
-                position=done["index"],
-                competency=done["competency"],
-                question=done["question"],
-                rationale=done["rationale"],
-                grounding=done["grounding"],
-                model=model,
-                prompt_version=FOLLOWUP_PROMPT,
-            )
-        )
+        for row in rows:
+            db.add(FollowUpSuggestion(qa_item_id=qa_item_id, **row))
         db.commit()

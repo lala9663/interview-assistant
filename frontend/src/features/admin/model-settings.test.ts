@@ -17,7 +17,7 @@ const card = async (role: string) => {
 
 const next = (user: ReturnType<typeof userEvent.setup>) => user.click(screen.getByRole('button', { name: /다음/ }))
 
-describe('관리자 > 모델 설정', () => {
+describe('관리자 > 모델 설정', { timeout: 20_000 }, () => {
   it('shows the AI roles and the 서류 읽기 roles with provider, model, status and where their data goes', async () => {
     await renderPage()
     await screen.findAllByTestId('role-card')

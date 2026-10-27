@@ -18,6 +18,8 @@ export const routes: RouteRecordRaw[] = [
       { path: 'schedule', component: () => import('@/features/schedule/SchedulePage.vue') },
       { path: 'admin/models', component: () => import('@/features/admin/ModelSettingsPage.vue') },
       { path: 'admin/intake', component: () => import('@/features/intake/IntakePage.vue') },
+      { path: 'admin/follow-up-metrics', component: () => import('@/features/admin/FollowUpMetricsPage.vue') },
+      { path: 'question-bank', component: () => import('@/features/bank/QuestionBankPage.vue') },
       { path: ':pathMatch(.*)*', component: NotFound },
     ],
   },

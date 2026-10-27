@@ -1,6 +1,6 @@
 # API 계약 (프론트 ↔ 백엔드)
 
-2026-10-27 · v0.5 · 면접을 여러 차수(전형 차수: 1차 직무 면접, 2차 임원 면접 …)로 진행한다. 공고마다 차수 목록이 있고, 역량 사전·사전 질문은 차수별, 세션은 한 차수에 속하며, 차수마다 사람이 합격·보류·불합격을 정한다(2장 "전형", 4장 0006). 프론트(`frontend/`)가 모의 API(MSW)로 먼저 쓰던 계약을 백엔드(FastAPI, `src/interview_assistant/api/`)가 그대로 구현했다. 모든 경로가 동작하고, AI는 Provider 인터페이스를 거쳐 돈다. 어떤 provider가 어느 역할을 맡을지는 관리자 화면(관리자 > 모델 설정, 2장 마지막 절)에서 서버 재시작 없이 바꾸고, `config/providers*.yaml`은 처음 기동할 때의 기본값만 정한다. 첫 실제 provider로 로컬 Whisper STT(`faster_whisper`)가 붙었다. 지원서는 서류 선별 화면의 업로드와 채용 사이트 연동(서명된 이벤트 수신, 2장 "채용 사이트 연동") 두 통로로 들어오고, 둘 다 같은 처리 함수(`intake/service.py`)를 거친다. 채용 시스템 부서에 넘길 연동 명세는 [site-intake-spec.md](site-intake-spec.md). 프론트는 `npm run dev:api`로 실제 API에 붙는다. 실제 LLM 연결과 품질 검증은 남은 과제다(5장).
+2026-10-27 · v0.6 · 질문 은행·평점 기준 예시와 임베딩 검색(BGE-M3)을 더했다: 꼬리질문은 검수된 질문 은행 후보가 먼저, AI 후보가 이어서 나오고, 이미 한 질문과 같은 후보는 걸러진다(2장 "질문 은행·평점 기준 예시", 3.2, 4장 0007). v0.5 · 면접을 여러 차수(전형 차수: 1차 직무 면접, 2차 임원 면접 …)로 진행한다. 공고마다 차수 목록이 있고, 역량 사전·사전 질문은 차수별, 세션은 한 차수에 속하며, 차수마다 사람이 합격·보류·불합격을 정한다(2장 "전형", 4장 0006). 프론트(`frontend/`)가 모의 API(MSW)로 먼저 쓰던 계약을 백엔드(FastAPI, `src/interview_assistant/api/`)가 그대로 구현했다. 모든 경로가 동작하고, AI는 Provider 인터페이스를 거쳐 돈다. 어떤 provider가 어느 역할을 맡을지는 관리자 화면(관리자 > 모델 설정, 2장 마지막 절)에서 서버 재시작 없이 바꾸고, `config/providers*.yaml`은 처음 기동할 때의 기본값만 정한다. 첫 실제 provider로 로컬 Whisper STT(`faster_whisper`)가 붙었다. 지원서는 서류 선별 화면의 업로드와 채용 사이트 연동(서명된 이벤트 수신, 2장 "채용 사이트 연동") 두 통로로 들어오고, 둘 다 같은 처리 함수(`intake/service.py`)를 거친다. 채용 시스템 부서에 넘길 연동 명세는 [site-intake-spec.md](site-intake-spec.md). 프론트는 `npm run dev:api`로 실제 API에 붙는다. 실제 LLM 연결과 품질 검증은 남은 과제다(5장).
 
 - 타입 정의 원본: [`frontend/src/api/types.ts`](../frontend/src/api/types.ts) (모델과 필드 이름·enum 값 동일). 백엔드 응답 스키마: [`api/schemas.py`](../src/interview_assistant/api/schemas.py) (필드 단위로 같다. `tests/test_api_contract.py`가 enum과 이 문서의 경로 목록을 대조한다)
 - 모의 구현: [`frontend/src/mocks/handlers.ts`](../frontend/src/mocks/handlers.ts) (요청 검증, 오류 코드, 스트림 이벤트 순서까지 이 문서와 같다)
@@ -43,7 +43,8 @@
 - 업무 코드는 `ai/gateway.py`의 `AiGateway`만 부른다. 모델은 역할(`primary`, `screening`)로 고르고, 역할마다 어떤 provider를 쓸지는 관리자 화면에서 바꾼다(DB 설정, 2장 마지막 절). 실제 모델로 바꾸는 것은 코드 수정이 아니라 설정 변경이다.
 - 면접 세션은 시작할 때의 모델 설정(revision)에 고정된다. 실시간 전사, 꼬리질문, 종료 뒤 AI 채점까지 그 provider로 끝낸다. 서류 선별·역량 사전 초안은 요청 시점의 활성 설정을 쓴다. 결과에는 실제 쓴 모델 이름이 남는다: `Score.model`, `FollowUpSuggestion.model`, `Screening.model`, `TranscriptSegment.model`(STT), 감사 로그 `model`(역량 사전 초안 포함).
 - 프롬프트는 비식별 필드로만 만든다. 그래도 호출 직전에 가드(`ai/guard.py`)가 지원자 텍스트에 그 지원자의 이름·연락처·학교·회사가 남았는지, 전화·이메일·주민번호 모양이 있는지 다시 보고, 남았으면 호출하지 않는다(감사 로그에 거부 사유 범주만).
-- 프롬프트는 입력을 태그(`<answer>…</answer>`)로 감싸고, 태그 안 지시문은 따르지 않게 한다. 버전은 `ai/prompts.py`(competency-v0.2, profile-v0.1, screening-v0.4, followup-v0.2, score-v0.3).
+- 프롬프트는 입력을 태그(`<answer>…</answer>`)로 감싸고, 태그 안 지시문은 따르지 않게 한다. 버전은 `ai/prompts.py`(competency-v0.4, profile-v0.1, screening-v0.4, followup-v0.4, score-v0.4, question-check-v0.1 …).
+- 임베딩도 같은 원칙을 따른다. 지원자 답변을 임베딩하는 곳은 꼬리질문 검색 하나이고, 가드를 통과한 비식별 답변만 임베딩하며 그 벡터는 저장하지 않는다(감사 로그 `followup.retrieved`: 모델, 색인, 후보 수, 걸린 시간). 저장하는 벡터는 회사가 쓴 텍스트(승인된 질문 은행 질문·꼬리질문 예시, 평점 기준 예시, 확정 역량 사전)뿐이다(`embedding_vectors.owner_type` CHECK).
 
 ## 2. 엔드포인트
 
@@ -221,6 +222,34 @@
 - **데이터 최소화**: 받는 항목은 명세로 고정한다. 받지 않기로 한 항목(사진, 주민등록번호, 가족, 신체, 출신지, 혼인, 재산, 종교, 정치, 건강, 성별)이 오면 이벤트 전체를 거절하고 필드 경로만 남긴다. 명세에 없는 필드는 버리고 경로만 `dropped_fields`에 남긴다. 받은 원문은 암호화해 두었다가 반영되면 지우고(실패한 이벤트만 다시 처리용으로 남김), 첨부는 원본 영역에만 둔다.
 - **감사 로그**: `intake.received`, `intake.rejected`(코드·필드 경로), `intake.signature_rejected`, `intake.done`/`skipped`/`failed`, `intake.retried`(사람), `application.received`/`application.updated`/`application.withdrawn`(system), `screening.completed`(AI). 사이트 이벤트의 선별은 대시보드 활동 피드에 한 건씩 올리지 않는다(연동 현황에서 본다).
 
+### 질문 은행·평점 기준 예시 (검색)
+
+직군·역량(·차수)별로 채용 담당자가 검수한 질문과, 역량의 점수마다 수준을 보여 주는 가상 답변. 승인된 것만 검색되고(꼬리질문 후보, AI 예시) 채점 프롬프트에 들어간다. 초안 쓰기·고치기는 누구나, 승인·폐기·되살리기·CSV·AI 확인은 관리자(채용 담당자 역할 대신, SSO 그룹이 생기면 바꾼다). 금지 질문 규칙은 [question-bank.md](question-bank.md).
+
+| 메서드 | 경로 | 요청 | 응답 | 단계 |
+| --- | --- | --- | --- | --- |
+| GET | `/api/question-bank?job_family=&competency=&round=&status=&q=` | | `QuestionBankList` {items: QuestionBankItem[], families: [{job_family, competencies}], counts: {draft, approved, retired}(상태 필터 전), total}. `round`는 그 차수 또는 "모든 차수" 질문 | 검색 |
+| POST | `/api/question-bank/check` | `{question, follow_ups}` | `{flags: BankFlag[]}` 쓰는 중 금지 질문 경고(규칙만, 저장 없음) | 검색 |
+| POST | `/api/question-bank` | `BankQuestionBody` {job_family, competency, round_position?(1~6, null = 모든 차수), question, intent?, follow_ups?(10개까지)} | 201 `QuestionBankItem` (초안, 규칙 경고 `flags` 포함). 질문·직군·역량 없으면 422 | 검색 |
+| PUT | `/api/question-bank/{id}` | `BankQuestionBody` | `QuestionBankItem`. 승인된 질문을 고치면 초안으로 돌아가고 검색에서 빠진다. 폐기한 질문 409 | 검색 |
+| POST | `/api/question-bank/{id}/approve` | `{confirm_warnings}` | `QuestionBankItem`. 관리자만(403). 금지 질문 경고가 있는데 `confirm_warnings`가 아니면 409("금지 질문 경고가 있습니다(혼인·연애). …"). 이미 승인·폐기 409. 감사 로그 `question_bank.approved` {flags, confirmed_warnings}. 승인 즉시 색인에 들어간다 | 검색 |
+| POST | `/api/question-bank/{id}/retire` | | `QuestionBankItem` (폐기). 관리자만. 검색에서 바로 빠진다(검색 결과도 DB에서 승인 상태를 다시 확인) | 검색 |
+| POST | `/api/question-bank/{id}/restore` | | `QuestionBankItem` (폐기 → 초안). 관리자만 | 검색 |
+| POST | `/api/question-bank/{id}/ai-check` | | `QuestionBankItem`. LLM이 규칙이 못 잡은 금지 질문을 한 번 더 본다(question-check-v0.1, 질문만 보냄). AI 경고는 `source: ai`로 `flags`에 붙는다. 관리자만 | 검색 |
+| POST | `/api/question-bank/import` | multipart: `file`(CSV 2MB, UTF-8 또는 CP949), `dry_run` | `ImportResult` {dry_run, rows, created, skipped(같은 직군·역량에 같은 질문), errors[{row, message}], warnings[{row, message}](금지 질문)}. 열: 직군, 역량, 차수, 질문, 의도, 꼬리질문 예시(`\|`로 나눔), 영문 열 이름도 됨. 모두 초안. 필수 열이 없으면 422. 관리자만 | 검색 |
+| GET | `/api/rubric-examples?job_family=&competency=` | | `RubricList` {items: RubricExample[], families, counts}. 항목마다 `overlaps`: 같은 직군·역량의 다른 점수 승인 예시 중 의미 유사도가 임베딩 역할의 `duplicate_threshold` 이상인 것(기준점이 겹치면 점수 사이가 흐려진다) | 검색 |
+| POST | `/api/rubric-examples` | `RubricExampleBody` {job_family, competency, score(1~5), question?, answer, rationale?} | 201 `RubricExample` (초안, `overlaps`). 저장된 지원자 답변과 거의 같으면 409("지원자의 실제 답변과 거의 같습니다…"), 연락처·이메일·주민번호 모양이면 422 | 검색 |
+| PUT | `/api/rubric-examples/{id}` | `RubricExampleBody` | `RubricExample`. 승인된 것을 고치면 초안으로. 같은 거절 규칙 | 검색 |
+| POST | `/api/rubric-examples/{id}/approve` | | `RubricExample`. 관리자만. 초안만 | 검색 |
+| POST | `/api/rubric-examples/{id}/retire` | | `RubricExample`. 관리자만 | 검색 |
+| POST | `/api/rubric-examples/{id}/restore` | | `RubricExample`. 관리자만 | 검색 |
+
+`QuestionBankItem` = {id, job_family, competency, round_position, question, intent, follow_ups[], status draft/approved/retired, flags: BankFlag[], source manual/csv/seed, created_by, approved_by: {id, name} \| null, created_at, updated_at, approved_at, retired_at}. `BankFlag` = {category(family, origin, marriage, pregnancy, religion, appearance, age, wealth, politics, health, orientation, school), label, basis(근거 법령), matched(걸린 구절), source rule/ai, note}. `RubricExample` = {id, job_family, competency, score, question, answer, rationale, status, source, created_by, approved_by, created_at, updated_at, approved_at, retired_at, overlaps[{id, score, similarity}]}.
+
+- **꼬리질문에 쓰는 법**: 답변이 끝나면 비식별 답변을 임베딩해 그 공고 직군·세션 역량 사전의 역량·그 차수(또는 모든 차수)의 승인 질문과 꼬리질문 예시에서 찾고, 하이브리드 점수(의미 유사도 + `sparse_weight` × 단어 일치)가 `min_score` 이상인 것 중 이미 한 질문과 같지 않은 1~2개를 바로 보여 준다(3.2). 가까운 질문 4개는 LLM 프롬프트에 예시(`<example_questions>`)로 들어간다.
+- **채점에 쓰는 법**: 세션 역량마다 그 직군의 승인된 예시(없으면 다른 직군의 같은 역량 이름) 점수별 최신 하나를 채점 프롬프트 `<anchors>`에 넣는다(score-v0.4). 고르는 기준은 직군·역량뿐이고 지원자 답변과의 유사도는 계산하지 않으며, 점수는 모델이 행동 기준(BARS)으로 읽은 값이다. 유사도로 채점하면 외운 답변이 유리해지고, 지난 지원자의 답변을 예시로 쓰면 목적 외 이용과 편향 전파가 된다(`tests/test_retrieval.py`가 둘 다 막는지 본다).
+- **역량 사전 초안에 쓰는 법**: 새 차수의 공고·JD로 다른 공고의 확정 역량 사전을 찾아 2개까지 `<reference_dictionaries>`로 준다(competency-v0.4, 감사 로그 `details.references`).
+
 ### 관리자 > 모델 설정 (AI provider 교체)
 
 역할 11개마다 provider를 고르고, 테스트하고, 재시작 없이 적용한다. 모두 관리자만(403). AI 모델 6개(`llm.primary` LLM 주 모델, `llm.screening` LLM 선별용, `stt.streaming` STT 실시간, `stt.batch` STT 사후, `embedding`, `diarization`)와 서류 읽기 5개(`document.reading` 읽기 방식, `document.ocr` OCR 엔진, `document.pdf` PDF 텍스트 추출, `document.hwp` HWP·HWPX 읽기, `document.legacy` 구형 오피스 변환). `ModelRoleState.group`(`ai`/`documents`)이 화면의 묶음이다.
@@ -244,7 +273,19 @@
 - **보안**: API 키·자격증명은 화면에서 받지 않는다(서버 환경변수·Secret Manager). 데이터가 이 PC·사내 GCP 밖으로 나가는 provider(`data_location: external`)는 테스트에 `confirm_external`, 적용에 `confirm_external`과 사유가 있어야 한다. provider가 무엇이든 LLM 입력은 같은 비식별화·가드를 거친다(`tests/test_api_privacy.py`가 런타임 교체 뒤에도 검사). 테스트용 음성은 임시 폴더에 두었다가 테스트가 끝나면 지운다.
 - **감사 로그**: `model.tested`(결과·지연·CER·형식·읽기 시간 같은 수치만, 전사·응답·서류 본문 없음, 서류 테스트는 sample/upload), `model.applied`, `model.reverted`, `model.download_started`, `model.download_cancelled`. LLM 연결 테스트 호출 자체도 게이트웨이가 `model.connection_test`(actor ai)로 남긴다. 실시간 전사는 답변마다 `transcript.listened`(쓴 STT 모델).
 - **연결 테스트**: LLM은 지원자 데이터가 없는 고정 프롬프트(`connection-test-v0.1`)로 구조화 출력(JSON)과 간단한 지시 수행을 본다. STT는 내장 한국어 샘플(FLEURS ko_kr, CC BY 4.0, 정답과 비교해 CER) 또는 관리자가 올린 녹음을 역할의 실제 경로로 전사한다(사후 = `transcribe`, 실시간 = 16kHz PCM 조각을 `stream`). 임베딩은 벡터 차원, 화자분리는 구간 수. 서류 읽기는 역할별 내장 가상 이력서(`providers/samples/documents/`, OCR 샘플은 정답과 비교해 CER) 또는 올린 파일을, 테스트하는 설정과 나머지 서류 읽기 역할의 활성 설정으로 읽는다. `output`은 쪽마다 방법·이유·도구·신뢰도·시간(`pages`), 그림마다 판단(`images`: OCR, 증명사진 버림, 작음, 끔), 도구 버전, 비식별화한 미리보기(2,000자, 전화·이메일 모양은 한 번 더 가림)다. 원문은 응답에도 감사 로그에도 없다. 읽기 방식 "텍스트만" 테스트는 스캔한 쪽을 보류로 보여 주고 ok다(적용할 수 있다).
+- **임베딩 (BGE-M3)**: `bge_m3`(로컬 CPU, ONNX Runtime)는 밀집 1024차원과 희소(단어 일치) 가중치를 낸다. 모델 파일(약 2.29GB, BAAI/bge-m3 커밋 `5617a9f`의 ONNX와 희소 헤드)은 관리자가 "다운로드"를 누를 때만 받는다. 옵션의 `sparse_weight`(단어 일치 가중치), `duplicate_threshold`(같은 질문으로 볼 유사도), `min_score`(질문 은행 제안 최소 점수)는 모델의 점수 척도에 맞춘 검색 설정이고, 바꿔도 벡터를 다시 만들지 않는다(같은 가중치를 쓰는 인스턴스끼리 로드된 모델을 공유해 다시 올리지도 않는다). 연결 테스트는 고정 문장 세 개로 차원, 희소 출력, 비슷한 문장이 무관한 문장보다 가까운지를 본다(`output.similar`, `unrelated`, `sparse`, `lexical`).
 - **실시간 STT와 오디오 입력**: STT provider는 받을 수 있는 입력 형식(`accepts`)을 밝힌다. 실제 음성은 16kHz 모노 16비트 PCM(`PCM16_16K`)이고, 지금 실시간 면접의 가상 지원자는 텍스트를 보내므로 fake STT만 받아 적는다. 실시간 STT를 실제 모델로 바꾸면 새로 시작하는 면접은 `stt: down`(수기 답변)이 되고 감사 로그에 `transcript.unsupported_audio`가 남는다. 마이크·WebRTC 입력(`live/audio.AudioSource`가 PCM을 내는 구현)이 붙으면 같은 교체가 그대로 쓰인다.
+
+### 관리자: 임베딩 색인·꼬리질문 지표
+
+| 메서드 | 경로 | 요청 | 응답 | 단계 |
+| --- | --- | --- | --- | --- |
+| GET | `/api/admin/embedding-index` | | `EmbeddingIndexStatus` {active_model, active_index_key, serving_index_key, counts{question, rubric, competency_set}, indexes[{index_key, model, dimensions, status building/ready/failed, total, done, started_at, finished_at, error, serving}]}. 만드는 중이면 프론트가 1초마다 다시 읽는다 | 검색 |
+| POST | `/api/admin/embedding-index/rebuild` | | 202 `EmbeddingIndexStatus`. 임베딩 역할의 모델로 승인된 텍스트를 모두 다시 임베딩한다(실패 뒤, 또는 처음부터). 끝날 때까지 지금 색인으로 검색한다. 감사 로그 `embedding.rebuild_requested` | 검색 |
+| GET | `/api/admin/follow-up-metrics?days=30` | | `FollowUpMetrics` {since, days, batches, sources[{source bank/ai, shown, used, edited, adoption_rate, batches, first_ms_median, first_ms_p90}], duplicates{bank, ai, total}, retrieval_model}. 첫 후보까지 = 요청부터 그 출처의 첫 카드까지, 배치마다 | 검색 |
+
+- **색인과 모델 교체**: 벡터는 만든 모델의 `index_key`(예: `BAAI/bge-m3@5617a9f/1024`)와 함께 저장한다. 관리자가 다른 `index_key`의 임베딩 모델을 적용하면 백그라운드 작업이 새 모델로 모두 임베딩하며 진행률(`done/total`)을 기록하고, 그동안 검색은 이전 색인과 그 색인을 만든 provider로 계속한다. 끝나면 참조 하나를 바꿔 새 색인으로 넘어가고 이전 벡터를 지운다. 실패하면 이전 색인이 그대로 남는다(감사 로그 `embedding.index_built`, `embedding.index_failed`). 승인·폐기·수정은 그 자리에서 색인에 반영한다(`embedding.index_synced`). SQLite가 다른 쓰기로 바쁘면 다시 시도한다.
+- **질의는 색인의 모델로**: 검색 질의는 세션에 고정된 provider가 아니라 지금 검색하는 색인을 만든 모델로 임베딩한다. 다른 모델의 벡터끼리는 비교할 수 없어서다.
 
 ## 3. 스트리밍: SSE로 정한 이유와 이벤트 형식
 
@@ -290,22 +331,35 @@ data: {"qa_item_id":"…","answer_deidentified":"…","answered_at":"2026-10-23T
 
 ```
 event: batch.start
-data: {"batch_id":"…","qa_item_id":"…","model":"claude-opus-5-5","prompt_version":"followup-v0.2"}
+data: {"batch_id":"…","qa_item_id":"…","model":"claude-opus-5-5","prompt_version":"followup-v0.4","retrieval_model":"BAAI/bge-m3"}
 
 event: suggestion.start
-data: {"batch_id":"…","suggestion_id":"…","index":0,"competency":"데이터 기반 분석"}
+data: {"batch_id":"…","suggestion_id":"…","index":0,"competency":"공정·장비 이해","source":"bank"}
+
+event: suggestion.done
+data: {"batch_id":"…","suggestion_id":"…","index":0,"competency":"공정·장비 이해","source":"bank","question":"하부 전극 온도는 CD에 어떤 영향을 주나요?","rationale":"질문 은행 '플라즈마 식각에서 …'의 꼬리질문 예시","grounding":"…","bank_item_id":"…","score":0.71}
+
+event: suggestion.start
+data: {"batch_id":"…","suggestion_id":"…","index":1,"competency":"데이터 기반 분석","source":"ai"}
 
 event: suggestion.delta
 data: {"batch_id":"…","suggestion_id":"…","text":"상단 슬롯 "}
 
 event: suggestion.done
-data: {"batch_id":"…","suggestion_id":"…","index":0,"competency":"데이터 기반 분석","question":"…","rationale":"원인 확정 과정의 검증 깊이를 확인합니다.","grounding":"상단 존 온도 편차가 커져 있었고, 히터 보정 후 산포가 원래 수준으로 돌아왔습니다"}
+data: {"batch_id":"…","suggestion_id":"…","index":1,"competency":"데이터 기반 분석","source":"ai","question":"…","rationale":"원인 확정 과정의 검증 깊이를 확인합니다.","grounding":"상단 존 온도 편차가 커져 있었고, 히터 보정 후 산포가 원래 수준으로 돌아왔습니다"}
+
+event: suggestion.discarded
+data: {"batch_id":"…","suggestion_id":"…","reason":"duplicate","duplicate_of":"이미 한 질문","similarity":0.93}
 
 event: batch.done
-data: {"batch_id":"…"}
+data: {"batch_id":"…","discarded":1}
 ```
 
-- 한 배치에 후보 2~3개. 후보마다 start → delta 여러 개 → done 순서. 첫 delta는 요청 후 2초 안(성능 목표).
+- 질문 은행 후보(`source: bank`)가 먼저 0~2개, 완성된 채로(start → done, delta 없음) 온다. 승인된 질문 은행 질문이나 그 꼬리질문 예시 중 답변과 가까운 것이다(2장 "질문 은행"). `bank_item_id`와 하이브리드 검색 점수 `score`가 붙는다. 색인이 없거나 임베딩을 쓸 수 없으면 0개이고 AI 후보만 온다.
+- 이어서 AI 후보(`source: ai`) 2~3개. 후보마다 start → delta 여러 개 → done 순서. 첫 delta는 요청 후 2초 안(성능 목표). AI는 프롬프트에서 가까운 질문 은행 질문을 예시로 보고(`<example_questions>`), 먼저 보여 준 질문 은행 후보와 같은 뜻을 쓰지 않게 한다(`<already_suggested>`).
+- 이 면접과 이전 차수에서 이미 한 질문, 또는 앞서 보여 준 후보와 의미 유사도가 임베딩 역할의 `duplicate_threshold` 이상인 후보는 뺀다. 질문 은행 후보는 보여 주기 전에 빠지고, AI 후보는 다 쓰인 뒤 `suggestion.discarded`로 거둬들인다(프론트가 그 카드를 지운다). 빠진 후보도 `follow_up_suggestions`에 `discarded: duplicate`, `duplicate_of`, `similarity`로 남아 지표에 잡힌다.
+- `index`는 배치 안 순서이고, 거둬들인 후보 때문에 비는 번호가 있을 수 있다(화면은 목록의 위치로 번호를 붙인다).
+- 저장: 후보마다 `source`, `latency_ms`(요청부터 카드가 뜰 때까지), 질문 은행 후보는 `bank_item_id`, `retrieval_score`, `model`(임베딩 모델), `prompt_version` retrieval-v0.1.
 - 모델은 후보를 태그 블록(`<suggestion><competency>…</competency><question>…</question><rationale>…</rationale><grounding>…</grounding></suggestion>`)으로 쓰고, 서버가 토큰 스트림을 받는 대로 이벤트로 바꾼다(`ai/followups.py`의 `SuggestionParser`, 태그가 청크 경계에서 잘려도 같은 결과). 역량 이름이 사전에 없으면 질문의 대상 역량으로 바꾼다.
 - `grounding`은 비식별 답변에서 그대로 따온 문장이어야 한다 (프론트가 인용으로 표시). 모델이 바꿔 쓴 인용이면 서버가 답변에서 가장 비슷한 문장으로 바꾼다. `rationale`은 생성 근거.
 - 다 만든 후보는 쓰이든 안 쓰이든 모두 `follow_up_suggestions`에 저장한다 (FR-06 "선택 여부, 생성 근거 전부 저장").
@@ -352,6 +406,17 @@ data: {"batch_id":"…"}
 | 철회 | `Application.withdrawn_at` | 공식 기록은 사이트라 지우지 않고 비활성화한다. 원본 보존·삭제 기간은 정보보호와 정할 일 |
 | 수신 이벤트 | `intake_events` (channel+event_id UNIQUE, type, status, revision, 시각들, posting_no, application_no, 해석된 posting·candidate·application FK, fingerprint, encrypted_payload, failure_code·message·fields, dropped_fields, result) | 큐, 멱등성 기록, 연동 현황 이력을 한 테이블로. 작업 큐를 따로 두지 않아 재시작 뒤에도 잃지 않는다 |
 
+0007 (`migrations/versions/0007_question_bank_and_retrieval.py`, 2026-10-27):
+
+| 항목 | 결정 | 이유 |
+| --- | --- | --- |
+| 질문 은행 | `question_bank_items` (job_family, competency, round_position NULL 허용 1~6, question, intent, follow_ups JSON, status draft/approved/retired, flags JSON, source manual/csv/seed, created_by, approved_by, approved_at, retired_at, updated_at). CHECK: 승인이면 승인자 필수 | 공고가 아니라 직군·역량에 묶어 여러 공고가 같이 쓴다. 차수는 공고마다 이름이 달라 위치(1차, 2차)로만 둔다. 금지 질문 경고는 승인한 사람이 무엇을 확인했는지 남기려고 행에 둔다 |
+| 평점 기준 예시 | `rubric_examples` (job_family, competency, score 1~5 CHECK, question, answer, rationale, status, source, created_by, approved_by …) | 기준점은 역량 사전 버전이 아니라 직군·역량에 둔다(버전이 바뀌어도 이름이 같으면 이어 쓴다). 사람이 쓴 가상 답변만 둔다 |
+| 벡터 저장 | `embedding_vectors` (index_key, owner_type, owner_id, part, text_hash, dimensions, dense BLOB(float32 LE), sparse JSON{token: weight}), UNIQUE(index_key, owner_type, owner_id, part), CHECK owner_type IN (question, rubric, competency_set) | DB 엔진이 미정이라 BLOB·JSON만 쓴다(SQLite·PostgreSQL·MySQL 공통). 검색은 `retrieval/index.py`의 `VectorIndex` 뒤의 메모리 구현이라 pgvector로 바꿔도 호출부는 그대로다. CHECK로 지원자 답변이 벡터 저장소에 들어갈 길을 DB에서도 막는다. `text_hash`는 텍스트와 필터 칸(역량 등)의 해시라 바뀐 것만 다시 임베딩한다 |
+| 색인 상태 | `embedding_indexes` (index_key PK, model, dimensions, spec JSON, status building/ready/failed, total, done, started_at, finished_at, error) | 가장 최근 ready가 검색에 쓰이고, building은 진행률을 보여 준다. 재시작 뒤에도 `spec`으로 그 색인을 만든 provider를 다시 만들어 이전 색인으로 계속 검색한다 |
+| 꼬리질문 출처 | `follow_up_suggestions`에 source(bank/ai, 기존 행 ai), bank_item_id(FK SET NULL), retrieval_score, latency_ms, discarded, duplicate_of, similarity | 출처별 채택률·첫 후보 시간·걸러낸 수를 같은 테이블에서 센다. 걸러낸 후보도 FR-06의 "제안 전부 저장"에 따라 남긴다 |
+| QAItem 출처 | 바꾸지 않는다. 질문 은행 후보를 쓴 질문도 `question_source: ai_suggested`이고 출처는 제안 행의 `source`로 안다 | enum을 바꾸면 기존 데이터·화면·계약이 모두 흔들린다. 화면 표기는 "꼬리질문 후보"로 바꿨다 |
+
 0006 (`migrations/versions/0006_interview_rounds.py`, 2026-10-27):
 
 | 항목 | 결정 | 이유 |
@@ -376,12 +441,18 @@ SQLite 마이그레이션 주의: batch 모드는 테이블을 복사한 뒤 원
 
 구현됨 (2026-10-27): 면접 여러 차수. 전형 5개, 차수별 역량 사전 3개, 사전 질문 5개, 결정·결정 이력 2개, 확인할 점 2개, 이어 질문 1개(합계 68개, 공고 단위 역량 사전 만들기·AI 초안 2개는 차수 단위로 옮김). 진행 규칙(`interviews.py`), 이전 차수 요약과 점수 공개 설정, 이전 차수 Q&A를 참고하는 꼬리질문(followup-v0.3)·이어 질문·사전 질문 초안, AI 확인할 점. 테스트 `tests/test_rounds.py`, `test_migrations.py`(0006 이관).
 
+구현됨 (2026-10-27): 질문 은행·평점 기준 예시 15개, 관리자 임베딩 색인·꼬리질문 지표 3개(합계 86개). 로컬 BGE-M3 임베딩(`bge_m3`, ONNX Runtime, 밀집 + 희소), 엔진 독립 벡터 저장과 메모리 검색(`retrieval/`), 모델 교체 시 재색인(이전 색인으로 계속 검색), 질문 은행 후보 먼저 + AI 후보 스트리밍, 이미 한 질문 거르기, 출처·시간 저장, 평점 기준점(score-v0.4), 비슷한 공고의 확정 역량 사전 참고(competency-v0.4), 금지 질문 규칙 + AI 확인, CSV 가져오기. 테스트 `tests/test_retrieval.py`, `test_bge_m3.py`(모델 파일이 있을 때만), `test_engines_together.py`(BGE-M3 + Whisper + PaddleOCR). 측정 [embedding-benchmark.md](embedding-benchmark.md), 규칙 [question-bank.md](question-bank.md).
+
 구현됨 (2026-10-25): 관리자 > 모델 설정 10개 엔드포인트(합계 45개), DB 저장·이력·되돌리기, 재시작 없는 교체와 세션 고정, 연결 테스트, 모델 다운로드, 로컬 Whisper STT(`faster_whisper`, CPU int8, 한국어). 테스트 `tests/test_model_settings.py`, `test_weights.py`, `test_whisper.py`(모델 파일이 있을 때만). 측정 결과는 [Whisper 측정](whisper-benchmark.md).
 
 남은 과제:
 
 - **실제 모델 연결 (3단계)**: `anthropic_vertex` LLM provider(구조화 출력, 스트리밍, 토큰 집계, 프롬프트 캐싱). 지금 fake LLM은 규칙으로 그럴듯한 모양만 만든다(`providers/fake_tasks.py`). 연결 뒤 프롬프트별 품질 검증(역량 사전 초안, 프로필 구조화 정확도, 선별 근거, 꼬리질문 적합성, 채점 일치도)이 필요하다. 스트림 provider가 토큰 수를 돌려주게 인터페이스를 넓힐 것.
-- **실제 GCP 호출**: Vertex AI, Speech-to-Text v2(10단계 배치, 11단계 스트리밍), 임베딩. GCP 프로젝트가 아직 없다.
+- **실제 GCP 호출**: Vertex AI, Speech-to-Text v2(10단계 배치, 11단계 스트리밍), Vertex 임베딩(카탈로그만). GCP 프로젝트가 아직 없다.
+- **검색 품질 (실제 LLM 뒤)**: 질문 은행 예시를 넣은 꼬리질문의 품질, AI 금지 질문 확인의 정확도, 기준점을 넣은 채점의 면접관 점수 일치도(12단계 게이트)는 fake LLM으로는 볼 수 없다. 실제 모델을 붙인 뒤 출처별 채택률(관리자 > 꼬리질문 지표)과 함께 잰다.
+- **답변 도중 질문 은행 후보**: 지금은 답변이 끝난 뒤에만 찾는다. 확정된 전사 구간이 일정 길이 쌓이면 미리 찾는 것은 마이크 입력(11단계)을 붙일 때 같이 정한다.
+- **임베딩 속도·메모리**: 이 노트북에서 답변 1건 약 0.9초, 질문 1,000건 재색인 약 2.6분, 서버 메모리 BGE-M3 1.6GB(+Whisper medium 2.5GB). int8 양자화나 GPU로 줄일지 실제 사용량을 보고 정한다([embedding-benchmark.md](embedding-benchmark.md)).
+- **벡터 검색 엔진**: 지금은 메모리 내 전수 검색(수천 건). 수만 건이 되거나 여러 인스턴스가 되면 DB 엔진을 정한 뒤 pgvector 등으로 `VectorIndex`를 바꾼다. 여러 인스턴스면 색인 갱신을 다른 인스턴스에 알리는 방법도 필요하다.
 - **로그인·SSO**: IAP + 사내 SSO, `GET /api/me`를 세션에서. 지금은 `IA_DEV_INTERVIEWER`. 면접관 점수는 본인 것만 쓰게 막기(지금은 패널이면 누구 것이든 가능).
 - **실제 오디오·WebRTC (11단계)**: LiveKit 통화 또는 대면 마이크, 참가자 트랙 → 스트리밍 STT. `live/audio.py`의 `AudioSource`를 16kHz PCM(`PCM16_16K`)을 내는 구현으로 붙이면 관리자 화면에서 고른 실시간 STT(예: `faster_whisper`)가 그대로 쓰인다. 녹음 파일 저장(지금 `recording_uri`는 저장 예정 위치만 가리킨다), 대면 면접 화자분리.
 - **로컬 Whisper 실시간 속도**: 이 노트북(CPU, 배터리)에서는 Whisper 호출 한 번이 30초 창 고정 비용(medium 약 5초)이라 발화 하나 확정까지 medium 약 10초 걸린다. 부분 전사는 호출 비용이 작을 때만 나온다. 실시간은 small·GPU·Chirp 중에서 다시 정할 것([측정](whisper-benchmark.md)).

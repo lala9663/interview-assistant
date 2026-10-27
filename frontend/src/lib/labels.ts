@@ -46,7 +46,7 @@ export const ROLE_LABEL: Record<InterviewerRole, string> = {
 
 export const QUESTION_SOURCE_LABEL: Record<QuestionSource, string> = {
   preset: '사전 질문',
-  ai_suggested: 'AI 제안',
+  ai_suggested: '꼬리질문 후보',
   interviewer: '직접 입력',
 }
 

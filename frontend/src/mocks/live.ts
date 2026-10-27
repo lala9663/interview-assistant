@@ -8,6 +8,7 @@
 import type { FollowUpEvent, QAItem, StreamStatus, TranscriptEvent, TranscriptSegment } from '@/api/types'
 
 import { GENERIC_BANK, type SuggestionSeed } from './data/banks'
+import { bankMatches, overlap, RETRIEVAL_MODEL } from './bank-state'
 import { FOLLOWUP_PROMPT, AI_MODEL, getDb, newId, splitSentences, type MockDb } from './db'
 
 /** Timing multiplier: 1 = demo speed, tests set it close to 0. */
@@ -166,8 +167,9 @@ const fragment = (sentence: string, words = 5) => {
   return parts.slice(0, words).join(' ') + (parts.length > words ? '…' : '')
 }
 
-/** Stream 3 follow-up suggestions for a QA item. */
+/** Question-bank suggestions first (up to 2, not already asked), then 3 AI suggestions streamed. */
 export async function* followUps(sessionId: string, qaItemId: string): AsyncGenerator<FollowUpEvent> {
+  const started = Date.now()
   const db = getDb()
   const qa = db.qaItems.find((q) => q.id === qaItemId && q.session_id === sessionId)
   if (!qa || !qa.answer_deidentified) {
@@ -202,13 +204,61 @@ export async function* followUps(sessionId: string, qaItemId: string): AsyncGene
   }
   const batch_id = newId()
   db.log({ actor_type: 'ai', action: 'followup.generated', target_type: 'interview_session', target_id: sessionId, model: AI_MODEL, prompt_version: FOLLOWUP_PROMPT, details: { qa_item_id: qa.id, earlier_round_answers: earlier.length } })
-  yield { event: 'batch.start', data: { batch_id, qa_item_id: qa.id, model: AI_MODEL, prompt_version: FOLLOWUP_PROMPT } }
-  await wait(550)
-  for (const [index, seedItem] of seeds.slice(0, 3).entries()) {
+  yield { event: 'batch.start', data: { batch_id, qa_item_id: qa.id, model: AI_MODEL, prompt_version: FOLLOWUP_PROMPT, retrieval_model: RETRIEVAL_MODEL } }
+  // 질문 은행: approved questions close to the answer, never one already asked here or earlier.
+  await wait(180)
+  const session = db.session(sessionId)!
+  const posting = db.posting(db.application(session.application_id)!.posting_id)!
+  const names = db.setOfSession(sessionId)?.competencies.map((c) => c.name) ?? []
+  const asked = [...db.qaOf(sessionId), ...db.earlierSessions(sessionId).flatMap((e) => db.qaOf(e.id))].map((q) => q.question)
+  const position = db.round(session.round_id)?.position ?? 1
+  let index = 0
+  for (const match of bankMatches(db.bank, qa.answer_deidentified, posting.job_family, names, position)) {
+    if (index >= 2 || match.score < 0.08) break
+    const suggestion_id = newId()
+    if (asked.some((q) => overlap(q, match.text) >= 0.8)) {
+      db.bank.shown.push({ batch_id, suggestion_id, source: 'bank', latency_ms: Date.now() - started, discarded: true, used: false, edited: false, at: Date.now() })
+      continue
+    }
+    const grounding = splitSentences(qa.answer_deidentified).sort((a, b) => overlap(b, match.text) - overlap(a, match.text))[0] ?? firstSentence
+    const rationale = match.text === match.item.question ? `질문 은행 · ${match.item.intent}` : `질문 은행 '${match.item.question}'의 꼬리질문 예시`
+    db.suggestions.set(suggestion_id, {
+      competency: match.item.competency,
+      question: match.text,
+      rationale,
+      grounding,
+      answer: db.nextGenericAnswer(postingKey),
+      batch_id,
+      suggestion_id,
+      qa_item_id: qa.id,
+      source: 'bank',
+    })
+    db.bank.shown.push({ batch_id, suggestion_id, source: 'bank', latency_ms: Date.now() - started, discarded: false, used: false, edited: false, at: Date.now() })
+    yield { event: 'suggestion.start', data: { batch_id, suggestion_id, index, competency: match.item.competency, source: 'bank' } }
+    yield {
+      event: 'suggestion.done',
+      data: {
+        batch_id,
+        suggestion_id,
+        index,
+        competency: match.item.competency,
+        source: 'bank',
+        question: match.text,
+        rationale,
+        grounding,
+        bank_item_id: match.item.id,
+        score: Math.round(match.score * 1000) / 1000,
+      },
+    }
+    index++
+  }
+  await wait(450)
+  for (const seedItem of seeds.slice(0, 3)) {
     const suggestion_id = newId()
     const grounding = seedItem.grounding && qa.answer_deidentified.includes(seedItem.grounding) ? seedItem.grounding : firstSentence
-    db.suggestions.set(suggestion_id, { ...seedItem, grounding, batch_id, suggestion_id, qa_item_id: qa.id })
-    yield { event: 'suggestion.start', data: { batch_id, suggestion_id, index, competency: seedItem.competency } }
+    db.suggestions.set(suggestion_id, { ...seedItem, grounding, batch_id, suggestion_id, qa_item_id: qa.id, source: 'ai' })
+    db.bank.shown.push({ batch_id, suggestion_id, source: 'ai', latency_ms: Date.now() - started, discarded: false, used: false, edited: false, at: Date.now() })
+    yield { event: 'suggestion.start', data: { batch_id, suggestion_id, index, competency: seedItem.competency, source: 'ai' } }
     const text = seedItem.question
     let i = 0
     while (i < text.length) {
@@ -219,9 +269,10 @@ export async function* followUps(sessionId: string, qaItemId: string): AsyncGene
     }
     yield {
       event: 'suggestion.done',
-      data: { batch_id, suggestion_id, index, competency: seedItem.competency, question: text, rationale: seedItem.rationale, grounding },
+      data: { batch_id, suggestion_id, index, competency: seedItem.competency, source: 'ai', question: text, rationale: seedItem.rationale, grounding },
     }
+    index++
     await wait(160)
   }
-  yield { event: 'batch.done', data: { batch_id } }
+  yield { event: 'batch.done', data: { batch_id, discarded: 0 } }
 }

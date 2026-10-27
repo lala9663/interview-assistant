@@ -1,6 +1,11 @@
 """FR-07: AI scoring after a session ends. Reference only; never merged with interviewer scores.
 
-Each answered question is scored `SAMPLES` times against the session's competency dictionary.
+Each answered question is scored `SAMPLES` times against the session's competency dictionary,
+with the approved rubric examples (평점 기준 예시) of those competencies as anchors in the prompt. The
+anchors are chosen by job family and competency only, and the score is the model's reading of the
+answer against the BARS levels: closeness between the answer and an anchor is never computed here,
+let alone used as a score (it would reward rehearsed answers), and no other applicant's answer is
+ever shown (anchors are made-up answers people wrote and approved).
 A sample counts only if its competency is in the dictionary, its score is 1-5 and its evidence is
 copied verbatim from the de-identified answer (근거 없는 점수 거부). Per answer and competency the
 median of the valid samples is kept; confidence is the samples' own confidence scaled down by
@@ -42,6 +47,7 @@ from interview_assistant.models import (
     Score,
 )
 from interview_assistant.models.base import utcnow
+from interview_assistant.retrieval.bank import anchors_for
 
 SAMPLES = 3
 
@@ -93,7 +99,12 @@ def aggregate(samples: list[_Sample], total: int) -> tuple[int, float, str]:
 
 
 async def _score_answer(
-    db: Session, ai: AiGateway, qa: QAItem, competencies: list[dict[str, Any]], known: Any
+    db: Session,
+    ai: AiGateway,
+    qa: QAItem,
+    competencies: list[dict[str, Any]],
+    known: Any,
+    anchors: list[tuple[str, int, str, str, str]],
 ) -> tuple[list[Score], str | None]:
     names = {c["name"] for c in competencies}
     answer = qa.answer_deidentified or ""
@@ -107,13 +118,14 @@ async def _score_answer(
                 target_competency=qa.target_competency,
                 question=qa.question,
                 answer=answer,
+                anchors=anchors,
             ),
             schema=SCORING_SCHEMA,
             candidate_texts=[answer, qa.question],
             known=known,
             target_type="interview_session",
             target_id=qa.session_id,
-            details={"qa_item_id": qa.id, "sample": i + 1},
+            details={"qa_item_id": qa.id, "sample": i + 1, "anchors": len(anchors)},
         )
         for i in range(SAMPLES)
     ]
@@ -153,6 +165,9 @@ async def score_session(
             competency_set = session_competency_set(db, session)
             competencies = competency_set.competencies if competency_set else []
             known = deid.identity(session.application.candidate)
+            anchors = anchors_for(
+                db, session.application.posting.job_family, [c["name"] for c in competencies]
+            )
             db.execute(
                 delete(Score).where(
                     Score.session_id == session_id, Score.evaluator_type == EvaluatorType.ai
@@ -165,7 +180,7 @@ async def score_session(
             for qa in session.qa_items:
                 if not qa.answer_deidentified or not competencies:
                     continue
-                rows, model = await _score_answer(db, ai, qa, competencies, known)
+                rows, model = await _score_answer(db, ai, qa, competencies, known, anchors)
                 db.add_all(rows)
                 scored += len(rows)
                 db.commit()

@@ -36,9 +36,28 @@ def respond(title: str | None, prompt: str, rng: random.Random) -> dict[str, Any
         "CarryoverQuestions": carryover_questions,
         "CheckPointDraft": check_points,
         "ConnectionTest": connection_test,
+        "QuestionCheck": check_question,
     }
     handler = handlers.get(title or "")
     return handler(prompt, rng) if handler else None
+
+
+def check_question(prompt: str, rng: random.Random) -> dict[str, Any]:
+    """The rules' own verdict (a real model may add what the rules miss)."""
+    from interview_assistant.ai.question_rules import check
+
+    question = tag(prompt, "question") or ""
+    follow_ups = _lines(tag(prompt, "follow_ups"))
+    return {
+        "issues": [
+            {
+                "category": f.category,
+                "quote": f.matched,
+                "reason": f"{f.label}: 직무와 무관한 개인 정보를 묻는 질문으로 보입니다 ({f.basis}).",
+            }
+            for f in check(question, *follow_ups)
+        ]
+    }
 
 
 def connection_test(prompt: str, rng: random.Random) -> dict[str, Any]:
@@ -230,6 +249,13 @@ def draft_competencies(prompt: str, rng: random.Random) -> dict[str, Any]:
 
     scored = [(sum(jd.count(k) for k in keys), item) for keys, item in _LIBRARY]
     picked = [item for hits, item in sorted(scored, key=lambda x: -x[0]) if hits > 0][:4]
+    # Similar postings' approved dictionaries: borrow a competency they share with the library.
+    library = {item["name"]: item for _, item in _LIBRARY}
+    for name in re.findall(r"^- ([^:\n]+):", tag(prompt, "reference_dictionaries") or "", re.M):
+        item = library.get(name.strip())
+        if item is not None and item not in picked and len(picked) < 4:
+            picked.append(item)
+            break
     for fallback in (_LIBRARY[0][1], _INITIATIVE):
         if len(picked) >= 2:
             break

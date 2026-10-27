@@ -24,7 +24,7 @@ export const ROLE_INFO: Record<ModelRole, { label: string; description: string; 
   'llm.screening': { label: 'LLM 선별용', description: '서류 구조화와 선별' },
   'stt.streaming': { label: 'STT 실시간', description: '면접 중 지원자 답변 전사' },
   'stt.batch': { label: 'STT 사후', description: '녹음 파일 전사 (10단계)' },
-  embedding: { label: '임베딩', description: '검색·유사도 (후순위)' },
+  embedding: { label: '임베딩', description: '질문 은행 검색, 같은 질문 거르기, 비슷한 역량 사전·평점 기준 찾기' },
   diarization: { label: '화자분리', description: '대면 면접 화자 구분 (10단계)' },
   'document.reading': { label: '읽기 방식', description: '텍스트 층과 OCR 중 무엇으로 읽을지, 문서 속 그림', group: 'documents' },
   'document.ocr': { label: 'OCR 엔진', description: '스캔본·사진·그림 속 글자 읽기', group: 'documents' },
@@ -77,6 +77,7 @@ export const WEIGHT_SIZES: Record<string, Record<string, number>> = {
   faster_whisper: WHISPER_SIZES,
   paddleocr: { 'ppocrv5-mobile': 32_288_476, 'ppocrv5-server': 115_701_129 },
   tesseract: { best: 27_928_729, fast: 5_790_503 },
+  bge_m3: { 'bge-m3': 2_284_631_868 },
 }
 export const weightKey = (impl: string, model: string) => `${impl}:${model}`
 const LOCAL_FILES = '서류와 그림은 이 PC 밖으로 나가지 않습니다.'
@@ -94,6 +95,20 @@ const impl = (
   options: ModelOptionField[] = [],
   extra: Partial<ModelImpl> = {},
 ): ModelImpl => ({ kind, impl: name, label, description, data_location, data_note, license, roles, options, role_defaults: {}, role_notes: {}, requirements: [], ...extra })
+
+const retrieval = (sparse: number, duplicate: number, minimum: number) => [
+  field('sparse_weight', '단어 일치 가중치', 'number', sparse, {
+    help: '검색 점수 = 의미 유사도 + 이 값 × 단어 일치 점수. 전문 용어·약어(FDC, RF, CVD)가 그대로 맞는 질문을 끌어올립니다. 0이면 의미만 봅니다.',
+    minimum: 0,
+    maximum: 1,
+  }),
+  field('duplicate_threshold', '같은 질문으로 볼 유사도', 'number', duplicate, {
+    help: '꼬리질문 후보가 이 면접이나 이전 차수에서 이미 한 질문과 의미 유사도가 이 값 이상이면 뺍니다. 낮출수록 더 많이 거릅니다.',
+    minimum: 0.5,
+    maximum: 1,
+  }),
+  field('min_score', '질문 은행 제안 최소 점수', 'number', minimum, { help: '답변과의 검색 점수가 이보다 낮은 질문 은행 질문은 제안하지 않습니다.', minimum: 0, maximum: 2 }),
+]
 
 export function mockCatalog(downloaded: ReadonlySet<string>): ModelImpl[] {
   const whisperChoices = [
@@ -144,9 +159,30 @@ export function mockCatalog(downloaded: ReadonlySet<string>): ModelImpl[] {
       ko,
       batchDiarization,
     ], { role_defaults: { 'stt.batch': { diarization: true } }, role_notes: { 'stt.streaming': LIVE_NOTE } }),
-    impl('embedding', 'fake', 'Fake 임베딩', '텍스트 해시로 만든 단위 벡터. 차원과 흐름 확인용입니다.', 'local', '외부 호출이 없습니다.', '프로젝트 코드', ['embedding'], [
-      field('dimensions', '차원', 'integer', 8, { minimum: 2, maximum: 4096 }),
+    impl('embedding', 'fake', 'Fake 임베딩', '단어와 두 글자 조각을 해시해 만든 벡터. 같은 단어를 쓴 문장끼리만 가깝고 뜻은 모릅니다. 흐름 확인용입니다.', 'local', '외부 호출이 없습니다.', '프로젝트 코드', ['embedding'], [
+      field('dimensions', '차원', 'integer', 256, { minimum: 2, maximum: 4096 }),
+      ...retrieval(0.3, 0.8, 0.15),
     ]),
+    impl(
+      'embedding',
+      'bge_m3',
+      'BGE-M3 (로컬)',
+      'BAAI의 다국어 임베딩 모델을 이 PC의 CPU에서 돌립니다(ONNX Runtime). 의미 벡터(1024차원)와 단어 일치 가중치를 함께 내어, 뜻이 비슷한 질문과 전문 용어·약어가 맞는 질문을 같이 찾습니다. 무료, 오프라인.',
+      'local',
+      '질문·답변 텍스트는 이 PC 밖으로 나가지 않습니다. 모델 파일만 Hugging Face에서 한 번 내려받습니다.',
+      'MIT (BGE-M3 모델, ONNX Runtime), Apache-2.0 (tokenizers)',
+      ['embedding'],
+      [
+        field('model', '모델', 'select', 'bge-m3', {
+          choices: sized('bge_m3', [
+            choice('bge-m3', 'BGE-M3 (fp32 ONNX)', '한국어 포함 100여 개 언어, 최대 8,192토큰. 밀집 1024차원 + 희소(단어 일치). 메모리 약 2.5GB.', { recommended_for: ['embedding'] }),
+          ]),
+        }),
+        field('max_length', '최대 길이 (토큰)', 'integer', 512, { help: '이보다 긴 텍스트는 잘라서 임베딩합니다. 면접 답변 하나는 보통 300토큰 안쪽이고, 길수록 느려집니다.', minimum: 64, maximum: 8192 }),
+        field('cpu_threads', 'CPU 스레드', 'integer', 0, { help: '0이면 자동 (코어 수의 절반, 최대 6).', minimum: 0, maximum: 32 }),
+        ...retrieval(0.3, 0.85, 0.55),
+      ],
+    ),
     impl('embedding', 'vertex_embedding', 'Vertex AI 임베딩', '사내 GCP 프로젝트의 Vertex AI 텍스트 임베딩.', 'gcp', GCP_NOTE, '상용 (GCP 과금)', ['embedding'], [
       field('model', '모델', 'select', 'gemini-embedding-001', { choices: [choice('gemini-embedding-001', 'gemini-embedding-001'), choice('text-multilingual-embedding-002', 'text-multilingual-embedding-002')] }),
       field('dimensions', '차원', 'integer', 768, { minimum: 128, maximum: 3072 }),
@@ -225,6 +261,7 @@ export function requirementsFor(i: ModelImpl, options: Record<string, ModelOptio
   if (i.impl === 'paddleocr') reqs.push(ok('package:paddleocr', '패키지 paddleocr', '설치되어 있습니다.'), ok('package:paddle', '패키지 paddle', '설치되어 있습니다.'))
   if (i.impl === 'tesseract') reqs.push(ok('program:tesseract', '프로그램 Tesseract', 'tesseract v5.4.0.20240606'))
   if (i.impl === 'libreoffice') reqs.push(ok('program:soffice', '프로그램 LibreOffice', 'LibreOffice 26.8.1.1'))
+  if (i.impl === 'bge_m3') reqs.push(ok('package:onnxruntime', '패키지 onnxruntime', '설치되어 있습니다.'), ok('package:tokenizers', '패키지 tokenizers', '설치되어 있습니다.'))
   if (i.impl === 'syhwp') reqs.push(ok('package:syhwp', '패키지 syhwp', '설치되어 있습니다.'), ok('package:olefile', '패키지 olefile', '설치되어 있습니다.'))
   const sizes = WEIGHT_SIZES[i.impl]
   if (sizes && i.impl !== 'faster_whisper') {
@@ -312,7 +349,7 @@ const INITIAL: Record<ModelRole, ModelSpec> = {
   'llm.screening': { impl: 'anthropic_vertex', options: { model: 'claude-haiku-5-5', region: 'global' } },
   'stt.streaming': { impl: 'google_stt_v2', options: { model: 'chirp_3', language: 'ko-KR' } },
   'stt.batch': { impl: 'google_stt_v2', options: { model: 'chirp_3', language: 'ko-KR', diarization: true } },
-  embedding: { impl: 'vertex_embedding', options: { model: 'gemini-embedding-001', dimensions: 768 } },
+  embedding: { impl: 'bge_m3', options: { model: 'bge-m3', max_length: 512, cpu_threads: 0, sparse_weight: 0.3, duplicate_threshold: 0.85, min_score: 0.55 } },
   diarization: { impl: 'google_stt_v2', options: {} },
   'document.reading': { impl: 'standard', options: { mode: 'auto', embedded_images: true, sensitivity: 'medium', dpi: 200, low_confidence: 0.8 } },
   'document.ocr': { impl: 'paddleocr', options: { model: 'ppocrv5-mobile', textline_orientation: false, doc_orientation: false, max_side: 2400, cpu_threads: 0 } },
@@ -323,7 +360,8 @@ const INITIAL: Record<ModelRole, ModelSpec> = {
 
 export function createModelState(now: Date, newId: () => string): ModelState {
   const at = new Date(now.getTime() - 3 * 24 * 3600 * 1000).toISOString()
-  const downloaded = new Set<string>([weightKey('paddleocr', 'ppocrv5-mobile')]) // the PoC OCR is set up
+  // the PoC OCR and embedding are set up
+  const downloaded = new Set<string>([weightKey('paddleocr', 'ppocrv5-mobile'), weightKey('bge_m3', 'bge-m3')])
   const catalog = mockCatalog(downloaded)
   const history = MODEL_ROLES.map((role, i) => ({
     id: newId(),
@@ -459,8 +497,15 @@ export function testResult(role: string, spec: ModelSpec, audio: File | null, do
     return { ...base, latency_ms: 840, summary: '구조화 출력(JSON)으로 지시대로 답했습니다.', output: { structured: { echo: '모델 연결 확인 문장입니다', sum: 42 }, input_tokens: 61, output_tokens: 18 } }
   }
   if (role === 'embedding') {
-    const dims = Number(spec.options.dimensions ?? 768)
-    return { ...base, latency_ms: 120, summary: `${dims}차원 벡터 2개를 받았습니다.`, output: { vectors: 2, dimensions: dims, expected_dimensions: dims } }
+    const dims = spec.impl === 'bge_m3' ? 1024 : Number(spec.options.dimensions ?? 768)
+    const sparse = spec.impl !== 'vertex_embedding'
+    const [similar, unrelated] = spec.impl === 'fake' ? [0.42, 0.0] : [0.633, 0.375]
+    return {
+      ...base,
+      latency_ms: spec.impl === 'bge_m3' ? 2600 : 120,
+      summary: `${dims}차원 벡터 3개${sparse ? ', 단어 일치 가중치 포함' : ''}. 비슷한 문장 ${similar.toFixed(2)}, 무관한 문장 ${unrelated.toFixed(2)}.`,
+      output: { vectors: 3, dimensions: dims, expected_dimensions: dims, sparse, similar, unrelated, ...(sparse ? { lexical: 0.0497 } : {}) },
+    }
   }
   if (role === 'diarization') {
     return { ...base, audio: audio ? 'upload' : 'sample', latency_ms: 950, summary: '화자 2명, 구간 2개를 받았습니다.', output: { turns: 2, speakers: ['SPEAKER_1', 'SPEAKER_2'] } }

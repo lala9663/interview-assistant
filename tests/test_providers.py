@@ -16,7 +16,7 @@ def test_fake_config_loads():
     cfg = load_providers(FAKE)
     assert set(cfg.llm) == {"primary", "screening"}
     assert set(cfg.stt) == {"streaming", "batch"}
-    assert cfg.embedding.options == {"dimensions": 8}
+    assert cfg.embedding.options == {"dimensions": 256}
 
 
 def test_gcp_config_only_names_registered_impls():
@@ -55,7 +55,7 @@ async def test_fake_embedding_is_unit_norm():
     cfg = load_providers(FAKE)
     emb = registry.resolve("embedding", cfg.embedding)
     [vec] = await emb.embed(["hello"])
-    assert len(vec) == 8
+    assert len(vec) == 256
     assert abs(sum(v * v for v in vec) - 1.0) < 1e-6
 
 

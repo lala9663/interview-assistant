@@ -39,7 +39,12 @@ from interview_assistant.providers.audio import decode_pcm16, pcm_chunks, pcm_se
 from interview_assistant.providers.base import ProviderUnavailable
 from interview_assistant.textmetrics import cer
 
-EMBED_TEXTS = ("연결 테스트 문장입니다.", "모델 설정 화면에서 보낸 두 번째 문장")
+# A sentence, a paraphrase sharing an abbreviation, and an unrelated sentence (made up).
+EMBED_TEXTS = (
+    "식각 공정에서 웨이퍼 가장자리 CD 산포가 커진 원인을 FDC 데이터로 찾았습니다.",
+    "FDC 데이터를 보고 에지 쪽 선폭 편차가 왜 생겼는지 분석했습니다.",
+    "점심 메뉴로 김치찌개와 계란말이를 골랐습니다.",
+)
 
 
 @dataclass
@@ -154,17 +159,38 @@ async def _stt(
 
 
 async def _embedding(provider: Any) -> tuple[bool, str, dict[str, Any]]:
-    vectors = await provider.embed(list(EMBED_TEXTS))
+    """Fixed sentences (no candidate data): the sizes, and whether a paraphrase lands closer than
+    an unrelated sentence. With a sparse model, also the lexical score the shared abbreviation
+    (FDC) gives."""
+    from interview_assistant.retrieval.vectors import cosine, lexical
+
+    encoded = await provider.encode(list(EMBED_TEXTS))
+    vectors = [e.dense for e in encoded]
     dims = sorted({len(v) for v in vectors})
     expected = getattr(provider, "dimensions", None) or None
     finite = all(math.isfinite(x) for v in vectors for x in v)
-    output = {"vectors": len(vectors), "dimensions": dims[0] if len(dims) == 1 else dims}
-    output["expected_dimensions"] = expected
+    output: dict[str, Any] = {
+        "vectors": len(vectors),
+        "dimensions": dims[0] if len(dims) == 1 else dims,
+        "expected_dimensions": expected,
+        "sparse": all(e.sparse is not None for e in encoded),
+    }
     if len(vectors) != len(EMBED_TEXTS) or len(dims) != 1 or not finite:
         return False, "벡터 개수나 차원이 맞지 않습니다.", output
     if expected is not None and dims[0] != expected:
         return False, f"차원이 설정({expected})과 다릅니다: {dims[0]}", output
-    return True, f"{dims[0]}차원 벡터 {len(vectors)}개를 받았습니다.", output
+    base, similar, unrelated = encoded
+    output["similar"] = round(cosine(base.dense, similar.dense), 3)
+    output["unrelated"] = round(cosine(base.dense, unrelated.dense), 3)
+    if output["sparse"]:
+        output["lexical"] = round(lexical(base.sparse or {}, similar.sparse or {}), 4)
+    summary = (
+        f"{dims[0]}차원 벡터 {len(vectors)}개" + (", 단어 일치 가중치 포함" if output["sparse"] else "")
+        + f". 비슷한 문장 {output['similar']:.2f}, 무관한 문장 {output['unrelated']:.2f}."
+    )
+    if output["similar"] <= output["unrelated"]:
+        return False, summary + " 비슷한 문장이 더 가깝지 않습니다.", output
+    return True, summary, output
 
 
 async def _diarization(provider: Any, audio: Path) -> tuple[bool, str, dict[str, Any]]:
@@ -268,7 +294,18 @@ def read_document(
 
 def summary_for_audit(result: ProbeResult) -> dict[str, Any]:
     """What the audit log keeps of a test: outcome and timings, never text."""
-    keep = ("audio_seconds", "realtime_factor", "cer", "dimensions", "turns", "partials", "format", "read_ms")
+    keep = (
+        "audio_seconds",
+        "realtime_factor",
+        "cer",
+        "dimensions",
+        "similar",
+        "unrelated",
+        "turns",
+        "partials",
+        "format",
+        "read_ms",
+    )
     details = {k: result.output[k] for k in keep if k in result.output}
     details |= {"ok": result.ok, "latency_ms": result.latency_ms}
     if result.error:

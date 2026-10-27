@@ -676,27 +676,42 @@ export interface FollowUpRequest {
   qa_item_id: string
 }
 
+/** Where a follow-up came from: the question bank (approved by recruiters) or the LLM. */
+export type SuggestionSource = 'bank' | 'ai'
+
 export interface SuggestionMeta {
   batch_id: string
   suggestion_id: string
   index: number
   competency: string
+  source: SuggestionSource
 }
 
 export interface SuggestionDone extends SuggestionMeta {
   question: string
-  /** why this follow-up (생성 근거) */
+  /** why this follow-up (생성 근거; for the bank, the question's intent) */
   rationale: string
   /** quote from the de-identified answer the question builds on */
   grounding: string
+  /** bank only: the question-bank item and its retrieval score */
+  bank_item_id?: string
+  score?: number
 }
 
 export type FollowUpEvent =
-  | { event: 'batch.start'; data: { batch_id: string; qa_item_id: string; model: string; prompt_version: string } }
+  | {
+      event: 'batch.start'
+      data: { batch_id: string; qa_item_id: string; model: string; prompt_version: string; retrieval_model: string | null }
+    }
   | { event: 'suggestion.start'; data: SuggestionMeta }
   | { event: 'suggestion.delta'; data: { batch_id: string; suggestion_id: string; text: string } }
   | { event: 'suggestion.done'; data: SuggestionDone }
-  | { event: 'batch.done'; data: { batch_id: string } }
+  /** an AI suggestion that turned out to mean the same as a question already asked: take its card back */
+  | {
+      event: 'suggestion.discarded'
+      data: { batch_id: string; suggestion_id: string; reason: 'duplicate'; duplicate_of: string; similarity: number }
+    }
+  | { event: 'batch.done'; data: { batch_id: string; discarded?: number } }
   | { event: 'error'; data: { message: string } }
 
 // --- Evaluation (FR-07, FR-08) ----------------------------------------------------------------
@@ -1190,4 +1205,172 @@ export interface IntakeSummary {
 export interface IntakeEventFilter {
   status?: IntakeStatus
   posting_no?: string
+}
+
+// --- 질문 은행·평점 기준 예시 (retrieval) ------------------------------------------------------
+
+export type BankStatus = 'draft' | 'approved' | 'retired'
+export type BankSource = 'manual' | 'csv' | 'seed'
+
+/** A prohibited-question warning (채용 면접 금지 질문): a rule match or the AI check. */
+export interface BankFlag {
+  category: string
+  label: string
+  basis: string
+  matched: string
+  source: 'rule' | 'ai'
+  note: string
+}
+
+export interface BankPerson {
+  id: string
+  name: string
+}
+
+export interface QuestionBankItem {
+  id: string
+  job_family: string
+  competency: string
+  /** 1차, 2차 …; null = any round */
+  round_position: number | null
+  question: string
+  intent: string
+  follow_ups: string[]
+  status: BankStatus
+  flags: BankFlag[]
+  source: BankSource
+  created_by: BankPerson | null
+  approved_by: BankPerson | null
+  created_at: string
+  updated_at: string
+  approved_at: string | null
+  retired_at: string | null
+}
+
+export interface BankFamily {
+  job_family: string
+  competencies: string[]
+}
+
+export interface QuestionBankList {
+  items: QuestionBankItem[]
+  families: BankFamily[]
+  counts: Record<BankStatus, number>
+  total: number
+}
+
+export interface QuestionBankFilter {
+  job_family?: string
+  competency?: string
+  round?: number
+  status?: BankStatus
+  q?: string
+}
+
+export interface BankQuestionBody {
+  job_family: string
+  competency: string
+  round_position: number | null
+  question: string
+  intent: string
+  follow_ups: string[]
+}
+
+export interface ImportRowIssue {
+  row: number
+  message: string
+}
+
+export interface ImportResult {
+  dry_run: boolean
+  rows: number
+  created: number
+  skipped: number
+  errors: ImportRowIssue[]
+  warnings: ImportRowIssue[]
+}
+
+export interface RubricOverlap {
+  id: string
+  score: number
+  similarity: number
+}
+
+/** 평점 기준 예시: a made-up answer at one score of one competency, shown to the scoring model as an anchor. */
+export interface RubricExample {
+  id: string
+  job_family: string
+  competency: string
+  score: number
+  question: string
+  answer: string
+  rationale: string
+  status: BankStatus
+  source: BankSource
+  created_by: BankPerson | null
+  approved_by: BankPerson | null
+  created_at: string
+  updated_at: string
+  approved_at: string | null
+  retired_at: string | null
+  /** approved examples of the same competency at another score that read almost the same */
+  overlaps: RubricOverlap[]
+}
+
+export interface RubricExampleBody {
+  job_family: string
+  competency: string
+  score: number
+  question: string
+  answer: string
+  rationale: string
+}
+
+export interface RubricList {
+  items: RubricExample[]
+  families: BankFamily[]
+  counts: Record<BankStatus, number>
+}
+
+export interface EmbeddingIndexState {
+  index_key: string
+  model: string
+  dimensions: number
+  status: 'building' | 'ready' | 'failed'
+  total: number
+  done: number
+  started_at: string
+  finished_at: string | null
+  error: string | null
+  /** searches use this one now */
+  serving: boolean
+}
+
+export interface EmbeddingIndexStatus {
+  active_model: string | null
+  active_index_key: string | null
+  serving_index_key: string | null
+  /** vectors searched now, by owner type (question / rubric / competency_set) */
+  counts: Record<string, number>
+  indexes: EmbeddingIndexState[]
+}
+
+export interface SourceMetrics {
+  source: SuggestionSource
+  shown: number
+  used: number
+  edited: number
+  adoption_rate: number | null
+  batches: number
+  first_ms_median: number | null
+  first_ms_p90: number | null
+}
+
+export interface FollowUpMetrics {
+  since: string
+  days: number
+  batches: number
+  sources: SourceMetrics[]
+  duplicates: { bank: number; ai: number; total: number }
+  retrieval_model: string | null
 }

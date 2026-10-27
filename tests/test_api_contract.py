@@ -55,7 +55,7 @@ def test_every_contract_endpoint_is_served(api):
         if path.startswith("/api")
         for method in ops
     }
-    assert len(documented) == 68
+    assert len(documented) == 86
     assert documented == served
 
 

@@ -108,7 +108,8 @@ function applySuggestion(s: Suggestion, text: string, edited: boolean) {
       onDone: (qa) => {
         markUsed(s.id, qa.seq, edited)
         if (edited) editedIds.value = new Set(editedIds.value).add(qa.id)
-        toast.success(`Q${qa.seq}로 기록했습니다`, { description: edited ? 'AI 제안을 수정해 사용했습니다.' : 'AI 제안을 그대로 사용했습니다.' })
+        const what = s.source === 'bank' ? '질문 은행 후보' : 'AI 제안'
+        toast.success(`Q${qa.seq}로 기록했습니다`, { description: edited ? `${what}를 수정해 사용했습니다.` : `${what}를 그대로 사용했습니다.` })
       },
       finally: () => (pendingSuggestion.value = null),
     },

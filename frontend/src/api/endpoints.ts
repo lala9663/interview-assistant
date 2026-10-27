@@ -5,6 +5,11 @@ import type {
   ApplicationDetail,
   ApplyModelRequest,
   ApplicationRow,
+  BankFlag,
+  BankQuestionBody,
+  EmbeddingIndexStatus,
+  FollowUpMetrics,
+  ImportResult,
   IntakeEvent,
   IntakeEventFilter,
   IntakeSummary,
@@ -37,7 +42,13 @@ import type {
   PresetQuestion,
   PresetQuestionBody,
   QAItem,
+  QuestionBankFilter,
+  QuestionBankItem,
+  QuestionBankList,
   RevertModelRequest,
+  RubricExample,
+  RubricExampleBody,
+  RubricList,
   RoundDecision,
   RoundSummary,
   SchedulableApplication,
@@ -171,4 +182,42 @@ export const endpoints = {
   },
   retryIntakeEvent: (id: string) => api.post<IntakeEvent>(`/admin/intake/events/${id}/retry`),
   retryIntake: (body: { failure_code?: string; posting_no?: string }) => api.post<{ requeued: number }>('/admin/intake/retry', body),
+
+  // 질문 은행 (writing drafts: everyone; approve, retire, restore, import, AI check: admins)
+  questionBank: (filter: QuestionBankFilter, signal?: AbortSignal) => {
+    const q = new URLSearchParams()
+    for (const [k, v] of Object.entries(filter)) if (v !== undefined && v !== '') q.set(k, String(v))
+    return api.get<QuestionBankList>(`/question-bank?${q.toString()}`, signal)
+  },
+  checkQuestion: (body: { question: string; follow_ups: string[] }) => api.post<{ flags: BankFlag[] }>('/question-bank/check', body),
+  createQuestion: (body: BankQuestionBody) => api.post<QuestionBankItem>('/question-bank', body),
+  updateQuestion: (id: string, body: BankQuestionBody) => api.put<QuestionBankItem>(`/question-bank/${id}`, body),
+  approveQuestion: (id: string, confirmWarnings: boolean) =>
+    api.post<QuestionBankItem>(`/question-bank/${id}/approve`, { confirm_warnings: confirmWarnings }),
+  retireQuestion: (id: string) => api.post<QuestionBankItem>(`/question-bank/${id}/retire`),
+  restoreQuestion: (id: string) => api.post<QuestionBankItem>(`/question-bank/${id}/restore`),
+  aiCheckQuestion: (id: string) => api.post<QuestionBankItem>(`/question-bank/${id}/ai-check`),
+  importQuestions: (file: File, dryRun: boolean) => {
+    const form = new FormData()
+    form.set('file', file)
+    form.set('dry_run', String(dryRun))
+    return api.postForm<ImportResult>('/question-bank/import', form)
+  },
+
+  // 평점 기준 예시
+  rubricExamples: (filter: { job_family?: string; competency?: string }, signal?: AbortSignal) => {
+    const q = new URLSearchParams()
+    for (const [k, v] of Object.entries(filter)) if (v) q.set(k, v)
+    return api.get<RubricList>(`/rubric-examples?${q.toString()}`, signal)
+  },
+  createRubric: (body: RubricExampleBody) => api.post<RubricExample>('/rubric-examples', body),
+  updateRubric: (id: string, body: RubricExampleBody) => api.put<RubricExample>(`/rubric-examples/${id}`, body),
+  approveRubric: (id: string) => api.post<RubricExample>(`/rubric-examples/${id}/approve`),
+  retireRubric: (id: string) => api.post<RubricExample>(`/rubric-examples/${id}/retire`),
+  restoreRubric: (id: string) => api.post<RubricExample>(`/rubric-examples/${id}/restore`),
+
+  // 관리자: 임베딩 색인, 꼬리질문 지표
+  embeddingIndex: (signal?: AbortSignal) => api.get<EmbeddingIndexStatus>('/admin/embedding-index', signal),
+  rebuildIndex: () => api.post<EmbeddingIndexStatus>('/admin/embedding-index/rebuild'),
+  followUpMetrics: (days: number, signal?: AbortSignal) => api.get<FollowUpMetrics>(`/admin/follow-up-metrics?days=${days}`, signal),
 }

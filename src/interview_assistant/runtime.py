@@ -1,6 +1,7 @@
 """What a running app holds: the AI model manager (providers per role, switchable from the admin
 screen), the database, de-identification, the live transcript hub, the intake queue (applications
-from the recruiting site) and the background tasks."""
+from the recruiting site), retrieval (question bank and other company text, embedded) and the
+background tasks."""
 
 from __future__ import annotations
 
@@ -23,6 +24,7 @@ from interview_assistant.live.audio import AudioSource, ScriptedCandidate
 from interview_assistant.live.hub import LiveHub
 from interview_assistant.models import InterviewSession
 from interview_assistant.providers import registry
+from interview_assistant.retrieval.service import Retrieval
 
 __all__ = ["Providers", "Runtime", "build_providers", "build_runtime"]
 
@@ -54,7 +56,11 @@ class Runtime:
     deid: DeidService
     hub: LiveHub
     intake: IntakeQueue
+    retrieval: Retrieval = field(init=False)
     tasks: set[asyncio.Task[Any]] = field(default_factory=set)
+
+    def __post_init__(self) -> None:
+        self.retrieval = Retrieval(self.session_factory, self.models, self.spawn)
 
     @property
     def providers(self) -> Providers:

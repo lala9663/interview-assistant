@@ -20,9 +20,10 @@ providers:
       impl: fake
       language: ko-KR
       diarization: true
+  # fake 임베딩은 단어·두 글자 조각 해시라 같은 단어를 쓴 문장끼리만 가깝다. 실제 검색은 관리자 화면에서 BGE-M3로.
   embedding:
     impl: fake
-    dimensions: 8
+    dimensions: 256
   diarization:
     impl: fake
   # 서류 읽기: fake OCR은 글자를 읽지 않고 자리 표시 한 줄만 돌려준다. 실제 OCR은 관리자 화면에서 PaddleOCR로 바꾼다.

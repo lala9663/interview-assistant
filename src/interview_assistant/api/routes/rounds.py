@@ -230,7 +230,7 @@ def create_round_set(
 async def generate_round_set(round_id: str, db: Db, runtime: RuntimeDep) -> s.CompetencySet:
     found = get_round(db, round_id)
     try:
-        drafted = await draft_competency_set(db, runtime.ai, found)
+        drafted = await draft_competency_set(db, runtime.ai, found, runtime.retrieval)
     finally:
         db.commit()  # the AI call's audit row stays even when the draft is unusable
     return s.CompetencySet.model_validate(drafted)

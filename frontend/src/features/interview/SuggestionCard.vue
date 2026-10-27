@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { CheckIcon, PencilLineIcon, QuoteIcon } from '@lucide/vue'
+import { BookMarkedIcon, CheckIcon, PencilLineIcon, QuoteIcon, SparklesIcon } from '@lucide/vue'
 import { nextTick, ref } from 'vue'
 
 import DeidText from '@/components/common/DeidText.vue'
@@ -14,6 +14,8 @@ import { submitOnEnter } from './transcript-utils'
 
 const props = defineProps<{
   s: Suggestion
+  /** 1-based place in the list (indexes skip candidates taken back as duplicates) */
+  position: number
   used: boolean
   usedSeq: number | null
   usedEdited: boolean
@@ -50,14 +52,26 @@ const submitEdit = () => {
     :class="
       cn(
         'rounded-lg border p-3 transition-[opacity,background-color,border-color] duration-300',
-        used ? 'border-[color-mix(in_oklch,var(--success)_40%,transparent)] bg-[color-mix(in_oklch,var(--success)_6%,transparent)]' : 'ai-dashed',
+        used
+          ? 'border-[color-mix(in_oklch,var(--success)_40%,transparent)] bg-[color-mix(in_oklch,var(--success)_6%,transparent)]'
+          : s.source === 'bank'
+            ? 'border-brand-border bg-[color-mix(in_oklch,var(--brand)_4%,transparent)]'
+            : 'ai-dashed',
         otherUsed && 'opacity-55',
       )
     "
-    :aria-label="`꼬리질문 후보 ${s.index + 1}`"
+    :aria-label="`꼬리질문 후보 ${position} (${s.source === 'bank' ? '질문 은행' : 'AI 생성'})`"
+    :data-source="s.source"
   >
     <div class="mb-1.5 flex items-center gap-1.5">
-      <span class="font-mono text-[10.5px] font-semibold text-muted-foreground">후보 {{ s.index + 1 }}</span>
+      <span class="font-mono text-[10.5px] font-semibold text-muted-foreground">후보 {{ position }}</span>
+      <Tooltip :content="s.source === 'bank' ? '채용 담당자가 검수·승인한 질문 은행에서 이 답변과 가까운 질문입니다.' : 'AI가 이 답변을 읽고 만든 질문입니다.'">
+        <Badge :variant="s.source === 'bank' ? 'brand' : 'outline'" class="py-0 text-[10.5px]" data-testid="suggestion-source">
+          <BookMarkedIcon v-if="s.source === 'bank'" aria-hidden="true" />
+          <SparklesIcon v-else aria-hidden="true" />
+          {{ s.source === 'bank' ? '질문 은행' : 'AI 생성' }}
+        </Badge>
+      </Tooltip>
       <Badge variant="outline" class="py-0 text-[10.5px]">{{ s.competency }}</Badge>
       <Badge v-if="used" variant="success" class="ml-auto py-0 text-[10.5px]">
         <CheckIcon />

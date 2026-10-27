@@ -19,7 +19,9 @@ const props = defineProps<{
 const emit = defineEmits<{ use: [s: Suggestion, text: string, edited: boolean]; retry: [] }>()
 
 const streamingEmpty = computed(() => props.state.status === 'streaming' && props.state.suggestions.length === 0)
-const placeholders = computed(() => (props.state.status === 'streaming' ? Math.max(0, 3 - props.state.suggestions.length) : 0))
+// While streaming, room for the AI's 2-3 under whatever the question bank showed first.
+const aiCount = computed(() => props.state.suggestions.filter((s) => s.source === 'ai').length)
+const placeholders = computed(() => (props.state.status === 'streaming' ? Math.max(0, 3 - aiCount.value) : 0))
 </script>
 
 <template>
@@ -30,7 +32,9 @@ const placeholders = computed(() => (props.state.status === 'streaming' ? Math.m
           <SparklesIcon class="size-4 text-brand" aria-hidden="true" />
           꼬리질문 제안
         </h3>
-        <p class="mt-0.5 text-[11.5px] leading-snug text-muted-foreground">AI 제안입니다. 자동으로 묻지 않으며, 면접관이 고르거나 고친 질문만 기록됩니다.</p>
+        <p class="mt-0.5 text-[11.5px] leading-snug text-muted-foreground">
+          검수된 질문 은행 후보가 먼저, AI 후보가 이어서 나옵니다. 자동으로 묻지 않으며, 면접관이 고르거나 고친 질문만 기록됩니다.
+        </p>
       </div>
       <Tooltip v-if="(state.status === 'done' || state.status === 'error') && hasAnswer" content="같은 답변으로 후보를 다시 받습니다">
         <Button size="icon-xs" variant="ghost" :disabled="disabled" aria-label="다시 제안" @click="emit('retry')">
@@ -47,7 +51,11 @@ const placeholders = computed(() => (props.state.status === 'streaming' ? Math.m
       </div>
 
       <div v-if="state.status === 'idle'" class="rounded-lg border border-dashed px-3 py-5 text-center text-[12.5px] text-muted-foreground">
-        {{ listening ? '지원자 답변을 듣는 중입니다. 답변이 끝나면 후보 2~3개를 제안합니다.' : '답변이 끝나면 그 답변을 근거로 꼬리질문 후보가 나타납니다.' }}
+        {{
+          listening
+            ? '지원자 답변을 듣는 중입니다. 답변이 끝나면 질문 은행 후보와 AI 후보를 제안합니다.'
+            : '답변이 끝나면 그 답변을 근거로 꼬리질문 후보가 나타납니다.'
+        }}
       </div>
 
       <ul v-if="streamingEmpty" class="space-y-2" aria-busy="true">
@@ -56,7 +64,7 @@ const placeholders = computed(() => (props.state.status === 'streaming' ? Math.m
           <Skeleton class="mt-2.5 h-3.5 w-full" />
           <Skeleton class="mt-1.5 h-3.5 w-2/3" />
         </li>
-        <li class="text-center text-[11.5px] text-muted-foreground">직전 답변에서 근거를 찾는 중…</li>
+        <li class="text-center text-[11.5px] text-muted-foreground">질문 은행과 직전 답변에서 근거를 찾는 중…</li>
       </ul>
 
       <TransitionGroup
@@ -67,9 +75,10 @@ const placeholders = computed(() => (props.state.status === 'streaming' ? Math.m
         enter-from-class="opacity-0 translate-y-2"
       >
         <SuggestionCard
-          v-for="s in state.suggestions"
+          v-for="(s, i) in state.suggestions"
           :key="s.id"
           :s="s"
+          :position="i + 1"
           :used="state.used?.suggestionId === s.id"
           :used-seq="state.used?.suggestionId === s.id ? state.used.seq : null"
           :used-edited="state.used?.suggestionId === s.id ? state.used.edited : false"
@@ -84,7 +93,12 @@ const placeholders = computed(() => (props.state.status === 'streaming' ? Math.m
         </li>
       </TransitionGroup>
       <p v-if="state.used && listening" class="mt-2 text-center text-[11.5px] text-muted-foreground">새 답변이 끝나면 다음 후보를 제안합니다.</p>
-      <p v-if="state.model && state.status === 'done'" class="mt-2 text-right font-mono text-[10.5px] text-muted-foreground/70">{{ state.model }}</p>
+      <p v-if="state.discarded.length > 0" class="mt-2 text-[11.5px] text-muted-foreground" data-testid="discarded-note">
+        이미 물은 질문과 같은 후보 {{ state.discarded.length }}개는 뺐습니다.
+      </p>
+      <p v-if="state.model && state.status === 'done'" class="mt-2 text-right font-mono text-[10.5px] text-muted-foreground/70">
+        {{ state.retrievalModel ? `${state.retrievalModel} · ` : '' }}{{ state.model }}
+      </p>
     </div>
   </section>
 </template>

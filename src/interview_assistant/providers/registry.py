@@ -25,6 +25,7 @@ _IMPLS: dict[str, dict[str, str]] = {
     },
     "embedding": {
         "fake": "interview_assistant.providers.fake:FakeEmbedding",
+        "bge_m3": "interview_assistant.providers.embedding.bge_m3:BgeM3Embedding",
         "vertex_embedding": "interview_assistant.providers.embedding.vertex:VertexEmbedding",
     },
     "diarization": {

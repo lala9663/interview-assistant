@@ -157,7 +157,9 @@ const seconds = (ms: number | null | undefined) => (typeof ms === 'number' ? `${
     <p v-else-if="role.startsWith('llm.')" class="text-xs leading-relaxed text-muted-foreground">
       지원자 데이터가 없는 고정 문장으로 구조화 출력(JSON)과 간단한 지시 수행을 확인합니다. 호출은 감사 로그에 남습니다.
     </p>
-    <p v-else class="text-xs text-muted-foreground">짧은 문장 두 개를 임베딩해 벡터 차원을 확인합니다.</p>
+    <p v-else class="text-xs leading-relaxed text-muted-foreground">
+      지원자 데이터가 없는 고정 문장 세 개(문장, 같은 약어를 쓴 비슷한 문장, 무관한 문장)를 임베딩해 차원과, 비슷한 문장이 더 가깝게 나오는지 확인합니다.
+    </p>
 
     <div class="flex items-center gap-2">
       <Button size="sm" :disabled="!audioReady || run.isPending" data-testid="run-test" @click="run.mutate()">
@@ -185,6 +187,10 @@ const seconds = (ms: number | null | undefined) => (typeof ms === 'number' ? `${
         <Badge v-if="num('realtime_factor') !== null" variant="outline" class="tabular">음성 길이의 {{ num('realtime_factor')!.toFixed(2) }}배 시간</Badge>
         <Badge v-if="num('cer') !== null" variant="outline" class="tabular">CER {{ (num('cer')! * 100).toFixed(1) }}%</Badge>
         <Badge v-if="num('dimensions') !== null" variant="outline" class="tabular">{{ num('dimensions') }}차원</Badge>
+        <Badge v-if="out.sparse === true" variant="outline">단어 일치 가중치 있음</Badge>
+        <Badge v-if="num('similar') !== null" variant="outline" class="tabular" data-testid="embedding-similar">
+          비슷한 문장 {{ num('similar')!.toFixed(2) }} · 무관한 문장 {{ num('unrelated')!.toFixed(2) }}
+        </Badge>
         <Badge v-if="result.audio === 'upload'" variant="outline"><FileAudioIcon aria-hidden="true" />올린 음성</Badge>
       </div>
       <div v-if="str('text') !== null" class="space-y-1.5">

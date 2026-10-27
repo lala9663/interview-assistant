@@ -5,11 +5,11 @@
 Python 3.12, [uv](https://docs.astral.sh/uv/).
 
 ```bash
-uv sync --extra whisper --extra ocr   # 로컬 Whisper STT와 로컬 OCR(PaddleOCR)까지. 빼면 관리자 화면에 "패키지 없음"으로 보인다
+uv sync --extra whisper --extra ocr --extra embedding   # 로컬 Whisper STT, 로컬 OCR(PaddleOCR), 로컬 임베딩(BGE-M3)까지. 빼면 관리자 화면에 "패키지 없음"으로 보인다
 cp .env.example .env
 ```
 
-`uv sync`는 목록에 없는 패키지를 지우므로, 매번 같은 `--extra`를 붙인다(`uv run`은 지우지 않는다). `ocr`은 paddleocr 3.7.0과 paddlepaddle 3.2.2(CPU, 약 500MB)다.
+`uv sync`는 목록에 없는 패키지를 지우므로, 매번 같은 `--extra`를 붙인다(`uv run`은 지우지 않는다). `ocr`은 paddleocr 3.7.0과 paddlepaddle 3.2.2(CPU, 약 500MB)다. `embedding`은 onnxruntime과 tokenizers로, faster-whisper가 이미 쓰는 패키지라 따로 받는 것은 거의 없다.
 
 ### 시스템 프로그램 (선택)
 
@@ -20,7 +20,7 @@ cp .env.example .env
 | LibreOffice | 구형 .doc·.ppt 변환. 없으면 그런 서류는 "변환기 없음"으로 거부 | `winget install TheDocumentFoundation.LibreOffice` | `apt install libreoffice-core libreoffice-writer libreoffice-impress` | `SOFFICE_CMD` |
 | Tesseract | OCR 엔진 Tesseract(비교용, 기본은 PaddleOCR) | `winget install UB-Mannheim.TesseractOCR` | `apt install tesseract-ocr` | `TESSERACT_CMD` |
 
-OCR 모델 파일(PaddleOCR PP-OCRv5, Tesseract 한국어 데이터)은 설치가 아니라 관리자 > 모델 설정의 "다운로드"로 받는다([ai-models.md](ai-models.md) "서류 읽기").
+OCR 모델 파일(PaddleOCR PP-OCRv5, Tesseract 한국어 데이터)과 임베딩 모델(BGE-M3, 약 2.3GB)은 설치가 아니라 관리자 > 모델 설정의 "다운로드"로 받는다([ai-models.md](ai-models.md) "서류 읽기", "로컬 임베딩 BGE-M3").
 
 ### .env
 
@@ -31,7 +31,7 @@ OCR 모델 파일(PaddleOCR PP-OCRv5, Tesseract 한국어 데이터)은 설치�
 | `IA_DATABASE_URL` | 기본 `sqlite+pysqlite:///./dev.db` |
 | `IA_DEV_INTERVIEWER` | 로그인 전까지 로그인한 면접관의 사번. 시드의 김서연 = `E24017`(관리자) |
 | `IA_UPLOADS_DIR`, `IA_RECORDINGS_DIR` | 원본 영역(업로드 서류, 녹음). git 제외, 서빙하지 않는다 |
-| `IA_WEIGHTS_DIR` | 내려받은 모델 가중치(로컬 Whisper, PaddleOCR, Tesseract 한국어 데이터). 기본 `weights/`, git 제외 |
+| `IA_WEIGHTS_DIR` | 내려받은 모델 가중치(로컬 Whisper, PaddleOCR, Tesseract 한국어 데이터, BGE-M3). 기본 `weights/`, git 제외 |
 | `SOFFICE_CMD`, `TESSERACT_CMD` | LibreOffice·Tesseract 실행 파일 경로. PATH와 기본 설치 위치에 없을 때만 |
 | `IA_DEMO_SPEED` | 가상 지원자 속도. 1이면 프론트 모의 모드와 비슷, 0이면 지연 없음 |
 | `IA_SITE_SECRET`, `IA_SITE_SECRET_PREVIOUS` | 채용 사이트 연동의 공유 HMAC 키([site-intake-spec.md](site-intake-spec.md) 4장). 없으면 사이트 수신 엔드포인트가 503. 키 교체 중에는 이전 키도 받는다. 커밋하지 않는다 |
@@ -53,6 +53,7 @@ uv run python scripts/seed_demo.py --reset
 uv run uvicorn interview_assistant.main:app --reload
 ```
 
+- 시드에는 질문 은행 40개(승인 37, 금지 질문 경고가 붙은 초안 1, 초안 1, 폐기 1)와 평점 기준 예시 16개도 들어간다. 그 벡터는 시드하지 않고 서버가 기동할 때 활성 임베딩 모델로 만든다(fake면 수 초, BGE-M3면 약 15초).
 - 시드는 프론트 모의 데이터와 같은 가상 데이터(공고 3, 지원자 20, 면접관 5, 진행 중 면접 1, 오늘 일정, 완료 4 중 1건은 AI 채점 중)를 지금 시각 기준으로 깐다. 다른 날 다시 쓰려면 `--reset`으로 다시 넣는다. 지원자 신원도 지어낸 값(010-0000-xxxx, example.com)을 실제처럼 암호화해 넣는다. `--reset`은 모델 설정과 그 이력은 지우지 않는다.
 - 로그인(SSO)은 아직 없다. Alembic 0004 이전에 시드한 DB는 관리자가 없으니 `uv run python scripts/grant_admin.py E24017`로 준다.
 - 서버는 한 프로세스로 띄운다. 실시간 전사 상태, 활성 모델 설정, 지원서 수신 큐의 워커가 메모리에 있어서 `--workers`를 쓰지 않는다. OCR 엔진을 PaddleOCR로 쓰면 서버가 작업 프로세스를 하나 더 띄운다(읽는 동안 최대 약 1.8GB, 쉴 때 0.6GB 안팎. faster-whisper와 DLL이 충돌해 따로 돈다, [document-reading.md](document-reading.md)).
@@ -97,4 +98,4 @@ uv run pytest              # 백엔드. 외부 네트워크 없이 돈다 (fake 
 cd frontend && npm run check   # 타입 검사 + 린트 + 테스트 + 빌드
 ```
 
-`tests/test_whisper.py`는 faster-whisper와 내려받은 모델 파일이 있을 때만, `tests/test_ocr_engines.py`는 PaddleOCR·Tesseract와 모델 파일이 있을 때만, LibreOffice가 필요한 구형 .doc·.ppt 테스트는 LibreOffice가 있을 때만 돌고 없으면 건너뛴다. 나머지는 fake OCR로 오프라인에서 돈다.
+`tests/test_whisper.py`는 faster-whisper와 내려받은 모델 파일이 있을 때만, `tests/test_bge_m3.py`는 BGE-M3 모델 파일이 있을 때만, `tests/test_ocr_engines.py`는 PaddleOCR·Tesseract와 모델 파일이 있을 때만, LibreOffice가 필요한 구형 .doc·.ppt 테스트는 LibreOffice가 있을 때만 돌고 없으면 건너뛴다. 나머지는 fake OCR로 오프라인에서 돈다.

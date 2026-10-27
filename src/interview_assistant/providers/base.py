@@ -103,11 +103,41 @@ class STTProvider(Provider, ABC):
     ) -> list[TranscriptSegment]: ...
 
 
+@dataclass(frozen=True)
+class Embedding:
+    """One text's vectors. `dense` has unit length. `sparse` (token id -> weight) is the lexical
+    part some models have (BGE-M3): two texts score by the weights of the tokens they share, which
+    keeps exact terms (FDC, RF, CVD) from being lost in the dense vector."""
+
+    dense: list[float]
+    sparse: dict[int, float] | None = None
+
+
 class EmbeddingProvider(Provider, ABC):
+    """Text to vectors, for retrieval (question bank, rubric anchors, competency dictionaries).
+
+    The three retrieval settings depend on the model's score scale, so they are the provider's
+    options (admin > 모델 설정): how much the sparse score counts in a hybrid score, the dense
+    similarity from which two questions are the same question, and the lowest hybrid score a
+    question-bank match needs to be suggested."""
+
     dimensions: int
+    sparse_weight: float = 0.0
+    duplicate_threshold: float = 0.9
+    min_score: float = 0.5
+
+    @property
+    def index_key(self) -> str:
+        """What stored vectors are compatible with: the model, its weights and the size. Vectors
+        are saved with it; a provider with another key needs the stored vectors rebuilt."""
+        return f"{self.model}/{self.dimensions}"
 
     @abstractmethod
     async def embed(self, texts: Sequence[str]) -> list[list[float]]: ...
+
+    async def encode(self, texts: Sequence[str]) -> list[Embedding]:
+        """Dense and (when the model has it) sparse vectors. Default: dense only."""
+        return [Embedding(v) for v in await self.embed(texts)]
 
 
 @dataclass

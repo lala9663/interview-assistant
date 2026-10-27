@@ -26,7 +26,7 @@ watch(
     compact
     :icon="MessageSquareTextIcon"
     title="기록된 질문이 없습니다"
-    description="사전 질문, AI 제안, 직접 입력 모두 여기에 순서대로 쌓입니다."
+    description="사전 질문, 꼬리질문 후보(질문 은행·AI), 직접 입력 모두 여기에 순서대로 쌓입니다."
   />
   <TransitionGroup
     v-else

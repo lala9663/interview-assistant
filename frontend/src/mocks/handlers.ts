@@ -32,6 +32,7 @@ import { availabilityByInterviewer, suggestSlots } from '@/lib/schedule'
 import { isSameKstDay } from '@/lib/time'
 
 import { adminHandlers } from './admin'
+import { bankHandlers } from './bank'
 import { intakeHandlers } from './intake'
 import { ANSWER_BANK, GENERIC_BANK } from './data/banks'
 import { AI_MODEL, getDb, newId, SCREENING_MODEL, splitSentences, weight, type MockDb, type QAMeta } from './db'
@@ -133,6 +134,7 @@ const fragment = (sentence: string, words = 5) => {
 export const handlers = [
   ...adminHandlers,
   ...intakeHandlers,
+  ...bankHandlers,
   // ----- me / dashboard / activity ---------------------------------------------------------------
   http.get(`${API}/me`, async () => {
     await latency()
@@ -622,6 +624,8 @@ export const handlers = [
     } else if (body.question_source === 'ai_suggested' && body.suggestion) {
       const sug = db.suggestions.get(body.suggestion.suggestion_id)
       if (!sug) return invalid('suggestion', '알 수 없는 제안입니다.')
+      const shown = db.bank.shown.find((x) => x.suggestion_id === sug.suggestion_id)
+      if (shown) Object.assign(shown, { used: true, edited: body.suggestion.edited })
       meta = { postingKey, presetId: null, competency: sug.competency, answer: sug.answer, suggestions: GENERIC_BANK[postingKey]!.suggestions }
     } else {
       meta = { postingKey, presetId: null, competency: null, answer: db.nextGenericAnswer(postingKey), suggestions: null }

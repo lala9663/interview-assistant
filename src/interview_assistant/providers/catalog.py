@@ -19,7 +19,14 @@ from typing import Any, Literal
 
 from interview_assistant.providers import registry
 from interview_assistant.providers.programs import JAVA, LIBREOFFICE, TESSERACT, Program
-from interview_assistant.providers.weights import PADDLEOCR, TESSDATA, WHISPER, WeightSet, is_complete
+from interview_assistant.providers.weights import (
+    BGE_M3,
+    PADDLEOCR,
+    TESSDATA,
+    WHISPER,
+    WeightSet,
+    is_complete,
+)
 
 
 class DataLocation(str, enum.Enum):
@@ -42,7 +49,7 @@ ROLES: tuple[Role, ...] = (
     Role("llm.screening", "llm", "LLM 선별용", "서류 구조화와 선별"),
     Role("stt.streaming", "stt", "STT 실시간", "면접 중 지원자 답변 전사"),
     Role("stt.batch", "stt", "STT 사후", "녹음 파일 전사 (10단계)"),
-    Role("embedding", "embedding", "임베딩", "검색·유사도 (후순위)"),
+    Role("embedding", "embedding", "임베딩", "질문 은행 검색, 같은 질문 거르기, 비슷한 역량 사전·평점 기준 찾기"),
     Role("diarization", "diarization", "화자분리", "대면 면접 화자 구분 (10단계)"),
     Role("document.reading", "reading", "읽기 방식", "텍스트 층과 OCR 중 무엇으로 읽을지, 문서 속 그림", "documents"),
     Role("document.ocr", "ocr", "OCR 엔진", "스캔본·사진·그림 속 글자 읽기", "documents"),
@@ -174,6 +181,41 @@ _WHISPER_MODELS = (
         WHISPER["large-v3-turbo"].size_bytes,
     ),
 )
+
+def _retrieval_options(sparse: float, duplicate: float, minimum: float) -> tuple[OptionField, ...]:
+    """Retrieval settings on the score scale of one embedding model."""
+    return (
+        OptionField(
+            "sparse_weight",
+            "단어 일치 가중치",
+            "number",
+            sparse,
+            "검색 점수 = 의미 유사도 + 이 값 × 단어 일치 점수. 전문 용어·약어(FDC, RF, CVD)가 그대로 맞는 "
+            "질문을 끌어올립니다. 0이면 의미만 봅니다.",
+            minimum=0,
+            maximum=1,
+        ),
+        OptionField(
+            "duplicate_threshold",
+            "같은 질문으로 볼 유사도",
+            "number",
+            duplicate,
+            "꼬리질문 후보가 이 면접이나 이전 차수에서 이미 한 질문과 의미 유사도가 이 값 이상이면 뺍니다. "
+            "낮출수록 더 많이 거릅니다.",
+            minimum=0.5,
+            maximum=1,
+        ),
+        OptionField(
+            "min_score",
+            "질문 은행 제안 최소 점수",
+            "number",
+            minimum,
+            "답변과의 검색 점수가 이보다 낮은 질문 은행 질문은 제안하지 않습니다.",
+            minimum=0,
+            maximum=2,
+        ),
+    )
+
 
 _LOCAL_FILES = "서류와 그림은 이 PC 밖으로 나가지 않습니다."
 _NO_LLM_IMAGES = "그림은 OCR로 글자만 읽고 버립니다. LLM에는 그림을 보내지 않습니다."
@@ -566,12 +608,62 @@ CATALOG: tuple[ImplInfo, ...] = (
         "embedding",
         "fake",
         "Fake 임베딩",
-        "텍스트 해시로 만든 단위 벡터. 차원과 흐름 확인용입니다.",
+        "단어와 두 글자 조각을 해시해 만든 벡터. 같은 단어를 쓴 문장끼리만 가깝고 뜻은 모릅니다. 흐름 확인용입니다.",
         DataLocation.local,
         "외부 호출이 없습니다.",
         "프로젝트 코드",
         ("embedding",),
-        options=(OptionField("dimensions", "차원", "integer", 8, minimum=2, maximum=4096),),
+        options=(
+            OptionField("dimensions", "차원", "integer", 256, minimum=2, maximum=4096),
+            *_retrieval_options(0.3, 0.8, 0.15),
+        ),
+    ),
+    ImplInfo(
+        "embedding",
+        "bge_m3",
+        "BGE-M3 (로컬)",
+        "BAAI의 다국어 임베딩 모델을 이 PC의 CPU에서 돌립니다(ONNX Runtime). 의미 벡터(1024차원)와 단어 일치 "
+        "가중치를 함께 내어, 뜻이 비슷한 질문과 전문 용어·약어가 맞는 질문을 같이 찾습니다. 무료, 오프라인.",
+        DataLocation.local,
+        "질문·답변 텍스트는 이 PC 밖으로 나가지 않습니다. 모델 파일만 Hugging Face에서 한 번 내려받습니다.",
+        "MIT (BGE-M3 모델, ONNX Runtime), Apache-2.0 (tokenizers)",
+        ("embedding",),
+        options=(
+            OptionField(
+                "model",
+                "모델",
+                "select",
+                "bge-m3",
+                choices=(
+                    Choice(
+                        "bge-m3",
+                        "BGE-M3 (fp32 ONNX)",
+                        "한국어 포함 100여 개 언어, 최대 8,192토큰. 밀집 1024차원 + 희소(단어 일치). "
+                        "메모리 약 2.5GB.",
+                        BGE_M3["bge-m3"].size_bytes,
+                        ("embedding",),
+                    ),
+                ),
+            ),
+            OptionField(
+                "max_length",
+                "최대 길이 (토큰)",
+                "integer",
+                512,
+                "이보다 긴 텍스트는 잘라서 임베딩합니다. 면접 답변 하나는 보통 300토큰 안쪽이고, 길수록 느려집니다.",
+                64,
+                8192,
+            ),
+            OptionField(
+                "cpu_threads", "CPU 스레드", "integer", 0, "0이면 자동 (코어 수의 절반, 최대 6).", 0, 32
+            ),
+            *_retrieval_options(0.3, 0.85, 0.55),
+        ),
+        packages=(
+            ("onnxruntime", "uv sync --extra embedding"),
+            ("tokenizers", "uv sync --extra embedding"),
+        ),
+        weights=BGE_M3,
     ),
     ImplInfo(
         "embedding",

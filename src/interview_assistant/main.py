@@ -87,6 +87,7 @@ def create_app(
         except Exception:
             log.exception("could not start the intake queue")
         runtime.spawn(runtime.models.warm_up_active())
+        runtime.retrieval.start()  # loads the ready index, catches up in the background
         yield
         for task in list(runtime.tasks):
             task.cancel()

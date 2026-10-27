@@ -253,6 +253,41 @@ TESSDATA: dict[str, WeightSet] = {
 }
 
 
+# BGE-M3 (BAAI, MIT), checked 2026-10-27: the official ONNX export (XLM-RoBERTa large, fp32; its
+# outputs are the normalised dense vector and the last hidden states) and the sparse head
+# (`sparse_linear.pt`: 1024 float16 weights and a bias, read as bytes, never unpickled). The
+# tokenizer is the one exported with the ONNX model. sha256 for every file.
+BGE_M3: dict[str, WeightSet] = {
+    "bge-m3": WeightSet(
+        "bge-m3/onnx-fp32",
+        "BAAI/bge-m3",
+        "5617a9f61b028005a4858fdac845db406aefb181",
+        (
+            WeightFile(
+                "onnx/model.onnx",
+                724923,
+                "f84251230831afb359ab26d9fd37d5936d4d9bb5d1d5410e66442f630f24435b",
+            ),
+            WeightFile(
+                "onnx/model.onnx_data",
+                2266820608,
+                "1eebfb28493f67bba03ce0ef64bfdc7fc5a3bd9d7493f818bb1d78cd798416b4",
+            ),
+            WeightFile(
+                "onnx/tokenizer.json",
+                17082821,
+                "6710678b12670bc442b99edc952c4d996ae309a7020c1fa0096dd245c2faf790",
+            ),
+            WeightFile(
+                "sparse_linear.pt",
+                3516,
+                "45c93804d2142b8f6d7ec6914ae23a1eee9c6a1d27d83d908a20d2afb3595ad9",
+            ),
+        ),
+    ),
+}
+
+
 def is_complete(weights: WeightSet, root: Path) -> bool:
     """Every file present with its expected size, and the marker written after verification."""
     folder = weights.path(root)

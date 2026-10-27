@@ -1,0 +1,157 @@
+# 한국어 검색 품질 평가 세트: 가상의 면접 답변 하나와, 그 답변 뒤에 이어 물을 만한 질문 은행 질문
+# (frontend/src/mocks/data/question-bank.ts의 key). 답변은 이 평가를 위해 지어낸 것이다.
+# 검색은 그 직군의 승인된 질문 전체(모든 역량·차수, 질문과 꼬리질문 예시)에서 하고, expected 중 하나가
+# 상위 3개 안에 들면 적중이다 (scripts/eval_retrieval.py, tests/test_bge_m3.py).
+# kind: term = 전문 용어·약어가 그대로 겹침, paraphrase = 같은 뜻을 다른 말로, mixed = 둘 다
+pairs:
+  # ----- 공정개발 -----------------------------------------------------------------------------
+  - family: 공정개발
+    kind: term
+    answer: 장비 알람이 잦아서 FDC 화면에서 챔버 압력과 RF 반사 전력 추이를 먼저 확인했습니다. 교체 직후 값이 튀는 구간이 있었습니다.
+    expected: [qb-fab-06]
+  - family: 공정개발
+    kind: paraphrase
+    answer: 설비 센서 기록을 시간 순서로 늘어놓고 평소와 다르게 움직인 항목부터 골라냈습니다. 그중 하나가 불량 시점과 맞았습니다.
+    expected: [qb-fab-06, qb-fab-08]
+  - family: 공정개발
+    kind: term
+    answer: SPC 관리도에서 연속 일곱 점이 중심선 위에 있어서 공정 평균이 이동했다고 봤습니다. 관리 한계는 지난 분기 데이터로 다시 계산했습니다.
+    expected: [qb-fab-07]
+  - family: 공정개발
+    kind: paraphrase
+    answer: 같은 날 처리한 웨이퍼를 장비 위치별로 나눠 보니 위쪽 칸에 넣은 것만 막이 얇았습니다. 그 칸의 히터 상태를 따로 봤습니다.
+    expected: [qb-fab-07, qb-fab-13]
+  - family: 공정개발
+    kind: mixed
+    answer: 엣지 링을 갈고 나서 RF 누적 시간이 늘수록 가장자리 CD가 커졌습니다. 그래서 교체 주기를 시간 기준으로 바꿨습니다.
+    expected: [qb-fab-03]
+  - family: 공정개발
+    kind: paraphrase
+    answer: 웨이퍼 바깥쪽 몇 줄의 칩만 계속 불량이 났고 안쪽은 멀쩡했습니다. 바깥 부품이 닳는 속도와 관련 있다고 의심했습니다.
+    expected: [qb-fab-03]
+  - family: 공정개발
+    kind: term
+    answer: DOE로 압력과 가스 유량 두 인자를 세 수준씩 잡아 실험했고, 상호작용이 있어서 전체 조합을 돌렸습니다.
+    expected: [qb-fab-02]
+  - family: 공정개발
+    kind: paraphrase
+    answer: 테스트 웨이퍼에서는 확실히 좋아졌는데 실제 생산 웨이퍼에서는 효과가 거의 없었습니다. 아래층 막이 달라서였습니다.
+    expected: [qb-fab-02]
+  - family: 공정개발
+    kind: mixed
+    answer: 같은 로트를 다른 챔버로 옮겨 돌렸더니 정상이어서 공정 조건이 아니라 장비 쪽 문제라고 범위를 좁혔습니다.
+    expected: [qb-fab-01]
+  - family: 공정개발
+    kind: paraphrase
+    answer: 문제가 한 설비에서만 생기는지 여러 설비에서 같이 생기는지부터 나눠 봤습니다. 한 대에서만 생겨서 그 설비의 부품 이력을 뒤졌습니다.
+    expected: [qb-fab-01]
+  - family: 공정개발
+    kind: paraphrase
+    answer: 원인을 고친 뒤 같은 일이 다시 생기지 않게 점검 항목을 체크리스트로 만들고 다른 라인에도 공유했습니다.
+    expected: [qb-fab-04]
+  - family: 공정개발
+    kind: paraphrase
+    answer: 처음에는 노광 쪽 문제라고 확신했는데 한 주를 허비했습니다. 다른 장비로 돌린 결과를 보고 나서야 제 가정이 틀렸다는 걸 알았습니다.
+    expected: [qb-fab-05, qb-fab-01]
+  - family: 공정개발
+    kind: mixed
+    answer: 머신러닝으로 가상 계측 모델을 만들어 계측하지 않은 웨이퍼의 두께를 예측했습니다. 오탐이 많아서 임계값을 조정했습니다.
+    expected: [qb-fab-10]
+  - family: 공정개발
+    kind: paraphrase
+    answer: 현장 선배는 장비 정비 탓이라고 했지만 데이터는 소모품 묶음이 바뀐 시점과 맞았습니다. 비교 실험을 제안해서 설득했습니다.
+    expected: [qb-fab-09, qb-fab-08]
+  - family: 공정개발
+    kind: term
+    answer: 하부 전극 온도가 높은 영역은 폴리머가 덜 쌓여서 측벽이 더 깎이고 CD가 커졌습니다.
+    expected: [qb-fab-12, qb-fab-11]
+  - family: 공정개발
+    kind: term
+    answer: CVD 공정에서 샤워헤드와 웨이퍼 사이 간격을 줄였더니 중앙이 두꺼워지고 균일도가 나빠졌습니다.
+    expected: [qb-fab-13]
+  - family: 공정개발
+    kind: paraphrase
+    answer: 앞 단계에서 감광막 두께를 줄인 걸 모르고 있다가 우리 공정 결과가 갑자기 나빠져서 원인을 찾는 데 시간이 걸렸습니다.
+    expected: [qb-fab-14]
+  - family: 공정개발
+    kind: paraphrase
+    answer: 생산 쪽은 처리 시간을 줄이자고 했고 저는 불량이 늘까 봐 반대했습니다. 조건별 결과를 표로 보여 주고 중간에서 합의했습니다.
+    expected: [qb-fab-15]
+  - family: 공정개발
+    kind: mixed
+    answer: 해외 장비 업체와 시차 때문에 답이 하루씩 늦었는데, 재현 조건과 로그를 정해진 양식으로 보내서 왕복을 줄였습니다.
+    expected: [qb-fab-16]
+  - family: 공정개발
+    kind: paraphrase
+    answer: 제 담당이 아니었지만 팀마다 데이터 형식이 달라 분석이 늦어지는 문제를 직접 정리해서 표준안을 만들었습니다.
+    expected: [qb-fab-21, qb-fab-25]
+  - family: 공정개발
+    kind: paraphrase
+    answer: 제가 밀어붙인 조건 변경 때문에 불량이 늘어서 바로 되돌리자고 먼저 보고하고 영향받은 물량을 직접 추적했습니다.
+    expected: [qb-fab-22]
+  - family: 공정개발
+    kind: paraphrase
+    answer: 신입 동료와 매일 같이 데이터를 보면서 질문만 하고 결론은 본인이 내게 했더니 몇 달 뒤 혼자 분석 보고를 했습니다.
+    expected: [qb-fab-26]
+  # ----- SW개발 ------------------------------------------------------------------------------
+  - family: SW개발
+    kind: mixed
+    answer: 피크 때 초당 3만 건이 들어와서 모델 서버를 바로 부르는 대신 큐에 넣고 20밀리초 단위로 묶어서 처리했습니다.
+    expected: [qb-sw-01, qb-sw-02]
+  - family: SW개발
+    kind: term
+    answer: GPU 추론 요청을 토큰 수 기준으로 버킷을 나눠 동적 배치로 묶고, 큐가 길어지면 429로 거절했습니다.
+    expected: [qb-sw-02]
+  - family: SW개발
+    kind: paraphrase
+    answer: 자주 읽히는 결과를 메모리에 잠깐 들고 있게 했는데, 원본이 바뀌었을 때 오래된 값이 보이는 문제가 생겨 만료 정책을 바꿨습니다.
+    expected: [qb-sw-03]
+  - family: SW개발
+    kind: mixed
+    answer: 새벽에 p99 지연 알림이 와서 트레이싱을 보니 특정 쿼리가 느렸습니다. 기능 플래그로 끄고 복구한 뒤 회고를 썼습니다.
+    expected: [qb-sw-04, qb-sw-06]
+  - family: SW개발
+    kind: term
+    answer: 가용성 SLO를 99.5%로 잡고 에러 버짓을 다 쓰면 배포를 멈추기로 팀과 합의했습니다.
+    expected: [qb-sw-05]
+  - family: SW개발
+    kind: paraphrase
+    answer: 한 기능이 느려지자 연결을 기다리는 요청이 쌓여서 다른 기능까지 줄줄이 멈췄습니다. 대기 시간 제한과 차단기를 넣었습니다.
+    expected: [qb-sw-06, qb-sw-04]
+  - family: SW개발
+    kind: paraphrase
+    answer: 외부 호출이 함수 안에 섞여 있어서 검증이 어려웠던 코드를 인터페이스로 떼어 내고 가짜 객체로 갈아 끼울 수 있게 했습니다.
+    expected: [qb-sw-07]
+  - family: SW개발
+    kind: paraphrase
+    answer: 리뷰에서는 이름이 의도를 드러내는지와 실패했을 때 어떻게 되는지를 가장 먼저 봅니다. 의견이 갈리면 팀 규칙 문서를 고쳤습니다.
+    expected: [qb-sw-08]
+  - family: SW개발
+    kind: mixed
+    answer: 모바일 팀은 한 번에 많이 받는 API를, 저희는 잘게 나눈 API를 원했는데 화면별 호출 로그를 뽑아서 묶음 단위로 합의했습니다.
+    expected: [qb-sw-09]
+  - family: SW개발
+    kind: paraphrase
+    answer: 기획에서 받은 요구가 애매해서 예시 화면과 예외 상황을 적은 문서를 먼저 만들고 확인받은 뒤 개발을 시작했습니다.
+    expected: [qb-sw-10]
+  # ----- 디자인 -------------------------------------------------------------------------------
+  - family: 디자인
+    kind: paraphrase
+    answer: 실제로 앱을 자주 쓰는 사람과 막 그만둔 사람을 나눠서 모집했고, 질문은 최근에 겪은 일을 이야기하게 짰습니다.
+    expected: [qb-ux-01]
+  - family: 디자인
+    kind: paraphrase
+    answer: 인터뷰에서 사람들이 결제 직전에 가장 많이 망설인다는 걸 알고 그 화면의 정보 순서를 바꾸자고 제안했습니다.
+    expected: [qb-ux-02]
+  - family: 디자인
+    kind: paraphrase
+    answer: 가입 단계가 일곱 개였는데 꼭 필요한 정보만 남겨 세 단계로 줄였고, 이탈률이 눈에 띄게 줄었습니다.
+    expected: [qb-ux-03]
+  - family: 디자인
+    kind: term
+    answer: 사용성 테스트에서 다섯 명 중 네 명이 같은 버튼을 못 찾아서 위치와 문구를 바꿨습니다.
+    expected: [qb-ux-04]
+  - family: 디자인
+    kind: paraphrase
+    answer: 개발자는 애니메이션을 빼자고 했고 저는 꼭 필요하다고 봤습니다. 공통 컴포넌트로 만들어 구현 비용을 줄이는 쪽으로 합의했습니다.
+    expected: [qb-ux-05]

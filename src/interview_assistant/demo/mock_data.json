@@ -2065,5 +2065,768 @@
     }
    ]
   }
- }
+ },
+ "question_bank": [
+  {
+   "key": "qb-fab-01",
+   "job_family": "공정개발",
+   "competency": "공정 문제 해결",
+   "round_position": 1,
+   "question": "챔버 사이에 결과 차이가 날 때 장비 문제와 공정 조건 문제를 어떻게 구분하나요?",
+   "intent": "원인 범위 좁히기",
+   "follow_ups": [
+    "같은 로트를 다른 챔버로 돌려 비교했을 때 무엇을 원인 후보에서 뺄 수 있었나요?",
+    "소모품 교체 이력은 원인 후보에 어떻게 넣었나요?"
+   ],
+   "status": "approved",
+   "author": "park",
+   "daysAgo": 14
+  },
+  {
+   "key": "qb-fab-02",
+   "job_family": "공정개발",
+   "competency": "공정 문제 해결",
+   "round_position": 1,
+   "question": "개선 조치를 양산에 적용하기 전에 효과를 어떻게 검증했나요?",
+   "intent": "검증 설계(DOE)",
+   "follow_ups": [
+    "DOE에서 인자와 수준은 어떻게 정했나요?",
+    "테스트 웨이퍼 결과가 양산 로트와 달랐던 적이 있다면 그 이유는 무엇이었나요?"
+   ],
+   "status": "approved",
+   "author": "park",
+   "daysAgo": 14
+  },
+  {
+   "key": "qb-fab-03",
+   "job_family": "공정개발",
+   "competency": "공정 문제 해결",
+   "round_position": 1,
+   "question": "웨이퍼 가장자리(엣지) 수율 문제를 다룬 경험이 있다면, 중심부와 다른 원인은 무엇이었나요?",
+   "intent": "위치별 불량 메커니즘",
+   "follow_ups": [
+    "엣지 링 마모나 교체 주기가 원인 후보였나요? 교체 기준은 무엇으로 정했나요?",
+    "RF 누적 시간 같은 장비 사용량 지표를 원인 분석에 어떻게 썼나요?"
+   ],
+   "status": "approved",
+   "author": "park",
+   "daysAgo": 14
+  },
+  {
+   "key": "qb-fab-04",
+   "job_family": "공정개발",
+   "competency": "공정 문제 해결",
+   "round_position": 1,
+   "question": "같은 불량이 다시 생기지 않도록 어떤 재발 방지 장치를 만들었나요?",
+   "intent": "재발 방지와 표준화",
+   "follow_ups": [
+    "그 기준을 다른 라인이나 공정에도 적용했나요? 걸림돌은 무엇이었나요?"
+   ],
+   "status": "approved",
+   "author": "park",
+   "daysAgo": 14
+  },
+  {
+   "key": "qb-fab-05",
+   "job_family": "공정개발",
+   "competency": "공정 문제 해결",
+   "round_position": 1,
+   "question": "처음 세운 원인 가설이 틀렸던 경험이 있나요? 어떻게 알아차리고 바로잡았나요?",
+   "intent": "가설 수정",
+   "follow_ups": [
+    "틀린 가설로 잃은 시간을 줄이려면 처음에 무엇을 다르게 했어야 했나요?"
+   ],
+   "status": "approved",
+   "author": "park",
+   "daysAgo": 14
+  },
+  {
+   "key": "qb-fab-06",
+   "job_family": "공정개발",
+   "competency": "데이터 기반 분석",
+   "round_position": 1,
+   "question": "FDC 데이터에서 이상 징후를 찾을 때 어떤 변수부터 보나요?",
+   "intent": "FDC 활용",
+   "follow_ups": [
+    "RF 시간, 챔버 압력, 전극 온도 중 무엇이 가장 자주 원인이었나요?",
+    "상관이 보인 변수가 실제 원인인지는 어떻게 확인했나요?"
+   ],
+   "status": "approved",
+   "author": "park",
+   "daysAgo": 14
+  },
+  {
+   "key": "qb-fab-07",
+   "job_family": "공정개발",
+   "competency": "데이터 기반 분석",
+   "round_position": 1,
+   "question": "SPC 관리도에서 이상 구간을 판단하는 기준은 무엇인가요?",
+   "intent": "통계적 공정 관리",
+   "follow_ups": [
+    "슬롯이나 챔버별로 나눠 보았을 때 새로 보인 것이 있었나요?",
+    "관리 한계를 다시 잡아야 했던 적이 있나요?"
+   ],
+   "status": "approved",
+   "author": "park",
+   "daysAgo": 14
+  },
+  {
+   "key": "qb-fab-08",
+   "job_family": "공정개발",
+   "competency": "데이터 기반 분석",
+   "round_position": 1,
+   "question": "상관관계와 인과관계를 구분하려고 어떤 검증을 덧붙였나요?",
+   "intent": "인과 검증",
+   "follow_ups": [
+    "비교 런이나 DOE로 인과를 확인한 사례를 들어 주세요."
+   ],
+   "status": "approved",
+   "author": "park",
+   "daysAgo": 14
+  },
+  {
+   "key": "qb-fab-09",
+   "job_family": "공정개발",
+   "competency": "데이터 기반 분석",
+   "round_position": 1,
+   "question": "분석 결과가 현장 엔지니어의 판단과 달랐을 때 어떻게 설득했나요?",
+   "intent": "데이터로 설득",
+   "follow_ups": [
+    "상대가 처음에 받아들이지 않았다면 무엇을 더 보여 주었나요?"
+   ],
+   "status": "approved",
+   "author": "park",
+   "daysAgo": 14
+  },
+  {
+   "key": "qb-fab-10",
+   "job_family": "공정개발",
+   "competency": "데이터 기반 분석",
+   "round_position": 1,
+   "question": "가상 계측이나 머신러닝 기반 이상 탐지를 적용해 본 적이 있나요?",
+   "intent": "고급 분석 적용",
+   "follow_ups": [
+    "모델 성능은 어떤 지표로 평가했나요?",
+    "현장에 적용하면서 오탐은 어떻게 줄였나요?"
+   ],
+   "status": "approved",
+   "author": "park",
+   "daysAgo": 14
+  },
+  {
+   "key": "qb-fab-11",
+   "job_family": "공정개발",
+   "competency": "공정·장비 이해",
+   "round_position": 1,
+   "question": "담당 공정에서 균일도에 가장 큰 영향을 준 장비 변수는 무엇이었고, 왜 그런가요?",
+   "intent": "공정 메커니즘 이해",
+   "follow_ups": [
+    "그 변수를 바꾸면 식각 속도나 선택비는 어떻게 달라지나요?"
+   ],
+   "status": "approved",
+   "author": "park",
+   "daysAgo": 14
+  },
+  {
+   "key": "qb-fab-12",
+   "job_family": "공정개발",
+   "competency": "공정·장비 이해",
+   "round_position": 1,
+   "question": "플라즈마 식각에서 CD가 커지거나 작아지는 메커니즘을 설명해 주세요.",
+   "intent": "식각 메커니즘",
+   "follow_ups": [
+    "측벽 보호 폴리머는 어떤 조건에서 줄어드나요?",
+    "하부 전극 온도는 CD에 어떤 영향을 주나요?"
+   ],
+   "status": "approved",
+   "author": "park",
+   "daysAgo": 14
+  },
+  {
+   "key": "qb-fab-13",
+   "job_family": "공정개발",
+   "competency": "공정·장비 이해",
+   "round_position": 1,
+   "question": "CVD나 ALD 증착에서 두께 균일도에 영향을 주는 요인은 무엇인가요?",
+   "intent": "증착 메커니즘",
+   "follow_ups": [
+    "샤워헤드 간격이나 가스 유량을 바꿔 본 적이 있나요? 결과는 어땠나요?"
+   ],
+   "status": "approved",
+   "author": "park",
+   "daysAgo": 14
+  },
+  {
+   "key": "qb-fab-14",
+   "job_family": "공정개발",
+   "competency": "공정·장비 이해",
+   "round_position": 1,
+   "question": "앞 공정(포토 등)의 변경이 담당 공정 결과에 준 영향을 어떻게 알아차렸나요?",
+   "intent": "공정 간 상호작용",
+   "follow_ups": [
+    "앞 공정 변경을 미리 알 수 있게 협업 방식을 바꾼 적이 있나요?"
+   ],
+   "status": "approved",
+   "author": "park",
+   "daysAgo": 14
+  },
+  {
+   "key": "qb-fab-15",
+   "job_family": "공정개발",
+   "competency": "협업과 커뮤니케이션",
+   "round_position": 1,
+   "question": "생산팀과 처리량과 수율을 두고 의견이 갈렸을 때 어떻게 합의했나요?",
+   "intent": "이견 조율",
+   "follow_ups": [
+    "합의한 뒤 결과를 다시 확인하고 조정했나요?"
+   ],
+   "status": "approved",
+   "author": "park",
+   "daysAgo": 14
+  },
+  {
+   "key": "qb-fab-16",
+   "job_family": "공정개발",
+   "competency": "협업과 커뮤니케이션",
+   "round_position": 1,
+   "question": "해외 장비사나 협력사와 문제를 풀 때 소통을 어떻게 효율적으로 만들었나요?",
+   "intent": "외부 협업",
+   "follow_ups": [
+    "재현 조건과 로그는 어떤 형식으로 전달했나요?"
+   ],
+   "status": "approved",
+   "author": "park",
+   "daysAgo": 14
+  },
+  {
+   "key": "qb-fab-21",
+   "job_family": "공정개발",
+   "competency": "주도성과 책임감",
+   "round_position": 2,
+   "question": "맡은 범위 밖의 문제를 스스로 정의해 해결을 이끈 경험이 있나요?",
+   "intent": "주도성",
+   "follow_ups": [
+    "처음에 반대나 무관심이 있었다면 어떻게 움직였나요?",
+    "그 결과를 어떻게 측정했나요?"
+   ],
+   "status": "approved",
+   "author": "park",
+   "daysAgo": 14
+  },
+  {
+   "key": "qb-fab-22",
+   "job_family": "공정개발",
+   "competency": "주도성과 책임감",
+   "round_position": 2,
+   "question": "본인 판단으로 생긴 문제를 수습한 경험을 말씀해 주세요.",
+   "intent": "책임감",
+   "follow_ups": [
+    "영향 범위는 어떻게 파악했나요?",
+    "같은 일이 생기지 않게 무엇을 바꿨나요?"
+   ],
+   "status": "approved",
+   "author": "park",
+   "daysAgo": 14
+  },
+  {
+   "key": "qb-fab-23",
+   "job_family": "공정개발",
+   "competency": "조직 적합과 성장 의지",
+   "round_position": 2,
+   "question": "앞으로 3년 동안의 성장 목표와, 그 목표를 위해 지금 하는 일은 무엇인가요?",
+   "intent": "성장 계획",
+   "follow_ups": [
+    "목표에 못 미친다면 무엇부터 바꾸겠습니까?"
+   ],
+   "status": "approved",
+   "author": "park",
+   "daysAgo": 14
+  },
+  {
+   "key": "qb-fab-24",
+   "job_family": "공정개발",
+   "competency": "조직 적합과 성장 의지",
+   "round_position": 2,
+   "question": "지원 직무와 지난 경력은 어떻게 이어지나요?",
+   "intent": "지원 동기",
+   "follow_ups": [
+    "이 직무에서 가장 먼저 기여할 수 있는 것은 무엇인가요?"
+   ],
+   "status": "approved",
+   "author": "park",
+   "daysAgo": 14
+  },
+  {
+   "key": "qb-fab-25",
+   "job_family": "공정개발",
+   "competency": "협업과 영향력",
+   "round_position": 2,
+   "question": "권한 없이 다른 조직의 계획을 바꾼 경험이 있나요?",
+   "intent": "영향력",
+   "follow_ups": [
+    "결정을 바꾼 데이터나 근거는 무엇이었나요?"
+   ],
+   "status": "approved",
+   "author": "park",
+   "daysAgo": 14
+  },
+  {
+   "key": "qb-fab-26",
+   "job_family": "공정개발",
+   "competency": "협업과 영향력",
+   "round_position": 2,
+   "question": "후배나 동료의 성장을 도운 경험을 구체적으로 말씀해 주세요.",
+   "intent": "사람의 성장",
+   "follow_ups": [
+    "그 사람이 혼자 해낼 수 있게 되었다는 것은 어떻게 알았나요?"
+   ],
+   "status": "approved",
+   "author": "park",
+   "daysAgo": 14
+  },
+  {
+   "key": "qb-fab-90",
+   "job_family": "공정개발",
+   "competency": "조직 적합과 성장 의지",
+   "round_position": 2,
+   "question": "결혼 계획이 있다면 교대 근무나 해외 출장에 지장은 없을까요?",
+   "intent": "근무 여건 확인",
+   "follow_ups": [],
+   "status": "draft",
+   "author": "park",
+   "daysAgo": 1
+  },
+  {
+   "key": "qb-fab-91",
+   "job_family": "공정개발",
+   "competency": "공정 문제 해결",
+   "round_position": null,
+   "question": "공정 불량을 해결한 경험이 있나요?",
+   "intent": "경험 유무",
+   "follow_ups": [],
+   "status": "retired",
+   "author": "park",
+   "daysAgo": 20
+  },
+  {
+   "key": "qb-sw-01",
+   "job_family": "SW개발",
+   "competency": "시스템 설계",
+   "round_position": 1,
+   "question": "대규모 트래픽 API를 설계할 때 동기 호출과 큐 기반 비동기 처리를 어떻게 비교했나요?",
+   "intent": "설계 대안 비교",
+   "follow_ups": [
+    "지연 시간 목표는 어떻게 정했나요?",
+    "배치 크기와 대기 시간은 어떤 근거로 정했나요?"
+   ],
+   "status": "approved",
+   "author": "lee",
+   "daysAgo": 14
+  },
+  {
+   "key": "qb-sw-02",
+   "job_family": "SW개발",
+   "competency": "시스템 설계",
+   "round_position": 1,
+   "question": "GPU 추론 서버 앞단의 대기열과 동적 배치를 어떻게 설계하겠습니까?",
+   "intent": "추론 서빙 설계",
+   "follow_ups": [
+    "긴 요청이 짧은 요청을 막지 않게 하려면 어떻게 하겠습니까?",
+    "과부하일 때 어떤 요청부터 거절하나요?"
+   ],
+   "status": "approved",
+   "author": "lee",
+   "daysAgo": 14
+  },
+  {
+   "key": "qb-sw-03",
+   "job_family": "SW개발",
+   "competency": "시스템 설계",
+   "round_position": 1,
+   "question": "캐시 전략을 정할 때 무엇을 기준으로 삼았나요?",
+   "intent": "캐시와 일관성",
+   "follow_ups": [
+    "캐시 무효화 때문에 문제가 생긴 적이 있나요?"
+   ],
+   "status": "approved",
+   "author": "lee",
+   "daysAgo": 14
+  },
+  {
+   "key": "qb-sw-04",
+   "job_family": "SW개발",
+   "competency": "운영·장애 대응",
+   "round_position": 1,
+   "question": "장애 하나를 탐지부터 회고까지 순서대로 설명해 주세요.",
+   "intent": "장애 대응 절차",
+   "follow_ups": [
+    "탐지는 어떤 알림으로 했고, 더 빨리 알 방법은 없었나요?",
+    "임시 조치와 근본 조치는 어떻게 나눴나요?"
+   ],
+   "status": "approved",
+   "author": "lee",
+   "daysAgo": 14
+  },
+  {
+   "key": "qb-sw-05",
+   "job_family": "SW개발",
+   "competency": "운영·장애 대응",
+   "round_position": 1,
+   "question": "SLO와 에러 버짓을 정하고 운영한 경험이 있나요?",
+   "intent": "SLO 운영",
+   "follow_ups": [
+    "에러 버짓을 다 썼을 때 실제로 무엇을 멈췄나요?"
+   ],
+   "status": "approved",
+   "author": "lee",
+   "daysAgo": 14
+  },
+  {
+   "key": "qb-sw-06",
+   "job_family": "SW개발",
+   "competency": "운영·장애 대응",
+   "round_position": 1,
+   "question": "DB 커넥션 풀이나 타임아웃 설정 때문에 생긴 연쇄 장애를 다뤄 본 적이 있나요?",
+   "intent": "연쇄 장애 방지",
+   "follow_ups": [
+    "연쇄 장애를 막으려고 어떤 장치를 넣었나요?"
+   ],
+   "status": "approved",
+   "author": "lee",
+   "daysAgo": 14
+  },
+  {
+   "key": "qb-sw-07",
+   "job_family": "SW개발",
+   "competency": "코드 품질",
+   "round_position": 1,
+   "question": "테스트하기 어려운 코드를 테스트할 수 있게 바꾼 경험을 말씀해 주세요.",
+   "intent": "테스트 가능한 설계",
+   "follow_ups": [
+    "의존성은 어떻게 분리했나요?",
+    "통합 테스트는 어떻게 구성했나요?"
+   ],
+   "status": "approved",
+   "author": "lee",
+   "daysAgo": 14
+  },
+  {
+   "key": "qb-sw-08",
+   "job_family": "SW개발",
+   "competency": "코드 품질",
+   "round_position": 1,
+   "question": "코드 리뷰에서 가장 중요하게 보는 기준은 무엇인가요?",
+   "intent": "리뷰 기준",
+   "follow_ups": [
+    "리뷰 의견이 갈렸을 때 어떻게 결정했나요?"
+   ],
+   "status": "approved",
+   "author": "lee",
+   "daysAgo": 14
+  },
+  {
+   "key": "qb-sw-09",
+   "job_family": "SW개발",
+   "competency": "협업과 커뮤니케이션",
+   "round_position": 1,
+   "question": "다른 팀과 API 계약을 두고 의견이 갈렸던 경험이 있나요?",
+   "intent": "이견 조율",
+   "follow_ups": [
+    "실제 호출 패턴 같은 데이터로 합의한 적이 있나요?"
+   ],
+   "status": "approved",
+   "author": "lee",
+   "daysAgo": 14
+  },
+  {
+   "key": "qb-sw-10",
+   "job_family": "SW개발",
+   "competency": "협업과 커뮤니케이션",
+   "round_position": 1,
+   "question": "요구사항이 모호할 때 어떻게 구체화했나요?",
+   "intent": "요구사항 정리",
+   "follow_ups": [
+    "설계 문서로 합의한 뒤 바뀐 요구는 어떻게 다뤘나요?"
+   ],
+   "status": "approved",
+   "author": "lee",
+   "daysAgo": 14
+  },
+  {
+   "key": "qb-sw-90",
+   "job_family": "SW개발",
+   "competency": "운영·장애 대응",
+   "round_position": 1,
+   "question": "온콜 근무에서 가장 힘들었던 점과 개선한 방법은 무엇인가요?",
+   "intent": "온콜 운영",
+   "follow_ups": [],
+   "status": "draft",
+   "author": "jung",
+   "daysAgo": 2
+  },
+  {
+   "key": "qb-ux-01",
+   "job_family": "디자인",
+   "competency": "사용자 리서치",
+   "round_position": null,
+   "question": "사용자 인터뷰 대상자는 어떻게 고르고, 질문은 어떻게 설계했나요?",
+   "intent": "리서치 설계",
+   "follow_ups": [
+    "인터뷰에서 발견한 것이 기존 가설과 달랐던 적이 있나요?"
+   ],
+   "status": "approved",
+   "author": "choi",
+   "daysAgo": 14
+  },
+  {
+   "key": "qb-ux-02",
+   "job_family": "디자인",
+   "competency": "사용자 리서치",
+   "round_position": null,
+   "question": "리서치 결과를 디자인 결정으로 연결한 사례를 말씀해 주세요.",
+   "intent": "인사이트 활용",
+   "follow_ups": [
+    "그 결정을 다른 사람에게 어떻게 설득했나요?"
+   ],
+   "status": "approved",
+   "author": "choi",
+   "daysAgo": 14
+  },
+  {
+   "key": "qb-ux-03",
+   "job_family": "디자인",
+   "competency": "인터랙션 설계",
+   "round_position": null,
+   "question": "복잡한 흐름을 단순하게 바꾼 경험이 있나요? 무엇을 덜어냈나요?",
+   "intent": "단순화",
+   "follow_ups": [
+    "바꾼 뒤 성과는 어떻게 확인했나요?"
+   ],
+   "status": "approved",
+   "author": "choi",
+   "daysAgo": 14
+  },
+  {
+   "key": "qb-ux-04",
+   "job_family": "디자인",
+   "competency": "인터랙션 설계",
+   "round_position": null,
+   "question": "사용성 테스트 결과로 설계를 바꾼 경험을 말씀해 주세요.",
+   "intent": "사용성 검증",
+   "follow_ups": [
+    "테스트 과제는 어떻게 정했나요?"
+   ],
+   "status": "approved",
+   "author": "choi",
+   "daysAgo": 14
+  },
+  {
+   "key": "qb-ux-05",
+   "job_family": "디자인",
+   "competency": "협업과 커뮤니케이션",
+   "round_position": null,
+   "question": "개발자와 구현 범위를 두고 의견이 갈렸을 때 어떻게 조율했나요?",
+   "intent": "범위 조율",
+   "follow_ups": [
+    "디자인 시스템이 그 조율에 도움이 되었나요?"
+   ],
+   "status": "approved",
+   "author": "choi",
+   "daysAgo": 14
+  }
+ ],
+ "rubric_examples": [
+  {
+   "key": "rb-fab-p1",
+   "job_family": "공정개발",
+   "competency": "공정 문제 해결",
+   "score": 1,
+   "question": "최근 해결한 공정 불량 사례를 하나 설명해 주세요.",
+   "answer": "불량이 생겨서 선배가 알려 준 대로 조건을 바꿨더니 좋아졌습니다. 왜 좋아졌는지는 정확히 모르겠습니다.",
+   "rationale": "현상만 말하고 원인 가설이 없습니다.",
+   "status": "approved",
+   "author": "park",
+   "daysAgo": 10
+  },
+  {
+   "key": "rb-fab-p2",
+   "job_family": "공정개발",
+   "competency": "공정 문제 해결",
+   "score": 2,
+   "question": "최근 해결한 공정 불량 사례를 하나 설명해 주세요.",
+   "answer": "식각 후 패턴 폭이 커지는 불량이 있어서 장비 문제라고 보고 정비를 요청했습니다. 정비 뒤에 한동안 괜찮아져서 마무리했습니다.",
+   "rationale": "가설은 하나뿐이고 검증 없이 결과만 봤습니다.",
+   "status": "approved",
+   "author": "park",
+   "daysAgo": 10
+  },
+  {
+   "key": "rb-fab-p3",
+   "job_family": "공정개발",
+   "competency": "공정 문제 해결",
+   "score": 3,
+   "question": "최근 해결한 공정 불량 사례를 하나 설명해 주세요.",
+   "answer": "막 두께 불량이 반복돼서 가스 유량과 챔버 온도 두 가지를 의심했습니다. 하나씩 바꿔 가며 테스트 웨이퍼로 확인했고, 온도 조건을 고쳐 불량률을 1%p 낮췄습니다.",
+   "rationale": "가설을 둘 세우고 실험으로 하나를 확인해 개선했습니다. 재발 방지는 없습니다.",
+   "status": "approved",
+   "author": "park",
+   "daysAgo": 10
+  },
+  {
+   "key": "rb-fab-p4",
+   "job_family": "공정개발",
+   "competency": "공정 문제 해결",
+   "score": 4,
+   "question": "최근 해결한 공정 불량 사례를 하나 설명해 주세요.",
+   "answer": "한 장비에서만 가장자리 불량이 나와 장비, 소모품, 앞 공정 세 가지 가설을 세웠습니다. 데이터로 우선순위를 정한 뒤 실험계획법으로 소모품 마모가 원인임을 확인했고, 교체 기준과 감시 항목을 바꿔 재발을 막았습니다.",
+   "rationale": "가설의 우선순위를 근거로 정하고 체계적으로 검증해 재발 방지까지 연결했습니다.",
+   "status": "approved",
+   "author": "park",
+   "daysAgo": 10
+  },
+  {
+   "key": "rb-fab-p5",
+   "job_family": "공정개발",
+   "competency": "공정 문제 해결",
+   "score": 5,
+   "question": "최근 해결한 공정 불량 사례를 하나 설명해 주세요.",
+   "answer": "불량의 근본 원인을 장비 내부 전기장 변화라는 공정 메커니즘으로 규명했습니다. 교체 기준을 표준 문서로 만들고 다른 라인 세 곳에 확산했으며, 이후 같은 유형의 불량이 사업장 전체에서 사라졌습니다.",
+   "rationale": "메커니즘 수준의 원인 규명과 표준화·확산까지 했습니다.",
+   "status": "approved",
+   "author": "park",
+   "daysAgo": 10
+  },
+  {
+   "key": "rb-fab-d1",
+   "job_family": "공정개발",
+   "competency": "데이터 기반 분석",
+   "score": 1,
+   "question": "공정 산포가 커졌을 때 데이터를 어떤 순서로 보나요?",
+   "answer": "경험상 이런 경우는 대부분 장비 문제라서 데이터를 따로 보지는 않고 장비 점검을 먼저 합니다.",
+   "rationale": "데이터 근거 없이 경험으로만 판단합니다.",
+   "status": "approved",
+   "author": "park",
+   "daysAgo": 10
+  },
+  {
+   "key": "rb-fab-d2",
+   "job_family": "공정개발",
+   "competency": "데이터 기반 분석",
+   "score": 2,
+   "question": "공정 산포가 커졌을 때 데이터를 어떤 순서로 보나요?",
+   "answer": "주간 평균값이 올라간 것을 보고 산포가 커졌다고 판단했습니다. 평균 추이를 그래프로 만들어 보고했습니다.",
+   "rationale": "평균·추세 같은 기초 통계로 현상을 설명하는 수준입니다.",
+   "status": "approved",
+   "author": "park",
+   "daysAgo": 10
+  },
+  {
+   "key": "rb-fab-d3",
+   "job_family": "공정개발",
+   "competency": "데이터 기반 분석",
+   "score": 3,
+   "question": "공정 산포가 커졌을 때 데이터를 어떤 순서로 보나요?",
+   "answer": "관리도로 언제부터 벗어났는지 찾고, 장비별로 나눠 보니 한 장비에 몰려 있었습니다. 그 장비의 변수와 불량률의 상관을 보고 결론을 냈습니다.",
+   "rationale": "관리도와 상관분석으로 이상 구간을 찾고 결론을 냈습니다.",
+   "status": "approved",
+   "author": "park",
+   "daysAgo": 10
+  },
+  {
+   "key": "rb-fab-d4",
+   "job_family": "공정개발",
+   "competency": "데이터 기반 분석",
+   "score": 4,
+   "question": "공정 산포가 커졌을 때 데이터를 어떤 순서로 보나요?",
+   "answer": "여러 장비 변수를 함께 넣은 다변량 분석으로 영향이 큰 인자 두 개를 찾고, 각각이 불량률에 주는 영향을 숫자로 보여 조건 변경을 결정했습니다.",
+   "rationale": "다변량 분석으로 핵심 인자를 정량화해 의사결정에 썼습니다.",
+   "status": "approved",
+   "author": "park",
+   "daysAgo": 10
+  },
+  {
+   "key": "rb-fab-d5",
+   "job_family": "공정개발",
+   "competency": "데이터 기반 분석",
+   "score": 5,
+   "question": "공정 산포가 커졌을 때 데이터를 어떤 순서로 보나요?",
+   "answer": "반복되던 산포 분석을 자동 보고서로 만들어 이상이 생기면 원인 후보 순위까지 바로 나오게 했습니다. 팀의 원인 분석 시간이 평균 이틀에서 반나절로 줄었습니다.",
+   "rationale": "분석 체계를 자동화·표준화해 팀의 판단 속도와 정확도를 높였습니다.",
+   "status": "approved",
+   "author": "park",
+   "daysAgo": 10
+  },
+  {
+   "key": "rb-sw-s1",
+   "job_family": "SW개발",
+   "competency": "시스템 설계",
+   "score": 1,
+   "question": "트래픽이 큰 시스템을 설계한 경험을 말씀해 주세요.",
+   "answer": "정해진 구조대로 기능을 붙였습니다. 설계는 선임이 했고 저는 구현을 맡았습니다.",
+   "rationale": "주어진 구조를 구현하는 데 그칩니다.",
+   "status": "approved",
+   "author": "lee",
+   "daysAgo": 10
+  },
+  {
+   "key": "rb-sw-s2",
+   "job_family": "SW개발",
+   "competency": "시스템 설계",
+   "score": 2,
+   "question": "트래픽이 큰 시스템을 설계한 경험을 말씀해 주세요.",
+   "answer": "익숙한 방식대로 서버를 늘리고 로드밸런서를 붙였습니다. 다른 방법은 따로 검토하지 않았습니다.",
+   "rationale": "익숙한 패턴을 쓰지만 대안 비교가 없습니다.",
+   "status": "approved",
+   "author": "lee",
+   "daysAgo": 10
+  },
+  {
+   "key": "rb-sw-s3",
+   "job_family": "SW개발",
+   "competency": "시스템 설계",
+   "score": 3,
+   "question": "트래픽이 큰 시스템을 설계한 경험을 말씀해 주세요.",
+   "answer": "바로 처리하는 방식과 메시지 큐를 두는 방식을 비교했고, 응답 시간 요구 때문에 바로 처리하되 무거운 작업만 큐로 넘기는 구조를 골랐습니다.",
+   "rationale": "요구사항에 맞춰 대안 두 개를 비교해 구조를 정했습니다.",
+   "status": "approved",
+   "author": "lee",
+   "daysAgo": 10
+  },
+  {
+   "key": "rb-sw-s4",
+   "job_family": "SW개발",
+   "competency": "시스템 설계",
+   "score": 4,
+   "question": "트래픽이 큰 시스템을 설계한 경험을 말씀해 주세요.",
+   "answer": "세 가지 구조의 처리량, 비용, 운영 부담을 부하 시험 결과로 비교한 표를 만들어 팀이 결정하게 했습니다. 선택한 구조는 비용을 30% 줄이면서 목표 지연 시간을 지켰습니다.",
+   "rationale": "확장성·비용·운영 부담을 정량적으로 비교해 설계를 이끌었습니다.",
+   "status": "approved",
+   "author": "lee",
+   "daysAgo": 10
+  },
+  {
+   "key": "rb-sw-s5",
+   "job_family": "SW개발",
+   "competency": "시스템 설계",
+   "score": 5,
+   "question": "트래픽이 큰 시스템을 설계한 경험을 말씀해 주세요.",
+   "answer": "여러 서비스가 따로 만들던 비동기 처리 구조를 공통 플랫폼으로 설계해 조직 표준으로 만들었고, 3년 동안의 확장 단계를 함께 정해 다섯 팀이 옮겨 왔습니다.",
+   "rationale": "조직 표준이 되는 아키텍처와 장기 진화 경로를 설계했습니다.",
+   "status": "approved",
+   "author": "lee",
+   "daysAgo": 10
+  },
+  {
+   "key": "rb-sw-o3",
+   "job_family": "SW개발",
+   "competency": "운영·장애 대응",
+   "score": 3,
+   "question": "기억에 남는 장애 대응 경험을 말씀해 주세요.",
+   "answer": "응답 지연 알림을 받고 지표로 느려진 구간을 찾아 원인 쿼리를 고쳐 복구했습니다. 끝난 뒤 회고 문서를 써서 팀에 공유했습니다.",
+   "rationale": "지표로 원인을 좁혀 복구하고 회고를 썼습니다.",
+   "status": "draft",
+   "author": "jung",
+   "daysAgo": 1
+  }
+ ]
 }

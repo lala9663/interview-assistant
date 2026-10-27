@@ -72,4 +72,5 @@ export const ROLE_SHORT: Record<string, string> = {
   'llm.screening': '선별용',
   'document.ocr': 'OCR',
   'document.reading': '읽기 방식',
+  embedding: '임베딩',
 }

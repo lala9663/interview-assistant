@@ -3,7 +3,10 @@
 competency sets and preset questions per round, 20 candidates with screenings, 5 interviewers,
 two interviews in progress (P1 1차 and 2차), three scheduled (one of them 2차), nine completed
 (one still being scored), round decisions (합격, 보류, 불합격 after 보류, a final candidate),
-points to check for the next round, two weeks of availability and an activity history.
+points to check for the next round, two weeks of availability and an activity history, and a
+question bank (질문 은행) and rubric anchors (평점 기준 예시) for the postings' job families and
+competencies: mostly approved, a draft with a prohibited-question warning, a retired question.
+Their vectors are not seeded: the app embeds them with the active embedding model at start.
 
 Everything is fictional. Candidates get made-up identities (names, 010-0000-xxxx numbers,
 example.com addresses, invented schools and companies) sealed with IA_ENCRYPTION_KEY, and the
@@ -42,6 +45,8 @@ from interview_assistant.models import (
     Application,
     AuditLog,
     Availability,
+    BankSource,
+    BankStatus,
     Base,
     Candidate,
     CandidateNote,
@@ -59,8 +64,10 @@ from interview_assistant.models import (
     PostingStatus,
     PresetQuestion,
     QAItem,
+    QuestionBankItem,
     QuestionSource,
     RoundDecision,
+    RubricExample,
     Score,
     Screening,
     ScreeningStatus,
@@ -98,6 +105,11 @@ def screening_id(n: int) -> str:
 
 def session_id(key: str) -> str:
     return f"0a1b2c3d-0000-4000-9000-{key.ljust(12, '0')}"
+
+
+def bank_id(key: str) -> str:
+    """Question bank and rubric examples: qb-fab-01 -> ...-qbfab0100000."""
+    return f"9b0c1d2e-0000-4000-9000-{key.replace('-', '').ljust(12, '0')[:12]}"
 
 
 def round_id(posting_id: str, position: int) -> str:
@@ -168,6 +180,57 @@ class _Seeder:
 
     def minutes(self, delta: float) -> datetime:
         return self.now + timedelta(minutes=delta)
+
+    # --- question bank and rubric anchors --------------------------------------------------
+
+    def bank_(self) -> None:
+        from interview_assistant.ai.question_rules import check
+
+        approver = self.interviewers[self.data["me"]]
+        for row in self.data["question_bank"]:
+            created = self.days_ago(row["daysAgo"], 15)
+            status = BankStatus(row["status"])
+            self.db.add(
+                QuestionBankItem(
+                    id=bank_id(row["key"]),
+                    job_family=row["job_family"],
+                    competency=row["competency"],
+                    round_position=row["round_position"],
+                    question=row["question"],
+                    intent=row["intent"],
+                    follow_ups=row["follow_ups"],
+                    status=status,
+                    flags=[f.as_dict() for f in check(row["question"], *row["follow_ups"])],
+                    source=BankSource.seed,
+                    created_by=self.interviewers[row["author"]].id,
+                    created_at=created,
+                    updated_at=created,
+                    approved_by=approver.id if status is not BankStatus.draft else None,
+                    approved_at=created + timedelta(hours=2) if status is not BankStatus.draft else None,
+                    retired_at=created + timedelta(days=5) if status is BankStatus.retired else None,
+                )
+            )
+        for row in self.data["rubric_examples"]:
+            created = self.days_ago(row["daysAgo"], 16)
+            status = BankStatus(row["status"])
+            self.db.add(
+                RubricExample(
+                    id=bank_id(row["key"]),
+                    job_family=row["job_family"],
+                    competency=row["competency"],
+                    score=row["score"],
+                    question=row["question"],
+                    answer=row["answer"],
+                    rationale=row["rationale"],
+                    status=status,
+                    source=BankSource.seed,
+                    created_by=self.interviewers[row["author"]].id,
+                    created_at=created,
+                    updated_at=created,
+                    approved_by=approver.id if status is BankStatus.approved else None,
+                    approved_at=created + timedelta(hours=1) if status is BankStatus.approved else None,
+                )
+            )
 
     # --- people, postings, candidates -------------------------------------------------------
 
@@ -1165,6 +1228,7 @@ def seed(
     seeder.interviewers_()
     seeder.postings_()
     db.flush()
+    seeder.bank_()
     seeder.candidates_()
     db.flush()
     seeder.sessions_()
@@ -1175,5 +1239,7 @@ def seed(
         "postings": len(seeder.postings),
         "candidates": len(seeder.applications),
         "interviewers": len(seeder.interviewers),
+        "question_bank": len(seeder.data["question_bank"]),
+        "rubric_examples": len(seeder.data["rubric_examples"]),
         "seeded_at": iso_z(now),
     }

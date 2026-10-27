@@ -1,13 +1,15 @@
 import { onScopeDispose, shallowRef } from 'vue'
 
 import { streamEvents } from '@/api/sse'
-import type { FollowUpEvent } from '@/api/types'
+import type { FollowUpEvent, SuggestionSource } from '@/api/types'
 import { frameBatch } from '@/lib/frame'
 
 export interface Suggestion {
   id: string
   index: number
   competency: string
+  /** question bank (approved, shown first) or AI */
+  source: SuggestionSource
   text: string
   done: boolean
   rationale: string | null
@@ -20,6 +22,10 @@ export interface FollowUpState {
   status: 'idle' | 'streaming' | 'done' | 'error'
   suggestions: Suggestion[]
   model: string | null
+  /** the embedding model the question bank was searched with (null: no search) */
+  retrievalModel: string | null
+  /** AI candidates taken back because they meant the same as a question already asked */
+  discarded: { question: string; duplicateOf: string }[]
   error: string | null
   /** suggestion the interviewer turned into a question, and the QA seq it became */
   used: { suggestionId: string; seq: number; edited: boolean } | null
@@ -38,6 +44,8 @@ export const initialFollowUps: FollowUpState = {
   status: 'idle',
   suggestions: [],
   model: null,
+  retrievalModel: null,
+  discarded: [],
   error: null,
   used: null,
 }
@@ -58,14 +66,23 @@ export function followUpReducer(state: FollowUpState, action: FollowUpAction): F
       switch (e.event) {
         case 'batch.start':
           if (e.data.qa_item_id !== state.qaItemId) return state
-          return { ...state, batchId: e.data.batch_id, model: e.data.model }
+          return { ...state, batchId: e.data.batch_id, model: e.data.model, retrievalModel: e.data.retrieval_model ?? null }
         case 'suggestion.start':
           if (e.data.batch_id !== state.batchId) return state
           return {
             ...state,
             suggestions: [
               ...state.suggestions,
-              { id: e.data.suggestion_id, index: e.data.index, competency: e.data.competency, text: '', done: false, rationale: null, grounding: null },
+              {
+                id: e.data.suggestion_id,
+                index: e.data.index,
+                competency: e.data.competency,
+                source: e.data.source ?? 'ai',
+                text: '',
+                done: false,
+                rationale: null,
+                grounding: null,
+              },
             ],
           }
         case 'suggestion.delta':
@@ -84,6 +101,15 @@ export function followUpReducer(state: FollowUpState, action: FollowUpAction): F
                 : s,
             ),
           }
+        case 'suggestion.discarded': {
+          if (e.data.batch_id !== state.batchId) return state
+          const gone = state.suggestions.find((s) => s.id === e.data.suggestion_id)
+          return {
+            ...state,
+            suggestions: state.suggestions.filter((s) => s.id !== e.data.suggestion_id),
+            discarded: [...state.discarded, { question: gone?.text ?? '', duplicateOf: e.data.duplicate_of }],
+          }
+        }
         case 'batch.done':
           if (e.data.batch_id !== state.batchId) return state
           return { ...state, status: 'done' }

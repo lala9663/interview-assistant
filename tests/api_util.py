@@ -53,6 +53,8 @@ def get_paths(client) -> list[str]:
     paths = ["/api/me", "/api/dashboard", "/api/activity?limit=100", "/api/postings"]
     paths += ["/api/candidates", "/api/applications/schedulable", "/api/interviewers"]
     paths += ["/api/availabilities", "/api/sessions"]
+    paths += ["/api/question-bank", "/api/rubric-examples"]
+    paths += ["/api/admin/embedding-index", "/api/admin/follow-up-metrics"]
     for posting in client.get("/api/postings").json():
         pid = posting["id"]
         paths += [f"/api/postings/{pid}", f"/api/postings/{pid}/competency-sets"]
