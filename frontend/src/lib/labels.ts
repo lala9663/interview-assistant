@@ -1,15 +1,18 @@
 import type {
   ApplicationChannel,
-  ApplicationStage,
   AiScoringStatus,
+  DecisionStatus,
   IntakeEventType,
   IntakeStatus,
   InterviewerRole,
   PostingStatus,
   QuestionSource,
+  ProgressStep,
+  RoundRef,
   ScreeningStatus,
   SessionMode,
   SessionStatus,
+  StepStatus,
 } from '@/api/types'
 
 export const SCREENING_STATUS_LABEL: Record<ScreeningStatus, string> = {
@@ -47,13 +50,39 @@ export const QUESTION_SOURCE_LABEL: Record<QuestionSource, string> = {
   interviewer: '직접 입력',
 }
 
-export const STAGE_LABEL: Record<ApplicationStage, string> = {
-  screening: '서류',
-  interview_scheduled: '면접 예정',
-  interviewing: '면접 중',
-  interviewed: '평가 대기',
-  evaluated: '평가 완료',
+/** A round's status for an application (interviews.py): 예정 … 합격 · 보류 · 불합격. */
+export const STEP_STATUS_LABEL: Record<StepStatus, string> = {
+  waiting: '일정 대기',
+  scheduled: '예정',
+  in_progress: '진행 중',
+  evaluating: '평가 대기',
+  deciding: '결정 대기',
+  passed: '합격',
+  hold: '보류',
+  rejected: '불합격',
 }
+
+export const DECISION_LABEL: Record<DecisionStatus, string> = {
+  passed: '합격',
+  hold: '보류',
+  rejected: '불합격',
+}
+
+/** Short name of a step: 서류, 1차, 2차 …, 최종. */
+export const stepLabel = (step: Pick<ProgressStep, 'kind' | 'round'>) =>
+  step.kind === 'screening' ? '서류' : step.kind === 'final' ? '최종' : (step.round?.label ?? '')
+
+/** Status text of a step: the screening step says 통과/탈락, 최종 says 최종 합격 후보. */
+export function stepStatusLabel(step: Pick<ProgressStep, 'kind' | 'status'>): string {
+  if (step.status === null) return '대기 전'
+  if (step.kind === 'screening') return step.status === 'waiting' ? '선별 전' : SCREENING_STATUS_LABEL[step.status as ScreeningStatus]
+  if (step.kind === 'final') return '최종 합격 후보'
+  return STEP_STATUS_LABEL[step.status]
+}
+
+/** "2차 · 임원 면접" (headers) and "2차 임원 면접" (sentences). */
+export const roundTitle = (r: Pick<RoundRef, 'label' | 'name'>) => `${r.label} · ${r.name}`
+export const roundFullName = (r: Pick<RoundRef, 'label' | 'name'>) => `${r.label} ${r.name}`
 
 export const AI_SCORING_LABEL: Record<AiScoringStatus, string> = {
   not_started: '대기',

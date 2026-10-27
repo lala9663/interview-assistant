@@ -14,11 +14,23 @@ from interview_assistant.ai.prompts import SCORING_PROMPT
 from interview_assistant.ai.scoring import SAMPLES
 from interview_assistant.api import schemas as s
 from interview_assistant.interviews import (
+    Step,
     approved_set,
     counts,
+    current_decision,
+    decision_history,
+    earlier_sessions,
+    first_round,
+    is_last_round,
     latest_set,
+    later_round_sessions,
+    next_round,
+    progress,
+    round_session,
+    rounds_of,
     session_competency_set,
     stage,
+    submitted,
 )
 from interview_assistant.models import (
     ActorType,
@@ -27,14 +39,19 @@ from interview_assistant.models import (
     ApplicationChannel,
     AuditLog,
     Candidate,
+    CheckPoint,
     CompetencySet,
     EvaluatorType,
     IntakeEvent,
     IntakeStatus,
     Interviewer,
     InterviewerRole,
+    InterviewRound,
     InterviewSession,
     JobPosting,
+    PresetQuestion,
+    QAItem,
+    RoundDecision,
     Score,
     Screening,
     SessionInterviewer,
@@ -62,6 +79,8 @@ FEED_ACTIONS = (
     "score.ai_started",
     "score.ai_completed",
     "score.interviewer_submitted",
+    "round.decided",
+    "round.decision_changed",
 )
 
 
@@ -73,10 +92,53 @@ def posting_ref(posting: JobPosting) -> s.PostingRefWithFamily:
     return s.PostingRefWithFamily(id=posting.id, title=posting.title, job_family=posting.job_family)
 
 
+def round_ref(round_: InterviewRound) -> s.RoundRef:
+    return s.RoundRef(
+        id=round_.id,
+        position=round_.position,
+        label=round_.label,
+        name=round_.name,
+        is_last=is_last_round(round_),
+    )
+
+
+def round_view(round_: InterviewRound) -> s.RoundView:
+    return s.RoundView(
+        **round_ref(round_).model_dump(),
+        rounds=len(round_.posting.rounds),
+        show_previous_scores=round_.show_previous_scores,
+    )
+
+
+def round_entity(round_: InterviewRound) -> s.InterviewRound:
+    return s.InterviewRound.model_validate(round_)
+
+
+def round_summary(round_: InterviewRound) -> s.RoundSummary:
+    approved = approved_set(round_)
+    held = [
+        x
+        for a in round_.posting.applications
+        for x in a.sessions
+        if x.round_id == round_.id and x.status is not SessionStatus.cancelled
+    ]
+    decided = any(d.round_id == round_.id for a in round_.posting.applications for d in a.decisions)
+    return s.RoundSummary(
+        **round_entity(round_).model_dump(),
+        is_last=is_last_round(round_),
+        latest_competency_set=set_brief(latest_set(round_)),
+        approved_competency_set=set_brief(approved),
+        preset_count=len(approved.preset_questions) if approved else 0,
+        sessions=len(held),
+        locked=bool(held) or decided,
+    )
+
+
 def session_view(session: InterviewSession) -> s.InterviewSession:
     return s.InterviewSession(
         id=session.id,
         application_id=session.application_id,
+        round_id=session.round_id,
         mode=session.mode,
         status=session.status,
         scheduled_at=session.scheduled_at,
@@ -88,7 +150,30 @@ def session_view(session: InterviewSession) -> s.InterviewSession:
 
 
 def brief(session: InterviewSession) -> s.SessionBrief:
-    return s.SessionBrief.model_validate(session)
+    return s.SessionBrief(
+        id=session.id,
+        round=round_ref(session.round),
+        status=session.status,
+        mode=session.mode,
+        scheduled_at=session.scheduled_at,
+        ended_at=session.ended_at,
+    )
+
+
+def step_view(step: Step) -> s.ProgressStep:
+    return s.ProgressStep(
+        kind=step.kind,
+        round=round_ref(step.round) if step.round is not None else None,
+        status=step.status,
+        at=step.at,
+        session_id=step.session.id if step.session is not None else None,
+    )
+
+
+def round_status(session: InterviewSession) -> str:
+    """The application's status in the session's round."""
+    step = next(x for x in progress(session.application) if x.round is session.round)
+    return step.status or "waiting"
 
 
 def panel_links(session: InterviewSession) -> list[SessionInterviewer]:
@@ -113,6 +198,8 @@ def session_summary(session: InterviewSession) -> s.SessionSummary:
         **session_view(session).model_dump(),
         candidate=candidate_ref(application.candidate),
         posting=s.PostingRef(id=application.posting.id, title=application.posting.title),
+        round=round_ref(session.round),
+        round_status=round_status(session),
         interviewers=panel(session),
         qa_count=len(session.qa_items),
         ai_scoring=session.ai_scoring_status.value,
@@ -137,7 +224,26 @@ def set_brief(competency_set: CompetencySet | None) -> s.CompetencySetBrief | No
     return s.CompetencySetBrief.model_validate(competency_set) if competency_set else None
 
 
+def posting_counts(posting: JobPosting) -> s.PostingCounts:
+    tally = counts(posting)
+    return s.PostingCounts(
+        applications=tally.applications,
+        passed=tally.passed,
+        hold=tally.hold,
+        rejected=tally.rejected,
+        interviewing=tally.interviewing,
+        interviewed=tally.interviewed,
+        evaluated=tally.evaluated,
+        rounds=[
+            s.RoundCount(round=round_ref(t.round), reached=t.reached, **t.statuses)
+            for t in tally.rounds
+        ],
+        final=tally.final,
+    )
+
+
 def posting_summary(posting: JobPosting) -> s.PostingSummary:
+    first = first_round(posting)
     return s.PostingSummary(
         id=posting.id,
         title=posting.title,
@@ -145,16 +251,18 @@ def posting_summary(posting: JobPosting) -> s.PostingSummary:
         status=posting.status,
         site_posting_no=posting.site_posting_no,
         created_at=posting.created_at,
-        counts=s.PostingCounts(**counts(posting)),
-        latest_competency_set=set_brief(latest_set(posting)),
-        approved_competency_set=set_brief(approved_set(posting)),
+        counts=posting_counts(posting),
+        rounds=[round_ref(r) for r in rounds_of(posting)],
+        latest_competency_set=set_brief(latest_set(first)) if first else None,
+        approved_competency_set=set_brief(approved_set(first)) if first else None,
     )
 
 
 def posting_detail(posting: JobPosting) -> s.PostingDetail:
     return s.PostingDetail(
         **s.JobPosting.model_validate(posting).model_dump(),
-        counts=s.PostingCounts(**counts(posting)),
+        counts=posting_counts(posting),
+        rounds=[round_ref(r) for r in rounds_of(posting)],
     )
 
 
@@ -170,7 +278,8 @@ def application_row(application: Application) -> s.ApplicationRow:
         screening=screening(application.screening),
         years_experience=profile.get("years_experience") if application.profile else None,
         top_skills=list(profile.get("skills") or [])[:3],
-        stage=stage(application),
+        stage=step_view(stage(application)),
+        progress=[step_view(x) for x in progress(application)],
         channel=application.channel.value,
         created_at=application.created_at,
     )
@@ -189,6 +298,47 @@ def application_detail(application: Application) -> s.ApplicationDetail:
         screening=screening(application.screening),
         sessions=[brief(x) for x in sort_sessions(application.sessions, newest_first=False)],
         document=document_info(application),
+        stage=step_view(stage(application)),
+        progress=[step_view(x) for x in progress(application)],
+        decisions=[
+            decision_view(d)
+            for d in sorted(
+                application.decisions,
+                key=lambda d: (d.round.position, d.revision),
+                reverse=True,
+            )
+        ],
+    )
+
+
+def decision_view(row: RoundDecision) -> s.RoundDecision:
+    return s.RoundDecision(
+        id=row.id,
+        application_id=row.application_id,
+        round_id=row.round_id,
+        session_id=row.session_id,
+        revision=row.revision,
+        decision=row.decision,
+        reason=row.reason,
+        decided_by=row.decided_by,
+        decided_by_name=row.decider.name,
+        created_at=row.created_at,
+    )
+
+
+def check_point_view(row: CheckPoint) -> s.CheckPoint:
+    return s.CheckPoint(
+        id=row.id,
+        session_id=row.session_id,
+        source=row.source,
+        competency=row.competency,
+        text=row.text,
+        evidence=row.evidence,
+        qa_item_id=row.qa_item_id,
+        author_id=row.author_id,
+        author_name=row.author.name if row.author else None,
+        model=row.model,
+        created_at=row.created_at,
     )
 
 
@@ -207,24 +357,110 @@ def candidate_index(applications: Iterable[Application]) -> list[s.CandidateInde
     ]
 
 
-def schedulable(applications: Iterable[Application]) -> list[s.SchedulableApplication]:
-    active = (SessionStatus.scheduled, SessionStatus.in_progress, SessionStatus.completed)
-    return [
-        s.SchedulableApplication(
-            application_id=a.id,
-            candidate=candidate_ref(a.candidate),
-            posting=posting_ref(a.posting),
-            fit_score=a.screening.fit_score,
+def schedulable(
+    applications: Iterable[Application], position: int | None = None
+) -> list[s.SchedulableApplication]:
+    """Applications waiting for their next round (round 1: passed screening; round N: passed
+    round N-1), optionally only those waiting for the round at `position`."""
+    rows = []
+    for a in applications:
+        waiting = next_round(a)
+        if waiting is None or a.screening is None:
+            continue
+        if position is not None and waiting.position != position:
+            continue
+        steps = progress(a)
+        before = steps[next(i for i, x in enumerate(steps) if x.round is waiting) - 1]
+        rows.append(
+            s.SchedulableApplication(
+                application_id=a.id,
+                candidate=candidate_ref(a.candidate),
+                posting=posting_ref(a.posting),
+                fit_score=a.screening.fit_score,
+                round=round_ref(waiting),
+                mode=waiting.default_mode,
+                recommended_interviewers=waiting.recommended_interviewers,
+                since=before.at,
+            )
         )
-        for a in applications
-        if a.screening is not None
-        and a.screening.status.value == "passed"
-        and not any(x.status in active for x in a.sessions)
-    ]
+    return rows
 
 
 def competency_set(row: CompetencySet | None) -> s.CompetencySet | None:
     return s.CompetencySet.model_validate(row) if row else None
+
+
+def preset_view(db: Session, row: PresetQuestion) -> s.PresetQuestion:
+    origin = None
+    if row.session_id is not None:
+        earlier = db.get(QAItem, row.based_on_qa_item_id) if row.based_on_qa_item_id else None
+        if earlier is not None:
+            origin = s.CarryoverOrigin(
+                round=round_ref(earlier.session.round),
+                question=earlier.question,
+                grounding=row.grounding or "",
+                rationale=row.rationale or "",
+                model=row.model,
+            )
+    return s.PresetQuestion(
+        id=row.id,
+        competency=row.competency,
+        question=row.question,
+        intent=row.intent,
+        origin=origin,
+    )
+
+
+def _mean(values: Sequence[float]) -> float | None:
+    return _round1(sum(values) / len(values)) if values else None
+
+
+def previous_round(current: InterviewSession, earlier: InterviewSession) -> s.PreviousRound:
+    """이전 차수 요약. Scores (and the decision reason) only when the current round shows them."""
+    application = earlier.application
+    decision = current_decision(application, earlier.round)
+    visible = current.round.show_previous_scores
+    scores = None
+    if visible:
+        names = list(
+            dict.fromkeys(x.competency for x in earlier.scores)
+        )  # first-seen order (rubric order for AI and interviewers alike)
+        scores = [
+            s.PreviousScore(
+                competency=name,
+                interviewer_mean=_mean(
+                    [
+                        x.score
+                        for x in earlier.scores
+                        if x.competency == name and x.evaluator_type is EvaluatorType.interviewer
+                    ]
+                ),
+                ai_mean=_mean(
+                    [
+                        x.score
+                        for x in earlier.scores
+                        if x.competency == name and x.evaluator_type is EvaluatorType.ai
+                    ]
+                ),
+            )
+            for name in names
+        ]
+    return s.PreviousRound(
+        round=round_ref(earlier.round),
+        session=brief(earlier),
+        decision=decision.decision if decision else None,
+        qa_count=len(earlier.qa_items),
+        check_points=[check_point_view(x) for x in earlier.check_points],
+        notes=[
+            s.PreviousNote(
+                id=n.id, content=n.content, author_name=n.author.name, created_at=n.created_at
+            )
+            for n in sorted(earlier.notes, key=lambda n: as_utc(n.created_at))
+        ],
+        scores_visible=visible,
+        scores=scores,
+        decision_reason=decision.reason if decision and visible else None,
+    )
 
 
 def session_detail(db: Session, session: InterviewSession) -> s.SessionDetail:
@@ -234,6 +470,7 @@ def session_detail(db: Session, session: InterviewSession) -> s.SessionDetail:
     return s.SessionDetail(
         session=session_view(session),
         posting=posting_ref(application.posting),
+        round=round_view(session.round),
         card=s.CandidateCard(
             candidate=s.CardCandidate.model_validate(candidate),
             profile=application.profile,
@@ -247,12 +484,12 @@ def session_detail(db: Session, session: InterviewSession) -> s.SessionDetail:
                 for x in sort_sessions(application.sessions, newest_first=False)
                 if x.id != session.id and x.status is SessionStatus.completed
             ],
+            previous_rounds=[previous_round(session, x) for x in earlier_sessions(session)],
         ),
         interviewers=panel(session),
         competency_set=competency_set(pinned),
-        preset_questions=[s.PresetQuestion.model_validate(q) for q in pinned.preset_questions]
-        if pinned
-        else [],
+        preset_questions=[preset_view(db, q) for q in pinned.preset_questions] if pinned else [],
+        carryover_questions=[preset_view(db, q) for q in session.carryover_questions],
         qa_items=[s.QAItem.model_validate(q) for q in session.qa_items],
         notes=[
             s.CandidateNote.model_validate(n)
@@ -318,6 +555,7 @@ def evaluation(db: Session, session: InterviewSession, configured_model: str) ->
         session=session_view(session),
         candidate=candidate_ref(application.candidate),
         posting=s.PostingRef(id=application.posting.id, title=application.posting.title),
+        round=round_view(session.round),
         competency_set=competency_set(session_competency_set(db, session)),
         qa_items=[s.QAItem.model_validate(q) for q in session.qa_items],
         ai=s.AiEvaluation(
@@ -342,7 +580,68 @@ def evaluation(db: Session, session: InterviewSession, configured_model: str) ->
             )
             for link in panel_links(session)
         ],
+        decision=decision_panel(session),
+        check_points=[check_point_view(x) for x in session.check_points],
     )
+
+
+def decision_refusal(session: InterviewSession) -> str | None:
+    """Why no decision can be recorded on this session's round now (None: it can)."""
+    application = session.application
+    if application.withdrawn_at is not None or application.deleted_at is not None:
+        return "지원자가 철회한 지원서라 결정할 수 없습니다."
+    if session.status is not SessionStatus.completed:
+        return "면접이 끝난 뒤에 결정할 수 있습니다."
+    if not submitted(session):
+        return "면접관 점수가 모두 제출된 뒤에 결정할 수 있습니다."
+    if round_session(application, session.round) is not session:
+        return "이 차수의 최근 면접에서 결정하세요."
+    later = later_round_sessions(application, session.round)
+    if later:
+        return f"{later[0].round.label} 면접이 이미 있어 {session.round.label} 결정을 바꿀 수 없습니다."
+    return None
+
+
+def decision_panel(session: InterviewSession) -> s.DecisionPanel:
+    application = session.application
+    round_ = session.round
+    current = current_decision(application, round_)
+    after = next((r for r in rounds_of(round_.posting) if r.position == round_.position + 1), None)
+    refusal = decision_refusal(session)
+    return s.DecisionPanel(
+        current=decision_view(current) if current else None,
+        history=[decision_view(d) for d in decision_history(application, round_)],
+        can_decide=refusal is None,
+        blocked_reason=refusal,
+        is_last_round=is_last_round(round_),
+        next_round=round_ref(after) if after else None,
+    )
+
+
+def pending_decisions(applications: Iterable[Application]) -> list[s.PendingDecision]:
+    """Rounds evaluated and waiting for a decision, and those decided 보류, oldest first."""
+    rows = []
+    for a in applications:
+        for step in progress(a):
+            if step.kind != "round" or step.status not in ("deciding", "hold"):
+                continue
+            assert step.round is not None
+            held = step.session or (step.decision.session if step.decision else None)
+            if held is None:
+                continue
+            rows.append(
+                s.PendingDecision(
+                    session_id=held.id,
+                    application_id=a.id,
+                    candidate=candidate_ref(a.candidate),
+                    posting=s.PostingRef(id=a.posting.id, title=a.posting.title),
+                    round=round_ref(step.round),
+                    status=step.status,
+                    since=step.at,
+                )
+            )
+    epoch = datetime.min.replace(tzinfo=timezone.utc)
+    return sorted(rows, key=lambda r: as_utc(r.since) if r.since else epoch)
 
 
 def same_kst_day(a: datetime, b: datetime) -> bool:
@@ -384,7 +683,10 @@ def _target_label(db: Session, row: AuditLog) -> str | None:
             return application.candidate.pseudonym if application else None
         case "competency_set":
             cs = db.get(CompetencySet, row.target_id)
-            return f"{cs.posting.title} v{cs.version}" if cs else None
+            return f"{cs.posting.title} {cs.round.label} v{cs.version}" if cs else None
+        case "interview_round":
+            found_round = db.get(InterviewRound, row.target_id)
+            return f"{found_round.posting.title} {found_round.label}" if found_round else None
         case "job_posting":
             posting = db.get(JobPosting, row.target_id)
             return posting.title if posting else None

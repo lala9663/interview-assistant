@@ -4,29 +4,38 @@
 import { delay, http, HttpResponse } from 'msw'
 
 import type {
+  CheckPoint,
   Competency,
+  CompetencySet,
   ConsentRequest,
   CreateAvailabilityRequest,
+  CreateCheckPointRequest,
   CreateNoteRequest,
   CreateQARequest,
+  CreateRoundRequest,
   CreateSessionRequest,
+  DecisionRequest,
   FollowUpRequest,
+  InterviewRound,
+  PresetQuestion,
+  PresetQuestionBody,
   QAItem,
   ScheduleSuggestionRequest,
   ScreeningStatus,
   SessionStatus,
   SubmitInterviewerScoresRequest,
   UpdateQARequest,
+  UpdateRoundRequest,
 } from '@/api/types'
-import { BARS_LEVELS, SCREENING_STATUSES } from '@/api/types'
+import { BARS_LEVELS, DECISION_STATUSES, SCREENING_STATUSES, SESSION_MODES } from '@/api/types'
 import { availabilityByInterviewer, suggestSlots } from '@/lib/schedule'
 import { isSameKstDay } from '@/lib/time'
 
 import { adminHandlers } from './admin'
 import { intakeHandlers } from './intake'
 import { ANSWER_BANK, GENERIC_BANK } from './data/banks'
-import { P1, P2 } from './data/postings'
-import { AI_MODEL, getDb, newId, SCREENING_MODEL, type MockDb, type QAMeta } from './db'
+import { AI_MODEL, getDb, newId, SCREENING_MODEL, splitSentences, weight, type MockDb, type QAMeta } from './db'
+import { draftPresets, draftRoundCompetencies } from './rounds'
 import { followUps, mockConfig, onQuestionAsked, stopStreaming, subscribe } from './live'
 
 const API = '/api'
@@ -83,6 +92,44 @@ function sessionOr404(db: MockDb, id: string) {
   return db.session(id) ?? null
 }
 
+const MAX_ROUNDS = 6
+
+/** Number rounds 1..n in the given order (labels follow). */
+function place(db: MockDb, postingId: string, ordered: InterviewRound[]) {
+  ordered.forEach((r, i) => (r.position = i + 1))
+  db.relabel(postingId)
+}
+
+function roundBody(body: CreateRoundRequest | UpdateRoundRequest, partial: boolean): string | null {
+  if ((!partial || body.name !== undefined) && !body.name?.trim()) return '차수 이름을 입력하세요. 예: 직무 면접, 임원 면접'
+  const n = body.recommended_interviewers
+  if (n !== undefined && (!Number.isInteger(n) || n < 1 || n > 10)) return '권장 면접관 수는 1~10명입니다.'
+  if (body.default_mode !== undefined && !SESSION_MODES.includes(body.default_mode)) return '허용되지 않는 값입니다.'
+  return null
+}
+
+function draftOnly(set: CompetencySet) {
+  return set.approved_at ? conflict('확정된 버전의 사전 질문은 바꿀 수 없습니다. 새 버전을 만드세요.') : null
+}
+
+function setOfQuestion(db: MockDb, questionId: string): CompetencySet | null {
+  for (const [setId, list] of db.presets) if (list.some((q) => q.id === questionId)) return db.competencySets.find((c) => c.id === setId) ?? null
+  return null
+}
+
+function presetBody(set: CompetencySet, body: PresetQuestionBody) {
+  if (!set.competencies.some((c) => c.name === body.competency)) return invalid('competency', `'${body.competency}'은(는) 이 버전의 역량이 아닙니다.`)
+  if (!body.question?.trim()) return invalid('question', '질문을 입력하세요.')
+  return null
+}
+
+/** Text without spaces and punctuation, to spot a question asked again. */
+const compact = (s: string) => s.replace(/[\s.,?!·…“”"']+/g, '')
+const fragment = (sentence: string, words = 5) => {
+  const parts = sentence.replace(/[.?! ]+$/, '').split(/\s+/)
+  return parts.slice(0, words).join(' ') + (parts.length > words ? '…' : '')
+}
+
 export const handlers = [
   ...adminHandlers,
   ...intakeHandlers,
@@ -108,6 +155,7 @@ export const handlers = [
       pending_my_scores: summaries.filter(
         (s) => s.status === 'completed' && s.interviewers.some((i) => i.interviewer_id === meId) && !s.submitted_interviewer_ids.includes(meId),
       ),
+      pending_decisions: db.pendingDecisions(),
       hold_count: db.screenings.filter((s) => s.status === 'hold').length,
     })
   }),
@@ -130,7 +178,7 @@ export const handlers = [
     const db = getDb()
     const p = db.posting(String(params.id))
     if (!p) return notFound('공고')
-    return HttpResponse.json({ ...p, counts: db.counts(p.id) })
+    return HttpResponse.json(db.postingDetail(p))
   }),
 
   http.patch(`${API}/postings/:id`, async ({ params, request }) => {
@@ -147,54 +195,216 @@ export const handlers = [
       db.log({ actor_type: 'user', action: 'posting.site_linked', target_type: 'job_posting', target_id: p.id, details: { from: p.site_posting_no, to: next } })
       p.site_posting_no = next
     }
-    return HttpResponse.json({ ...p, counts: db.counts(p.id) })
+    return HttpResponse.json(db.postingDetail(p))
   }),
 
   http.get(`${API}/postings/:id/competency-sets`, async ({ params }) => {
     await latency()
     const db = getDb()
     if (!db.posting(String(params.id))) return notFound('공고')
-    return HttpResponse.json(db.competencySets.filter((c) => c.posting_id === params.id).sort((a, b) => a.version - b.version))
+    return HttpResponse.json(db.roundsOf(String(params.id)).flatMap((r) => db.setsOf(r.id)))
   }),
 
-  http.post(`${API}/postings/:id/competency-sets`, async ({ params, request }) => {
+  // ----- 전형 (차수) ---------------------------------------------------------------------------------
+  http.get(`${API}/postings/:id/rounds`, async ({ params }) => {
+    await latency()
+    const db = getDb()
+    if (!db.posting(String(params.id))) return notFound('공고')
+    return HttpResponse.json(db.roundsOf(String(params.id)).map((r) => db.roundSummary(r)))
+  }),
+
+  http.post(`${API}/postings/:id/rounds`, async ({ params, request }) => {
     await latency()
     const db = getDb()
     const posting = db.posting(String(params.id))
     if (!posting) return notFound('공고')
+    const body = (await request.json()) as CreateRoundRequest
+    const problem = roundBody(body, false)
+    if (problem) return invalid(problem.startsWith('차수') ? 'name' : 'recommended_interviewers', problem)
+    const existing = db.roundsOf(posting.id)
+    if (existing.length >= MAX_ROUNDS) return conflict(`차수는 ${MAX_ROUNDS}개까지 둘 수 있습니다.`)
+    const position = existing.length + 1
+    const round: InterviewRound = {
+      id: newId(),
+      posting_id: posting.id,
+      position,
+      label: `${position}차`,
+      name: body.name.trim(),
+      default_mode: body.default_mode ?? 'remote',
+      recommended_interviewers: body.recommended_interviewers ?? 2,
+      show_previous_scores: body.show_previous_scores ?? false,
+      created_at: new Date().toISOString(),
+    }
+    db.rounds.push(round)
+    db.log({ actor_type: 'user', action: 'round.created', target_type: 'interview_round', target_id: round.id, details: { position } })
+    return HttpResponse.json(db.roundSummary(round), { status: 201 })
+  }),
+
+  http.patch(`${API}/rounds/:id`, async ({ params, request }) => {
+    await latency()
+    const db = getDb()
+    const round = db.round(String(params.id))
+    if (!round) return notFound('차수')
+    const body = (await request.json()) as UpdateRoundRequest
+    const problem = roundBody(body, true)
+    if (problem) return invalid(problem.startsWith('차수') ? 'name' : 'recommended_interviewers', problem)
+    const changed: Record<string, { from: unknown; to: unknown }> = {}
+    for (const key of ['name', 'default_mode', 'recommended_interviewers', 'show_previous_scores'] as const) {
+      const value = key === 'name' ? body.name?.trim() : body[key]
+      if (value !== undefined && value !== round[key]) {
+        changed[key] = { from: round[key], to: value }
+        ;(round as unknown as Record<string, unknown>)[key] = value
+      }
+    }
+    if (Object.keys(changed).length > 0) db.log({ actor_type: 'user', action: 'round.updated', target_type: 'interview_round', target_id: round.id, details: changed })
+    return HttpResponse.json(db.roundSummary(round))
+  }),
+
+  http.delete(`${API}/rounds/:id`, async ({ params }) => {
+    await latency()
+    const db = getDb()
+    const round = db.round(String(params.id))
+    if (!round) return notFound('차수')
+    const all = db.roundsOf(round.posting_id)
+    if (all.length === 1) return conflict('공고에는 차수가 하나 이상 있어야 합니다.')
+    if (db.roundSummary(round).locked) return conflict(`${round.label}에 면접이나 결정이 있어 지울 수 없습니다.`)
+    db.rounds = db.rounds.filter((r) => r.id !== round.id)
+    db.competencySets = db.competencySets.filter((c) => c.round_id !== round.id)
+    place(db, round.posting_id, all.filter((r) => r.id !== round.id))
+    db.log({ actor_type: 'user', action: 'round.deleted', target_type: 'job_posting', target_id: round.posting_id, details: { round_id: round.id, name: round.name } })
+    return new HttpResponse(null, { status: 204 })
+  }),
+
+  http.put(`${API}/postings/:id/rounds/order`, async ({ params, request }) => {
+    await latency()
+    const db = getDb()
+    const posting = db.posting(String(params.id))
+    if (!posting) return notFound('공고')
+    const { round_ids: ids } = (await request.json()) as { round_ids: string[] }
+    const all = db.roundsOf(posting.id)
+    if (ids.length !== all.length || new Set(ids).size !== ids.length || !ids.every((id) => all.some((r) => r.id === id))) {
+      return invalid('round_ids', '공고의 차수를 모두 한 번씩 보내야 합니다.')
+    }
+    const ordered = ids.map((id) => db.round(id)!)
+    const stuck = ordered.find((r, i) => r.position !== i + 1 && db.roundSummary(r).locked)
+    if (stuck) return conflict(`${stuck.label}에 면접이나 결정이 있어 순서를 바꿀 수 없습니다.`)
+    if (ordered.some((r, i) => r.position !== i + 1)) {
+      place(db, posting.id, ordered)
+      db.log({ actor_type: 'user', action: 'round.reordered', target_type: 'job_posting', target_id: posting.id, details: { round_ids: ids } })
+    }
+    return HttpResponse.json(db.roundsOf(posting.id).map((r) => db.roundSummary(r)))
+  }),
+
+  http.get(`${API}/rounds/:id/competency-sets`, async ({ params }) => {
+    await latency()
+    const db = getDb()
+    if (!db.round(String(params.id))) return notFound('차수')
+    return HttpResponse.json(db.setsOf(String(params.id)))
+  }),
+
+  http.post(`${API}/rounds/:id/competency-sets`, async ({ params, request }) => {
+    await latency()
+    const db = getDb()
+    const round = db.round(String(params.id))
+    if (!round) return notFound('차수')
     const body = (await request.json()) as { competencies: unknown }
     if (!validCompetencies(body.competencies)) return invalid('competencies', '역량마다 이름, 설명, 1~5점 기준이 필요합니다.')
-    const version = (db.latestSet(posting.id)?.version ?? 0) + 1
-    const set = { id: newId(), posting_id: posting.id, version, competencies: body.competencies, approved_by: null, approved_at: null, created_at: new Date().toISOString() }
+    const set: CompetencySet = { id: newId(), posting_id: round.posting_id, round_id: round.id, version: (db.latestSet(round.id)?.version ?? 0) + 1, competencies: body.competencies, approved_by: null, approved_at: null, created_at: new Date().toISOString() }
     db.competencySets.push(set)
+    // A new draft starts with the approved version's questions for the competencies it keeps.
+    const approved = db.approvedSet(round.id)
+    const keep = new Set(body.competencies.map((c) => c.name))
+    db.presets.set(set.id, approved ? db.presetsOf(approved.id).filter((q) => keep.has(q.competency)).map((q) => ({ ...q, id: newId() })) : [])
     db.log({ actor_type: 'user', action: 'competency_set.created', target_type: 'competency_set', target_id: set.id })
     return HttpResponse.json(set, { status: 201 })
   }),
 
-  http.post(`${API}/postings/:id/competency-sets/generate`, async ({ params }) => {
+  http.post(`${API}/rounds/:id/competency-sets/generate`, async ({ params }) => {
     await delay(1800 * mockConfig.speed)
     const db = getDb()
-    const posting = db.posting(String(params.id))
-    if (!posting) return notFound('공고')
-    const base = db.latestSet(posting.id)
-    const competencies: Competency[] = structuredClone(base?.competencies ?? [])
-    if (!competencies.some((c) => c.name === '주도성')) {
-      competencies.push({
-        name: '주도성',
-        description: '맡은 범위를 넘어서는 문제를 스스로 정의하고 끝까지 해결한다.',
-        bars: {
-          '1': '지시받은 일만 수행한다.',
-          '2': '문제를 발견하면 보고한다.',
-          '3': '문제를 스스로 정의하고 해결안을 실행했다.',
-          '4': '여러 팀이 걸친 문제를 주도해 해결했다.',
-          '5': '조직의 우선순위를 바꾸는 개선을 주도했다.',
-        },
-      })
-    }
-    const set = { id: newId(), posting_id: posting.id, version: (base?.version ?? 0) + 1, competencies, approved_by: null, approved_at: null, created_at: new Date().toISOString() }
+    const round = db.round(String(params.id))
+    if (!round) return notFound('차수')
+    const base = db.latestSet(round.id)
+    const earlier = db.roundsOf(round.posting_id).filter((r) => r.position < round.position).flatMap((r) => db.approvedSet(r.id)?.competencies.map((c) => c.name) ?? [])
+    const competencies = draftRoundCompetencies(base?.competencies ?? [], earlier)
+    const set: CompetencySet = { id: newId(), posting_id: round.posting_id, round_id: round.id, version: (base?.version ?? 0) + 1, competencies, approved_by: null, approved_at: null, created_at: new Date().toISOString() }
     db.competencySets.push(set)
-    db.log({ actor_type: 'ai', action: 'competency_set.generated', target_type: 'competency_set', target_id: set.id, model: AI_MODEL, prompt_version: 'competency-v0.2' })
+    db.presets.set(set.id, [])
+    db.log({ actor_type: 'ai', action: 'competency_set.generated', target_type: 'competency_set', target_id: set.id, model: AI_MODEL, prompt_version: 'competency-v0.3' })
     return HttpResponse.json(set, { status: 201 })
+  }),
+
+  http.get(`${API}/competency-sets/:id/preset-questions`, async ({ params }) => {
+    await latency()
+    const db = getDb()
+    if (!db.competencySets.some((c) => c.id === params.id)) return notFound('역량 사전')
+    return HttpResponse.json(db.presetsOf(String(params.id)))
+  }),
+
+  http.post(`${API}/competency-sets/:id/preset-questions`, async ({ params, request }) => {
+    await latency()
+    const db = getDb()
+    const set = db.competencySets.find((c) => c.id === params.id)
+    if (!set) return notFound('역량 사전')
+    const refused = draftOnly(set)
+    if (refused) return refused
+    const body = (await request.json()) as PresetQuestionBody
+    const problem = presetBody(set, body)
+    if (problem) return problem
+    const question: PresetQuestion = { id: newId(), competency: body.competency, question: body.question.trim(), intent: body.intent?.trim() ?? '', origin: null }
+    db.presets.set(set.id, [...db.presetsOf(set.id), question])
+    db.log({ actor_type: 'user', action: 'preset_question.created', target_type: 'competency_set', target_id: set.id })
+    return HttpResponse.json(question, { status: 201 })
+  }),
+
+  http.post(`${API}/competency-sets/:id/preset-questions/generate`, async ({ params }) => {
+    await delay(1400 * mockConfig.speed)
+    const db = getDb()
+    const set = db.competencySets.find((c) => c.id === params.id)
+    if (!set) return notFound('역량 사전')
+    const refused = draftOnly(set)
+    if (refused) return refused
+    const round = db.round(set.round_id)!
+    const earlier = db.roundsOf(round.posting_id)
+      .filter((r) => r.position < round.position)
+      .flatMap((r) => {
+        const approved = db.approvedSet(r.id)
+        return approved ? db.presetsOf(approved.id).map((q) => q.question) : []
+      })
+    const existing = db.presetsOf(set.id)
+    const added = draftPresets(set.competencies.map((c) => c.name), [...earlier, ...existing.map((q) => q.question)], earlier.length > 0)
+    if (added.length === 0) return HttpResponse.json({ detail: '새로 더할 사전 질문을 만들지 못했습니다.' }, { status: 502 })
+    db.presets.set(set.id, [...existing, ...added.map((q) => ({ id: newId(), ...q, origin: null }))])
+    db.log({ actor_type: 'ai', action: 'preset_question.generated', target_type: 'competency_set', target_id: set.id, model: AI_MODEL, prompt_version: 'preset-v0.1' })
+    return HttpResponse.json(db.presetsOf(set.id))
+  }),
+
+  http.put(`${API}/preset-questions/:id`, async ({ params, request }) => {
+    await latency()
+    const db = getDb()
+    const set = setOfQuestion(db, String(params.id))
+    if (!set) return notFound('사전 질문')
+    const refused = draftOnly(set)
+    if (refused) return refused
+    const body = (await request.json()) as PresetQuestionBody
+    const problem = presetBody(set, body)
+    if (problem) return problem
+    const q = db.presetsOf(set.id).find((x) => x.id === params.id)!
+    Object.assign(q, { competency: body.competency, question: body.question.trim(), intent: body.intent?.trim() ?? '' })
+    db.log({ actor_type: 'user', action: 'preset_question.updated', target_type: 'competency_set', target_id: set.id })
+    return HttpResponse.json(q)
+  }),
+
+  http.delete(`${API}/preset-questions/:id`, async ({ params }) => {
+    await latency()
+    const db = getDb()
+    const set = setOfQuestion(db, String(params.id))
+    if (!set) return notFound('사전 질문')
+    const refused = draftOnly(set)
+    if (refused) return refused
+    db.presets.set(set.id, db.presetsOf(set.id).filter((q) => q.id !== params.id))
+    db.log({ actor_type: 'user', action: 'preset_question.deleted', target_type: 'competency_set', target_id: set.id })
+    return new HttpResponse(null, { status: 204 })
   }),
 
   http.put(`${API}/competency-sets/:id`, async ({ params, request }) => {
@@ -217,8 +427,14 @@ export const handlers = [
     if (!set) return notFound('역량 사전')
     if (set.approved_at) return conflict('이미 확정된 버전입니다.')
     if (set.competencies.length === 0) return invalid('competencies', '역량이 하나 이상 있어야 확정할 수 있습니다.')
+    const previous = db.approvedSet(set.round_id)
     set.approved_by = db.me.id
     set.approved_at = new Date().toISOString()
+    // An AI draft has no questions yet: it takes the previous version's for the competencies it keeps.
+    if (previous && db.presetsOf(set.id).length === 0) {
+      const keep = new Set(set.competencies.map((c) => c.name))
+      db.presets.set(set.id, db.presetsOf(previous.id).filter((q) => keep.has(q.competency)).map((q) => ({ ...q, id: newId() })))
+    }
     db.log({ actor_type: 'user', action: 'competency_set.approved', target_type: 'competency_set', target_id: set.id })
     return HttpResponse.json(set)
   }),
@@ -246,9 +462,16 @@ export const handlers = [
     return HttpResponse.json(result, { status: 201 })
   }),
 
-  http.get(`${API}/applications/schedulable`, async () => {
+  http.get(`${API}/applications/schedulable`, async ({ request }) => {
     await latency()
-    return HttpResponse.json(getDb().schedulable())
+    const round = new URL(request.url).searchParams.get('round')
+    return HttpResponse.json(getDb().schedulable(round ? Number(round) : undefined))
+  }),
+
+  http.get(`${API}/applications/:id/decisions`, async ({ params }) => {
+    await latency()
+    const detail = getDb().applicationDetail(String(params.id))
+    return detail ? HttpResponse.json(detail.decisions) : notFound('지원서')
   }),
 
   http.get(`${API}/applications/:id`, async ({ params }) => {
@@ -295,10 +518,20 @@ export const handlers = [
     if (!app) return notFound('지원서')
     if (!body.interviewers?.length) return invalid('interviewers', '면접관을 한 명 이상 지정하세요.')
     if (body.interviewers.filter((i) => i.role === 'lead').length !== 1) return invalid('interviewers', '주관 면접관은 한 명이어야 합니다.')
-    if (db.sessionsOf(app.id).some((s) => s.status === 'scheduled' || s.status === 'in_progress')) return conflict('이미 예정된 면접이 있습니다.')
+    if (app.withdrawn_at) return conflict('지원자가 철회한 지원서라 면접을 잡을 수 없습니다.')
+    let round = body.round_id ? db.round(body.round_id) : db.nextRound(app.id)
+    if (body.round_id && (!round || round.posting_id !== app.posting_id)) return invalid('round_id', '이 공고의 차수가 아닙니다.')
+    if (!round) {
+      if (db.sessionsOf(app.id).some((s) => s.status === 'scheduled' || s.status === 'in_progress')) return conflict('이미 예정된 면접이 있습니다.')
+      return conflict('면접을 잡을 차수가 없습니다. 서류 통과나 이전 차수 합격이 먼저입니다.')
+    }
+    round = round!
+    const refusal = db.scheduleRefusal(app.id, round)
+    if (refusal) return conflict(refusal)
     const session = {
       id: newId(),
       application_id: app.id,
+      round_id: round.id,
       mode: body.mode,
       status: 'scheduled' as const,
       scheduled_at: body.scheduled_at,
@@ -309,7 +542,7 @@ export const handlers = [
     }
     db.sessions.push(session)
     for (const i of body.interviewers) db.sessionInterviewers.push({ session_id: session.id, interviewer_id: i.interviewer_id, role: i.role })
-    db.log({ actor_type: 'user', action: 'session.scheduled', target_type: 'interview_session', target_id: session.id, details: { scheduled_at: body.scheduled_at } })
+    db.log({ actor_type: 'user', action: 'session.scheduled', target_type: 'interview_session', target_id: session.id, details: { scheduled_at: body.scheduled_at, round: round.position } })
     return HttpResponse.json(db.sessionSummary(session), { status: 201 })
   }),
 
@@ -343,6 +576,8 @@ export const handlers = [
     s.status = 'in_progress'
     s.started_at = new Date().toISOString()
     s.has_recording = cand.consent_recording
+    const approved = db.approvedSet(s.round_id)
+    if (approved) db.pinned.set(s.id, approved.id)
     db.log({ actor_type: 'user', action: 'session.started', target_type: 'interview_session', target_id: s.id, details: { recording: s.has_recording } })
     return HttpResponse.json(db.sessionDetail(s.id))
   }),
@@ -374,11 +609,16 @@ export const handlers = [
     if (!question) return invalid('question', '질문을 입력하세요.')
     const postingKey = db.postingKey(db.application(s.application_id)!.posting_id)
     let meta: QAMeta
-    if (body.question_source === 'preset' && body.preset_question_id && ANSWER_BANK[body.preset_question_id]) {
-      const posting = postingKey === 'P1' ? P1 : P2
-      const preset = posting.presets.find((q) => q.id === body.preset_question_id)
-      const bank = ANSWER_BANK[body.preset_question_id]!
-      meta = { postingKey, presetId: body.preset_question_id, competency: preset?.competency ?? null, answer: bank.answer, suggestions: bank.suggestions }
+    const preset = body.question_source === 'preset' && body.preset_question_id ? db.presetById(body.preset_question_id) : undefined
+    if (body.question_source === 'preset' && body.preset_question_id) {
+      const ours = (db.carryover.get(s.id) ?? []).some((q) => q.id === preset?.id) || db.presetsOf(db.setOfSession(s.id)?.id ?? '').some((q) => q.id === preset?.id)
+      if (!preset || !ours) return invalid('preset_question_id', '이 면접의 사전 질문이 아닙니다.')
+    }
+    const bank = preset ? ANSWER_BANK[preset.id] : undefined
+    if (preset && bank) {
+      meta = { postingKey, presetId: preset.id, competency: preset.competency, answer: bank.answer, suggestions: bank.suggestions }
+    } else if (preset) {
+      meta = { postingKey, presetId: preset.id, competency: preset.competency, answer: db.nextGenericAnswer(postingKey), suggestions: null }
     } else if (body.question_source === 'ai_suggested' && body.suggestion) {
       const sug = db.suggestions.get(body.suggestion.suggestion_id)
       if (!sug) return invalid('suggestion', '알 수 없는 제안입니다.')
@@ -413,6 +653,48 @@ export const handlers = [
     const meta = db.qaMeta.get(qa.id)
     if (meta) meta.answer = qa.answer_deidentified
     return HttpResponse.json(qa satisfies QAItem)
+  }),
+
+  http.post(`${API}/sessions/:id/carryover-questions`, async ({ params }) => {
+    await delay(1400 * mockConfig.speed)
+    const db = getDb()
+    const s = sessionOr404(db, String(params.id))
+    if (!s) return notFound('면접')
+    const round = db.round(s.round_id)!
+    if (round.position === 1) return conflict('1차 면접에는 이어 볼 이전 차수가 없습니다.')
+    if (s.status !== 'scheduled' && s.status !== 'in_progress') return conflict('예정되었거나 진행 중인 면접에서만 이어 질문을 만들 수 있습니다.')
+    const earlier = db.earlierSessions(s.id).flatMap((e) => db.qaOf(e.id).filter((q) => q.answer_deidentified).map((q) => ({ q, label: db.round(e.round_id)!.label })))
+    if (earlier.length === 0) return conflict('마친 이전 차수 면접이 없습니다.')
+    const asked = new Set(db.qaOf(s.id).map((q) => q.question))
+    const kept = (db.carryover.get(s.id) ?? []).filter((q) => asked.has(q.question))
+    const names = db.setOfSession(s.id)?.competencies.map((c) => c.name) ?? ['역량']
+    const seen = new Set([...earlier.map((e) => compact(e.q.question)), ...kept.map((q) => compact(q.question))])
+    const fresh: PresetQuestion[] = []
+    // The thinnest earlier answers first, like the fake model: that is where the round left most to check.
+    for (const [i, { q, label }] of [...earlier].sort((a, b) => weight(a.q.answer_deidentified!) - weight(b.q.answer_deidentified!)).slice(0, 3).entries()) {
+      const sentences = splitSentences(q.answer_deidentified!)
+      const grounding = sentences.reduce((best, x) => (weight(x) < weight(best) ? x : best), sentences[0] ?? '').replace(/\.$/, '')
+      const competency = names[i % names.length]!
+      const question = `${label}에서 “${fragment(grounding)}”라고 하셨습니다. 그 일에서 본인이 내린 가장 어려운 판단은 무엇이었고, 결과에 대해 어떤 책임을 지셨나요?`
+      if (seen.has(compact(question))) continue
+      seen.add(compact(question))
+      fresh.push({
+        id: newId(),
+        competency,
+        question,
+        intent: `${label} 답변 심화`,
+        origin: {
+          round: db.roundRef(db.round(db.session(q.session_id)!.round_id)!),
+          question: q.question,
+          grounding,
+          rationale: `${label}에서 '${fragment(q.question, 4)}'은(는) 이미 물었고 답변이 결과 위주였습니다. 같은 질문을 반복하지 않고 ${competency} 관점에서 판단과 책임을 더 깊이 확인합니다.`,
+          model: AI_MODEL,
+        },
+      })
+    }
+    db.carryover.set(s.id, [...kept, ...fresh])
+    db.log({ actor_type: 'ai', action: 'carryover.generated', target_type: 'interview_session', target_id: s.id, model: AI_MODEL, prompt_version: 'carryover-v0.1', details: { earlier_round_answers: earlier.length } })
+    return HttpResponse.json(db.sessionDetail(s.id))
   }),
 
   http.post(`${API}/sessions/:id/notes`, async ({ params, request }) => {
@@ -509,7 +791,7 @@ export const handlers = [
     const interviewerId = String(params.interviewerId)
     if (!db.panelOf(s.id).some((p) => p.interviewer_id === interviewerId)) return conflict('이 면접의 면접관이 아닙니다.')
     const body = (await request.json()) as SubmitInterviewerScoresRequest
-    const set = db.approvedSet(db.application(s.application_id)!.posting_id)
+    const set = db.setOfSession(s.id)
     const names = set?.competencies.map((c) => c.name) ?? []
     for (const name of names) {
       const row = body.scores.find((x) => x.competency === name)
@@ -539,6 +821,74 @@ export const handlers = [
     db.submittedAt.set(`${s.id}:${interviewerId}`, now)
     db.log({ actor_type: 'user', actor_id: interviewerId, action: 'score.interviewer_submitted', target_type: 'interview_session', target_id: s.id })
     return HttpResponse.json(db.evaluation(s.id))
+  }),
+
+  http.post(`${API}/sessions/:id/decision`, async ({ params, request }) => {
+    await latency()
+    const db = getDb()
+    const s = sessionOr404(db, String(params.id))
+    if (!s) return notFound('면접')
+    if (!db.me.is_admin && !db.panelOf(s.id).some((p) => p.interviewer_id === db.me.id)) {
+      return HttpResponse.json({ detail: '이 면접의 면접관이나 관리자만 결정할 수 있습니다.' }, { status: 403 })
+    }
+    const refusal = db.decisionRefusal(s.id)
+    if (refusal) return conflict(refusal)
+    const body = (await request.json()) as DecisionRequest
+    if (!DECISION_STATUSES.includes(body.decision)) return invalid('decision', '허용되지 않는 값입니다.')
+    const reason = body.reason?.trim()
+    if (!reason) return invalid('reason', '결정 사유를 입력하세요.')
+    if (reason.length > 1000) return invalid('reason', '결정 사유는 1000자까지 쓸 수 있습니다.')
+    const current = db.currentDecision(s.application_id, s.round_id)
+    const row = db.decide(s.id, body.decision, mockDeidentify(reason), db.me.id)
+    const round = db.round(s.round_id)!
+    const details = { round: round.position, revision: row.revision, final: body.decision === 'passed' && db.isLast(round) }
+    db.log(
+      current
+        ? { actor_type: 'user', action: 'round.decision_changed', target_type: 'application', target_id: s.application_id, details: { from: current.decision, to: body.decision, ...details } }
+        : { actor_type: 'user', action: 'round.decided', target_type: 'application', target_id: s.application_id, details: { decision: body.decision, ...details } },
+    )
+    return HttpResponse.json(db.evaluation(s.id))
+  }),
+
+  http.post(`${API}/sessions/:id/check-points`, async ({ params, request }) => {
+    await latency()
+    const db = getDb()
+    const s = sessionOr404(db, String(params.id))
+    if (!s) return notFound('면접')
+    if (s.status !== 'completed') return conflict('종료된 면접에만 확인할 점을 남길 수 있습니다.')
+    const body = (await request.json()) as CreateCheckPointRequest
+    if (!body.text?.trim()) return invalid('text', '확인할 점을 입력하세요.')
+    if (body.competency && !db.setOfSession(s.id)?.competencies.some((c) => c.name === body.competency)) {
+      return invalid('competency', `'${body.competency}'은(는) 이 면접의 역량이 아닙니다.`)
+    }
+    const point: CheckPoint = {
+      id: newId(),
+      session_id: s.id,
+      source: 'interviewer',
+      competency: body.competency ?? null,
+      text: mockDeidentify(body.text.trim()),
+      evidence: null,
+      qa_item_id: null,
+      author_id: db.me.id,
+      author_name: db.me.name,
+      model: null,
+      created_at: new Date().toISOString(),
+    }
+    db.checkPoints.push(point)
+    db.log({ actor_type: 'user', action: 'check_point.created', target_type: 'interview_session', target_id: s.id })
+    return HttpResponse.json(point, { status: 201 })
+  }),
+
+  http.delete(`${API}/check-points/:id`, async ({ params }) => {
+    await latency()
+    const db = getDb()
+    const point = db.checkPoints.find((p) => p.id === params.id)
+    if (!point) return notFound('확인할 점')
+    if (point.source !== 'interviewer' || point.author_id !== db.me.id) {
+      return HttpResponse.json({ detail: '직접 남긴 확인할 점만 지울 수 있습니다.' }, { status: 403 })
+    }
+    db.checkPoints = db.checkPoints.filter((p) => p.id !== point.id)
+    return new HttpResponse(null, { status: 204 })
   }),
 
   // ----- schedule ------------------------------------------------------------------------------------

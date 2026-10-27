@@ -12,11 +12,14 @@ import json
 from collections.abc import Sequence
 from typing import Any
 
-COMPETENCY_PROMPT = "competency-v0.2"
+COMPETENCY_PROMPT = "competency-v0.3"
 PROFILE_PROMPT = "profile-v0.1"
 SCREENING_PROMPT = "screening-v0.4"
-FOLLOWUP_PROMPT = "followup-v0.2"
+FOLLOWUP_PROMPT = "followup-v0.3"
 SCORING_PROMPT = "score-v0.3"
+PRESET_PROMPT = "preset-v0.1"
+CARRYOVER_PROMPT = "carryover-v0.1"
+CHECKPOINT_PROMPT = "checkpoint-v0.1"
 CONNECTION_TEST_PROMPT = "connection-test-v0.1"
 
 DATA_NOTE = (
@@ -76,7 +79,13 @@ COMPETENCY_SCHEMA: dict[str, Any] = {
 
 
 def competency_prompt(
-    *, title: str, job_family: str, jd_text: str, current: Sequence[dict[str, Any]]
+    *,
+    title: str,
+    job_family: str,
+    jd_text: str,
+    round_name: str,
+    earlier_rounds: Sequence[str],
+    current: Sequence[dict[str, Any]],
 ) -> str:
     current_json = json.dumps(list(current), ensure_ascii=False, indent=1) if current else "없음"
     return "\n\n".join(
@@ -91,9 +100,12 @@ def competency_prompt(
                     ]
                 ),
             ),
+            tagged("round", round_name),
+            tagged("earlier_round_competencies", "\n".join(earlier_rounds) or "없음"),
             tagged("current_competencies", current_json),
-            "현재 역량 사전이 있으면 그것을 출발점으로 다듬고 JD에서 빠진 역량을 보태세요. "
-            "없으면 JD에서 새로 만드세요.",
+            "이 차수(<round>)에서 볼 역량을 정하세요. 현재 역량 사전이 있으면 그것을 출발점으로 "
+            "다듬고 JD에서 빠진 역량을 보태세요. 없으면 JD와 차수의 목적에 맞게 새로 만드세요. "
+            "이전 차수에서 이미 본 역량은 이 차수의 목적에 필요할 때만 다시 넣으세요.",
         ]
     )
 
@@ -218,7 +230,9 @@ def screening_prompt(
 FOLLOWUP_SYSTEM = (
     "당신은 구조화 면접을 돕는 면접 코치입니다. 지원자의 직전 답변을 읽고 역량 근거를 더 "
     "깊게 확인할 꼬리질문 3개를 제안합니다. 질문은 답변의 구체적 문장에 기대고, 한 번에 "
-    "하나만 묻고, 유도하거나 사생활을 묻지 않습니다. " + DATA_NOTE
+    "하나만 묻고, 유도하거나 사생활을 묻지 않습니다. 이전 차수 면접의 Q&A(<earlier_rounds>)가 "
+    "있으면 그때 이미 물은 것은 다시 묻지 말고, 이전 답변과 이어 보거나 더 깊이 확인하는 "
+    "질문을 고르세요. " + DATA_NOTE
 )
 
 FOLLOWUP_FORMAT = (
@@ -229,11 +243,17 @@ FOLLOWUP_FORMAT = (
 )
 
 
+def earlier_rounds_text(earlier: Sequence[tuple[str, str, str]]) -> str:
+    """Earlier rounds' de-identified Q&A: `[1차] Q: … / A: …` blocks."""
+    return "\n\n".join(f"[{label}] Q: {q}\nA: {a}" for label, q, a in earlier) or "없음"
+
+
 def followup_prompt(
     *,
     competencies: Sequence[dict[str, Any]],
     target_competency: str | None,
     previous: Sequence[tuple[str, str]],
+    earlier_rounds: Sequence[tuple[str, str, str]],
     question: str,
     answer: str,
 ) -> str:
@@ -242,6 +262,7 @@ def followup_prompt(
         [
             tagged("competencies", competency_lines(competencies) or "없음"),
             tagged("target_competency", target_competency or "지정 없음"),
+            tagged("earlier_rounds", earlier_rounds_text(earlier_rounds)),
             tagged("previous_qa", context),
             tagged("question", question),
             tagged("answer", answer),
@@ -297,6 +318,161 @@ def scoring_prompt(
             tagged("answer", answer),
             "질문이 겨냥한 역량을 우선 채점하고, 답변에 분명한 근거가 있는 다른 역량도 채점할 수 "
             "있습니다.",
+        ]
+    )
+
+
+# --- FR-06 사전 질문 초안 (차수별) -------------------------------------------------------------
+
+PRESET_SYSTEM = (
+    "당신은 구조화 면접의 사전 질문을 설계하는 채용 전문가입니다. 이 차수의 역량마다 행동 "
+    "사례를 묻는 질문을 씁니다. 질문은 한 번에 하나만 묻고, 유도하거나 사생활을 묻지 않습니다. "
+    "이전 차수에서 이미 쓴 질문(<earlier_round_questions>)과 이 버전에 이미 있는 질문"
+    "(<existing_questions>)은 반복하지 말고, 이전 차수보다 한 단계 깊이 확인하는 질문을 고르세요. "
+    + DATA_NOTE
+)
+
+PRESET_SCHEMA: dict[str, Any] = {
+    "title": "PresetDraft",
+    "type": "object",
+    "properties": {
+        "questions": {
+            "type": "array",
+            "items": {
+                "type": "object",
+                "properties": {
+                    "competency": {"type": "string"},
+                    "question": {"type": "string"},
+                    "intent": {"type": "string", "description": "이 질문으로 확인하려는 것, 짧게"},
+                },
+                "required": ["competency", "question", "intent"],
+            },
+        }
+    },
+    "required": ["questions"],
+}
+
+
+def preset_prompt(
+    *,
+    title: str,
+    round_name: str,
+    competencies: Sequence[dict[str, Any]],
+    earlier_questions: Sequence[str],
+    existing_questions: Sequence[str],
+) -> str:
+    return "\n\n".join(
+        [
+            tagged("job_posting", tagged("title", title)),
+            tagged("round", round_name),
+            tagged("competencies", competency_lines(competencies, bars=True)),
+            tagged("earlier_round_questions", "\n".join(f"- {q}" for q in earlier_questions) or "없음"),
+            tagged("existing_questions", "\n".join(f"- {q}" for q in existing_questions) or "없음"),
+            "역량마다 질문 2개를 쓰세요. 역량 이름은 <competencies>에 있는 그대로 씁니다.",
+        ]
+    )
+
+
+# --- 이어 질문: 이전 차수 Q&A로 이 지원자에게 더 깊이 물을 질문 ---------------------------------
+
+CARRYOVER_SYSTEM = (
+    "당신은 여러 차수로 진행하는 구조화 면접을 돕는 면접 코치입니다. 이전 차수의 Q&A와 확인이 "
+    "필요한 점을 읽고, 이번 차수에서 이 지원자에게 물을 질문을 제안합니다. 이전 차수에서 이미 "
+    "물은 것을 다시 묻지 말고, 그 답변에서 덜 드러난 부분이나 이번 차수의 역량으로 더 깊이 "
+    "확인할 부분을 묻습니다. 질문마다 기댄 이전 답변(based_on)과 그 답변에서 그대로 복사한 "
+    "구절(grounding)을 붙입니다. " + DATA_NOTE
+)
+
+CARRYOVER_SCHEMA: dict[str, Any] = {
+    "title": "CarryoverQuestions",
+    "type": "object",
+    "properties": {
+        "questions": {
+            "type": "array",
+            "maxItems": 4,
+            "items": {
+                "type": "object",
+                "properties": {
+                    "competency": {"type": "string"},
+                    "question": {"type": "string"},
+                    "intent": {"type": "string"},
+                    "based_on": {"type": "string", "description": "<qa ref=…>의 ref"},
+                    "grounding": {"type": "string", "description": "그 답변에서 그대로 복사한 구절"},
+                    "rationale": {"type": "string"},
+                },
+                "required": ["competency", "question", "intent", "based_on", "grounding", "rationale"],
+            },
+        }
+    },
+    "required": ["questions"],
+}
+
+
+def carryover_prompt(
+    *,
+    round_name: str,
+    competencies: Sequence[dict[str, Any]],
+    earlier: Sequence[tuple[str, str, str, str]],
+    check_points: Sequence[str],
+) -> str:
+    """`earlier`: (ref, round label, question, answer), de-identified."""
+    blocks = "\n".join(
+        f'<qa ref="{ref}" round="{label}">\nQ: {q}\nA: {a}\n</qa>' for ref, label, q, a in earlier
+    )
+    return "\n\n".join(
+        [
+            tagged("round", round_name),
+            tagged("competencies", competency_lines(competencies) or "없음"),
+            tagged("earlier_rounds", blocks or "없음"),
+            tagged("check_points", "\n".join(f"- {c}" for c in check_points) or "없음"),
+            "질문 2~3개를 제안하세요. based_on은 <qa>의 ref 그대로, grounding은 그 답변에서 "
+            "그대로 복사한 한 구절입니다.",
+        ]
+    )
+
+
+# --- 확인이 필요한 점: 면접이 끝난 뒤 다음 차수에서 확인할 것 -----------------------------------
+
+CHECKPOINT_SYSTEM = (
+    "당신은 구조화 면접 기록을 검토하는 평가 보조입니다. 답변에서 근거가 약하거나 모호해 다음 "
+    "차수에서 확인이 필요한 점을 1~3개 뽑습니다. 점수를 매기지 말고 확인할 내용만 씁니다. "
+    "evidence는 해당 답변에서 그대로 복사한 문장이어야 하고, 근거가 없으면 뽑지 않습니다. "
+    + DATA_NOTE
+)
+
+CHECKPOINT_SCHEMA: dict[str, Any] = {
+    "title": "CheckPointDraft",
+    "type": "object",
+    "properties": {
+        "points": {
+            "type": "array",
+            "maxItems": 3,
+            "items": {
+                "type": "object",
+                "properties": {
+                    "competency": {"type": "string"},
+                    "point": {"type": "string", "description": "다음 차수에서 확인할 것, 한 문장"},
+                    "evidence": {"type": "string", "description": "답변에서 그대로 복사한 문장"},
+                    "qa_seq": {"type": "integer"},
+                },
+                "required": ["competency", "point", "evidence", "qa_seq"],
+            },
+        }
+    },
+    "required": ["points"],
+}
+
+
+def checkpoint_prompt(
+    *, competencies: Sequence[dict[str, Any]], qa: Sequence[tuple[int, str, str]]
+) -> str:
+    """`qa`: (seq, question, answer), de-identified."""
+    blocks = "\n".join(f'<qa seq="{n}">\nQ: {q}\nA: {a}\n</qa>' for n, q, a in qa)
+    return "\n\n".join(
+        [
+            tagged("competencies", competency_lines(competencies) or "없음"),
+            tagged("interview", blocks or "없음"),
+            "다음 차수 면접관이 확인할 점을 뽑으세요. qa_seq는 근거가 있는 <qa>의 seq입니다.",
         ]
     )
 

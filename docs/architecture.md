@@ -16,12 +16,12 @@ src/interview_assistant/
   runtime.py            # 앱이 들고 있는 것: 모델 관리자(역할별 provider), DB, 비식별화, 전사 허브, 지원서 수신 큐, 백그라운드 작업
   intake/               # 지원서 수신: 통로와 분리된 처리 함수(service), 사이트 입력 칸(forms), 사이트 이벤트 명세(site), HMAC 서명(signature), 받기·반영(events), 백그라운드 큐(worker)
   ai_models/            # 관리자 > 모델 설정: store(활성 설정·이력 DB), manager(revision별 스냅샷, 세션 고정, 원자적 교체), probe(연결 테스트)
-  models/               # ORM 모델 (업무정의서 6장 13개 + 비식별 역매핑 + 사전 질문·꼬리질문 후보·전사 구간 + 모델 설정·이력)
+  models/               # ORM 모델 (업무정의서 6장 13개 + 비식별 역매핑 + 사전 질문·꼬리질문 후보·전사 구간 + 모델 설정·이력 + 전형 차수·차수 결정·확인할 점)
   domain.py             # JSON 컬럼 모양 (역량, 지원자 프로필)
-  interviews.py         # 단계(stage)·집계·세션이 쓰는 역량 사전 규칙
+  interviews.py         # 전형 진행 규칙: 서류 → 각 차수 → 최종 단계(progress·stage), 다음 차수 대상, 같은 차수 중복 거부 사유, 차수별 집계, 이전 차수 Q&A
   schedule.py           # 공통 빈 시간, 슬롯 후보 (프론트 lib/schedule.ts와 같은 규칙 + 잡힌 면접 제외)
   api/                  # REST·SSE API (api-contract.md). routes/ 기능별 라우터(admin = 모델 설정, intake = 채용 사이트 수신·연동 현황, 관리자만), schemas.py 응답 스키마, views.py ORM → 응답
-  ai/                   # AI 작업: gateway(가드 → provider → 감사 로그), guard, prompts, competency, screening, followups, scoring
+  ai/                   # AI 작업: gateway(가드 → provider → 감사 로그), guard, prompts, competency(차수별 초안), screening, followups(이전 차수 Q&A 참고), scoring, checkpoints(다음 차수 확인할 점), presets(차수 사전 질문 초안·이어 질문)
   live/                 # 실시간 전사: hub(STT → 비식별화 → SSE), audio(오디오 소스, 지금은 대본 읽는 가상 지원자)
   demo/                 # 데모 데이터(프론트 모의 데이터와 같은 가상 데이터)와 시드, 가상 지원자 대본
   deid/                 # 비식별화 (업무정의서 9장, deidentification.md)
@@ -39,7 +39,7 @@ src/interview_assistant/
     samples/documents/  # 서류 읽기 연결 테스트용 가상 이력서
     fake.py             # 자격증명 없이 도는 구현 (speed로 지연 흉내)
     fake_tasks.py       # fake LLM이 앱 프롬프트에 규칙으로 답하는 부분 (모양만 그럴듯, 품질 아님)
-migrations/versions/    # Alembic 0001~0005
+migrations/versions/    # Alembic 0001~0006
 scripts/
   seed_demo.py          # 데모 데이터 시드
   grant_admin.py        # 면접관에게 관리자 권한 (0004 이전 DB용, SSO 전까지)
@@ -71,6 +71,20 @@ uploads/, recordings/, reports/   # 원본 영역 (git 제외)
 
 - fake LLM은 앱의 프롬프트 태그를 읽어 규칙으로 답한다(`providers/fake_tasks.py`). 화면과 흐름을 확인하는 용도이고, 내용의 품질은 실제 모델 연결(3단계) 뒤에 검증한다.
 - 면접 세션은 시작할 때의 모델 설정에 고정된다. 실시간 전사, 꼬리질문, 종료 뒤 AI 채점까지 그 provider로 끝내고, 결과에는 실제 쓴 모델 이름이 남는다.
+
+## 면접 차수 (전형)
+
+공고마다 차수 목록(`interview_rounds`: 순서, 이름, 기본 진행 방식, 권장 면접관 수, 이전 차수 점수 공개)이 있고, 역량 사전 버전과 사전 질문은 차수에 속한다. 세션은 한 차수에 속하고 시작할 때 그 차수의 확정본을 고정한다. 규칙은 `interviews.py` 한 곳에 있다.
+
+```
+서류 통과 ─▶ 1차 [대기 → 예정 → 진행 → 평가 대기 → 결정 대기 → 합격 / 보류 / 불합격]
+                 합격 ─▶ 2차 [ … ] ─▶ … ─▶ 마지막 차수 합격 = 최종 합격 후보 (공식 결과는 채용 사이트)
+```
+
+- 차수 상태는 그 차수의 취소 아닌 최근 세션과 현재 결정(`round_decisions`의 가장 큰 revision)에서 나온다. 결정은 사람이 면접관 전원 제출 뒤에 하고, 바꾸면 새 revision이 쌓인다(감사 로그 `round.decided`·`round.decision_changed`). 다음 차수 세션이 생기면 이전 차수 결정은 바꿀 수 없다.
+- 같은 차수 세션이 한 지원서에 동시에 둘 열리지 않게 API가 막고, DB도 `interview_sessions.active_round_id`(예정·진행 중일 때만 차수 id) + UNIQUE(application_id, active_round_id)로 막는다. flush 훅이 상태에 맞춰 칸을 채운다.
+- N차 세션 화면은 이전 차수 요약을 받는다: 확인이 필요한 점(면접관이 남긴 것, AI가 채점 뒤 답변 인용과 함께 뽑은 것)과 메모는 늘, 점수와 결정 사유는 그 차수의 `show_previous_scores`가 켜졌을 때만 서버가 보낸다(기본 꺼짐, 기준점 효과를 피하려고).
+- 꼬리질문 프롬프트는 이전 차수 Q&A(저장된 비식별 텍스트, 최근 8개)를 `<earlier_rounds>`로 받고 이미 물은 것을 반복하지 않는다. 이어 질문(`preset_questions.session_id`)은 이전 차수 답변과 확인할 점으로 이 지원자에게만 묻는 질문을 만들고, 기댄 답변을 그대로 인용한다. 이전 차수 텍스트도 모두 가드에 지원자 텍스트로 넘긴다.
 
 ## 실시간 전사
 

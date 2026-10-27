@@ -7,6 +7,7 @@ import type { SessionDetail, StreamStatus } from '@/api/types'
 import ModeBadge from '@/components/common/ModeBadge.vue'
 import PanelAvatars from '@/components/common/PanelAvatars.vue'
 import Pseudonym from '@/components/common/Pseudonym.vue'
+import RoundBadge from '@/components/common/RoundBadge.vue'
 import {
   AlertDialog,
   AlertDialogAction,
@@ -39,6 +40,7 @@ const answered = computed(() => props.detail.qa_items.filter((q) => q.answer_dei
     <div class="flex min-w-0 items-center gap-2.5">
       <Pseudonym :value="detail.card.candidate.pseudonym" class="whitespace-nowrap" />
       <span class="hidden truncate text-[13px] text-muted-foreground lg:block">{{ detail.posting.title }}</span>
+      <RoundBadge :round="detail.round" full strong />
       <ModeBadge :mode="detail.session.mode" />
       <PanelAvatars :panel="detail.interviewers" class="hidden lg:flex" />
     </div>

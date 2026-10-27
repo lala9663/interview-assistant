@@ -11,12 +11,16 @@ import type {
   Availability,
   CandidateIndexItem,
   CandidateNote,
+  CheckPoint,
   Competency,
   CompetencySet,
   CreateAvailabilityRequest,
+  CreateCheckPointRequest,
   CreateQARequest,
+  CreateRoundRequest,
   CreateSessionRequest,
   DashboardSummary,
+  DecisionRequest,
   Evaluation,
   Interviewer,
   Me,
@@ -30,8 +34,12 @@ import type {
   ModelTestResult,
   PostingDetail,
   PostingSummary,
+  PresetQuestion,
+  PresetQuestionBody,
   QAItem,
   RevertModelRequest,
+  RoundDecision,
+  RoundSummary,
   SchedulableApplication,
   ScheduleSuggestion,
   ScheduleSuggestionRequest,
@@ -43,6 +51,7 @@ import type {
   SubmitInterviewerScoresRequest,
   TranscriptHistory,
   UpdatePostingRequest,
+  UpdateRoundRequest,
   UploadApplicationRequest,
   UploadResult,
 } from './types'
@@ -57,12 +66,28 @@ export const endpoints = {
   updatePosting: (id: string, body: UpdatePostingRequest) => api.patch<PostingDetail>(`/postings/${id}`, body),
   competencySets: (postingId: string, signal?: AbortSignal) =>
     api.get<CompetencySet[]>(`/postings/${postingId}/competency-sets`, signal),
-  createCompetencySet: (postingId: string, competencies: Competency[]) =>
-    api.post<CompetencySet>(`/postings/${postingId}/competency-sets`, { competencies }),
-  generateCompetencySet: (postingId: string) => api.post<CompetencySet>(`/postings/${postingId}/competency-sets/generate`),
   updateCompetencySet: (id: string, competencies: Competency[]) =>
     api.put<CompetencySet>(`/competency-sets/${id}`, { competencies }),
   approveCompetencySet: (id: string) => api.post<CompetencySet>(`/competency-sets/${id}/approve`),
+
+  // 전형 (차수)
+  rounds: (postingId: string, signal?: AbortSignal) => api.get<RoundSummary[]>(`/postings/${postingId}/rounds`, signal),
+  createRound: (postingId: string, body: CreateRoundRequest) => api.post<RoundSummary>(`/postings/${postingId}/rounds`, body),
+  updateRound: (roundId: string, body: UpdateRoundRequest) => api.patch<RoundSummary>(`/rounds/${roundId}`, body),
+  deleteRound: (roundId: string) => api.delete<void>(`/rounds/${roundId}`),
+  reorderRounds: (postingId: string, roundIds: string[]) =>
+    api.put<RoundSummary[]>(`/postings/${postingId}/rounds/order`, { round_ids: roundIds }),
+  roundSets: (roundId: string, signal?: AbortSignal) => api.get<CompetencySet[]>(`/rounds/${roundId}/competency-sets`, signal),
+  createRoundSet: (roundId: string, competencies: Competency[]) =>
+    api.post<CompetencySet>(`/rounds/${roundId}/competency-sets`, { competencies }),
+  generateRoundSet: (roundId: string) => api.post<CompetencySet>(`/rounds/${roundId}/competency-sets/generate`),
+  presetQuestions: (setId: string, signal?: AbortSignal) =>
+    api.get<PresetQuestion[]>(`/competency-sets/${setId}/preset-questions`, signal),
+  createPresetQuestion: (setId: string, body: PresetQuestionBody) =>
+    api.post<PresetQuestion>(`/competency-sets/${setId}/preset-questions`, body),
+  generatePresetQuestions: (setId: string) => api.post<PresetQuestion[]>(`/competency-sets/${setId}/preset-questions/generate`),
+  updatePresetQuestion: (id: string, body: PresetQuestionBody) => api.put<PresetQuestion>(`/preset-questions/${id}`, body),
+  deletePresetQuestion: (id: string) => api.delete<void>(`/preset-questions/${id}`),
 
   applications: (postingId: string, signal?: AbortSignal) =>
     api.get<ApplicationRow[]>(`/postings/${postingId}/applications`, signal),
@@ -77,6 +102,7 @@ export const endpoints = {
   },
   application: (id: string, signal?: AbortSignal) => api.get<ApplicationDetail>(`/applications/${id}`, signal),
   schedulableApplications: (signal?: AbortSignal) => api.get<SchedulableApplication[]>('/applications/schedulable', signal),
+  decisions: (applicationId: string, signal?: AbortSignal) => api.get<RoundDecision[]>(`/applications/${applicationId}/decisions`, signal),
   updateScreening: (id: string, status: ScreeningStatus) => api.patch<Screening>(`/screenings/${id}`, { status }),
   candidates: (signal?: AbortSignal) => api.get<CandidateIndexItem[]>('/candidates', signal),
 
@@ -91,10 +117,15 @@ export const endpoints = {
   answerQA: (qaId: string, answerText: string) => api.patch<QAItem>(`/qa-items/${qaId}`, { answer_text: answerText }),
   createNote: (sessionId: string, content: string) => api.post<CandidateNote>(`/sessions/${sessionId}/notes`, { content }),
   transcript: (sessionId: string, signal?: AbortSignal) => api.get<TranscriptHistory>(`/sessions/${sessionId}/transcript`, signal),
+  carryoverQuestions: (sessionId: string) => api.post<SessionDetail>(`/sessions/${sessionId}/carryover-questions`),
 
   evaluation: (sessionId: string, signal?: AbortSignal) => api.get<Evaluation>(`/sessions/${sessionId}/evaluation`, signal),
   submitScores: (sessionId: string, interviewerId: string, body: SubmitInterviewerScoresRequest) =>
     api.put<Evaluation>(`/sessions/${sessionId}/scores/${interviewerId}`, body),
+  decide: (sessionId: string, body: DecisionRequest) => api.post<Evaluation>(`/sessions/${sessionId}/decision`, body),
+  createCheckPoint: (sessionId: string, body: CreateCheckPointRequest) =>
+    api.post<CheckPoint>(`/sessions/${sessionId}/check-points`, body),
+  deleteCheckPoint: (id: string) => api.delete<void>(`/check-points/${id}`),
 
   interviewers: (signal?: AbortSignal) => api.get<Interviewer[]>('/interviewers', signal),
   availabilities: (from: string, to: string, signal?: AbortSignal) =>

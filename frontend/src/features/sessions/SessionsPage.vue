@@ -13,7 +13,8 @@ import Page from '@/components/common/Page.vue'
 import PageHeader from '@/components/common/PageHeader.vue'
 import PanelAvatars from '@/components/common/PanelAvatars.vue'
 import Pseudonym from '@/components/common/Pseudonym.vue'
-import SessionStatusBadge from '@/components/common/SessionStatusBadge.vue'
+import RoundBadge from '@/components/common/RoundBadge.vue'
+import StepStatusChip from '@/components/common/StepStatusChip.vue'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Card } from '@/components/ui/card'
@@ -42,6 +43,12 @@ function sortSessions(list: readonly SessionSummary[]) {
 const q = useSessions()
 const me = useMe()
 const filter = ref<Filter>('all')
+const round = ref<number | 'all'>('all')
+const roundOptions = computed(() => {
+  const seen = new Map<number, string>()
+  for (const s of q.data ?? []) if (s.status !== 'cancelled') seen.set(s.round.position, s.round.label)
+  return [...seen.entries()].sort((a, b) => a[0] - b[0])
+})
 const counts = computed(() => {
   const c: Record<Filter, number> = { all: 0, in_progress: 0, scheduled: 0, completed: 0 }
   for (const s of q.data ?? []) {
@@ -51,7 +58,13 @@ const counts = computed(() => {
   }
   return c
 })
-const rows = computed(() => sortSessions((q.data ?? []).filter((s) => s.status !== 'cancelled' && (filter.value === 'all' || s.status === filter.value))))
+const rows = computed(() =>
+  sortSessions(
+    (q.data ?? []).filter(
+      (s) => s.status !== 'cancelled' && (filter.value === 'all' || s.status === filter.value) && (round.value === 'all' || s.round.position === round.value),
+    ),
+  ),
+)
 const myPending = (s: SessionSummary) => {
   const id = me.data?.id
   return Boolean(id) && s.status === 'completed' && s.interviewers.some((i) => i.interviewer_id === id) && !s.submitted_interviewer_ids.includes(id!)
@@ -75,7 +88,11 @@ const myPending = (s: SessionSummary) => {
       </template>
     </PageHeader>
     <Card class="overflow-hidden">
-      <div class="border-b px-4 py-3">
+      <div class="flex flex-wrap items-center gap-3 border-b px-4 py-3">
+        <Segmented :model-value="String(round)" aria-label="차수 필터" @update:model-value="(v) => (round = v === 'all' ? 'all' : Number(v))">
+          <SegmentedItem value="all">전체 차수</SegmentedItem>
+          <SegmentedItem v-for="[position, label] in roundOptions" :key="position" :value="String(position)">{{ label }}</SegmentedItem>
+        </Segmented>
         <Segmented :model-value="filter" aria-label="상태 필터" @update:model-value="(v) => (filter = v as Filter)">
           <SegmentedItem v-for="f in FILTERS" :key="f.v" :value="f.v">
             {{ f.label }}
@@ -89,7 +106,7 @@ const myPending = (s: SessionSummary) => {
       </div>
       <EmptyState v-else-if="rows.length === 0" :icon="MicIcon" title="해당하는 면접이 없습니다" />
       <div v-else class="overflow-x-auto">
-        <table class="w-full min-w-[860px] text-[13px]">
+        <table class="w-full min-w-[920px] text-[13px]">
           <thead>
             <tr class="border-b bg-subtle text-left text-xs text-muted-foreground">
               <th class="py-2.5 pr-3 pl-4 font-medium">일시</th>
@@ -97,7 +114,7 @@ const myPending = (s: SessionSummary) => {
               <th class="px-3 py-2.5 font-medium">공고</th>
               <th class="px-3 py-2.5 font-medium">방식</th>
               <th class="px-3 py-2.5 font-medium">면접관</th>
-              <th class="px-3 py-2.5 font-medium">상태</th>
+              <th class="px-3 py-2.5 font-medium">차수 · 상태</th>
               <th class="px-3 py-2.5 font-medium">평가</th>
               <th class="py-2.5 pr-4 pl-3"></th>
             </tr>
@@ -109,7 +126,12 @@ const myPending = (s: SessionSummary) => {
               <td class="max-w-56 truncate px-3 py-3 text-muted-foreground">{{ s.posting.title }}</td>
               <td class="px-3 py-3"><ModeBadge :mode="s.mode" /></td>
               <td class="px-3 py-3"><PanelAvatars :panel="s.interviewers" /></td>
-              <td class="px-3 py-3"><SessionStatusBadge :status="s.status" /></td>
+              <td class="px-3 py-3">
+                <span class="inline-flex items-center gap-1.5">
+                  <RoundBadge :round="s.round" />
+                  <StepStatusChip :status="s.round_status" />
+                </span>
+              </td>
               <td class="px-3 py-3">
                 <div v-if="s.status === 'completed'" class="flex flex-wrap items-center gap-1.5">
                   <AiScoringBadge :status="s.ai_scoring" />

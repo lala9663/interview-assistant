@@ -1,5 +1,5 @@
 """공고·역량 사전 (FR-02): postings, the link to the recruiting site's posting number,
-competency-set versions, AI drafts, approval."""
+competency-set versions (editing and approval; creating and AI drafts are per round, rounds.py)."""
 
 from __future__ import annotations
 
@@ -8,12 +8,11 @@ import re
 from fastapi import APIRouter
 from sqlalchemy import select
 
-from interview_assistant.ai.competency import draft_competency_set
 from interview_assistant.api import schemas as s
 from interview_assistant.api import views
-from interview_assistant.api.deps import Db, Me, RuntimeDep, audit
+from interview_assistant.api.deps import Db, Me, audit
 from interview_assistant.api.errors import conflict, invalid, not_found
-from interview_assistant.interviews import approved_set, latest_set
+from interview_assistant.interviews import approved_set, rounds_of
 from interview_assistant.models import CompetencySet, JobPosting, PresetQuestion
 from interview_assistant.models.base import utcnow
 
@@ -71,41 +70,9 @@ def update_posting(posting_id: str, body: s.UpdatePostingRequest, db: Db, me: Me
 
 @router.get("/postings/{posting_id}/competency-sets", response_model=list[s.CompetencySet])
 def competency_sets(posting_id: str, db: Db) -> list[s.CompetencySet]:
-    return [s.CompetencySet.model_validate(x) for x in _posting(db, posting_id).competency_sets]
-
-
-@router.post(
-    "/postings/{posting_id}/competency-sets", response_model=s.CompetencySet, status_code=201
-)
-def create_competency_set(
-    posting_id: str, body: s.CompetenciesBody, db: Db, me: Me
-) -> s.CompetencySet:
-    found = _posting(db, posting_id)
-    latest = latest_set(found)
-    created = CompetencySet(
-        posting=found,
-        version=(latest.version if latest else 0) + 1,
-        competencies=[c.model_dump() for c in body.competencies],
-    )
-    db.add(created)
-    db.flush()
-    audit(db, me, "competency_set.created", "competency_set", created.id)
-    db.commit()
-    return s.CompetencySet.model_validate(created)
-
-
-@router.post(
-    "/postings/{posting_id}/competency-sets/generate",
-    response_model=s.CompetencySet,
-    status_code=201,
-)
-async def generate_competency_set(posting_id: str, db: Db, runtime: RuntimeDep) -> s.CompetencySet:
-    found = _posting(db, posting_id)
-    try:
-        drafted = await draft_competency_set(db, runtime.ai, found)
-    finally:
-        db.commit()  # the AI call's audit row stays even when the draft is unusable
-    return s.CompetencySet.model_validate(drafted)
+    """Every version of every round, rounds in order (`round_id` says whose)."""
+    posting = _posting(db, posting_id)
+    return [s.CompetencySet.model_validate(x) for r in rounds_of(posting) for x in r.competency_sets]
 
 
 @router.put("/competency-sets/{set_id}", response_model=s.CompetencySet)
@@ -126,7 +93,7 @@ def approve_competency_set(set_id: str, db: Db, me: Me) -> s.CompetencySet:
         raise conflict("이미 확정된 버전입니다.")
     if not found.competencies:
         raise invalid("competencies", "역량이 하나 이상 있어야 확정할 수 있습니다.")
-    previous = approved_set(found.posting)
+    previous = approved_set(found.round)
     found.approved_by = me.id
     found.approved_at = utcnow()
     # Preset questions follow the competencies they were written for.

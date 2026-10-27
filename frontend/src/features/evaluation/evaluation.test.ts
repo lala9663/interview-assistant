@@ -33,6 +33,7 @@ const EV: Evaluation = {
   session: {
     id: 's1',
     application_id: 'a1',
+    round_id: 'r1',
     mode: 'remote',
     status: 'completed',
     scheduled_at: null,
@@ -43,9 +44,11 @@ const EV: Evaluation = {
   },
   candidate: { id: 'c1', pseudonym: 'CAND-0001' },
   posting: { id: 'p1', title: '공고' },
+  round: { id: 'r1', position: 1, label: '1차', name: '직무 면접', is_last: false, rounds: 2, show_previous_scores: false },
   competency_set: {
     id: 'cs1',
     posting_id: 'p1',
+    round_id: 'r1',
     version: 1,
     competencies: [
       { name: '문제 해결', description: '', bars },
@@ -74,6 +77,8 @@ const EV: Evaluation = {
       scores: [],
     },
   ],
+  decision: { current: null, history: [], can_decide: false, blocked_reason: '면접관 점수가 모두 제출된 뒤에 결정할 수 있습니다.', is_last_round: false, next_round: null },
+  check_points: [],
 }
 
 describe('AI and interviewer scores are never summed', () => {

@@ -17,6 +17,8 @@ from interview_assistant.domain import CandidateProfile, Competency
 from interview_assistant.models import (
     ActorType,
     AvailabilitySource,
+    CheckPointSource,
+    DecisionStatus,
     EvaluatorType,
     InterviewerRole,
     PostingStatus,
@@ -29,8 +31,12 @@ from interview_assistant.models.base import iso_z
 
 Timestamp = Annotated[datetime, PlainSerializer(iso_z, return_type=str, when_used="json")]
 AiScoringState = Literal["not_started", "running", "completed", "failed"]
-Stage = Literal["screening", "interview_scheduled", "interviewing", "interviewed", "evaluated"]
 Channel = Literal["upload", "site"]
+StepKind = Literal["screening", "round", "final"]
+# interviews.py: where an application stands in a step (screening uses passed / hold / rejected).
+StepStatus = Literal[
+    "waiting", "scheduled", "in_progress", "evaluating", "deciding", "passed", "hold", "rejected"
+]
 
 
 class Schema(BaseModel):
@@ -50,9 +56,22 @@ class JobPosting(Schema):
     created_at: Timestamp
 
 
+class InterviewRound(Schema):
+    id: str
+    posting_id: str
+    position: int
+    label: str  # "1차", "2차" ... (always from the position)
+    name: str  # what the round is for: "직무 면접", "임원 면접"
+    default_mode: SessionMode
+    recommended_interviewers: int
+    show_previous_scores: bool  # interviewers of this round see earlier rounds' scores
+    created_at: Timestamp
+
+
 class CompetencySet(Schema):
     id: str
     posting_id: str
+    round_id: str
     version: int
     competencies: list[Competency]
     approved_by: str | None
@@ -104,6 +123,7 @@ class Interviewer(Schema):
 class InterviewSession(Schema):
     id: str
     application_id: str
+    round_id: str
     mode: SessionMode
     status: SessionStatus
     scheduled_at: Timestamp | None
@@ -163,6 +183,37 @@ class Availability(Schema):
     created_at: Timestamp
 
 
+class RoundDecision(BaseModel):
+    """One revision of a person's decision on an application in a round. Newest revision wins."""
+
+    id: str
+    application_id: str
+    round_id: str
+    session_id: str | None
+    revision: int
+    decision: DecisionStatus
+    reason: str  # de-identified
+    decided_by: str
+    decided_by_name: str
+    created_at: Timestamp
+
+
+class CheckPoint(BaseModel):
+    """확인이 필요한 점 for a later round. AI ones quote the de-identified answer in `evidence`."""
+
+    id: str
+    session_id: str
+    source: CheckPointSource
+    competency: str | None
+    text: str
+    evidence: str | None
+    qa_item_id: str | None
+    author_id: str | None
+    author_name: str | None
+    model: str | None
+    created_at: Timestamp
+
+
 class AuditLog(Schema):
     id: str
     occurred_at: Timestamp
@@ -193,6 +244,36 @@ class PostingRefWithFamily(PostingRef):
     job_family: str
 
 
+class RoundRef(BaseModel):
+    id: str
+    position: int
+    label: str
+    name: str
+    is_last: bool
+
+
+class RoundView(RoundRef):
+    """The round of a session, with what its interviewers may see of earlier rounds."""
+
+    rounds: int  # how many rounds the posting has
+    show_previous_scores: bool
+
+
+class RoundCount(BaseModel):
+    """Applications that reached the round, and how many are at each status in it."""
+
+    round: RoundRef
+    reached: int
+    waiting: int
+    scheduled: int
+    in_progress: int
+    evaluating: int
+    deciding: int
+    passed: int
+    hold: int
+    rejected: int
+
+
 class PostingCounts(BaseModel):
     applications: int
     passed: int
@@ -201,6 +282,8 @@ class PostingCounts(BaseModel):
     interviewing: int
     interviewed: int
     evaluated: int
+    rounds: list[RoundCount]
+    final: int  # passed the last round: 최종 합격 후보 (the official result is the site's)
 
 
 class CompetencySetBrief(Schema):
@@ -217,12 +300,37 @@ class PostingSummary(Schema):
     site_posting_no: str | None
     created_at: Timestamp
     counts: PostingCounts
+    rounds: list[RoundRef]
+    # Round 1's dictionary (screening uses its approved version).
     latest_competency_set: CompetencySetBrief | None
     approved_competency_set: CompetencySetBrief | None
 
 
 class PostingDetail(JobPosting):
     counts: PostingCounts
+    rounds: list[RoundRef]
+
+
+class RoundSummary(InterviewRound):
+    """GET /postings/{id}/rounds item: a round with its dictionary and how far it is in use."""
+
+    is_last: bool
+    latest_competency_set: CompetencySetBrief | None
+    approved_competency_set: CompetencySetBrief | None
+    preset_count: int  # preset questions of the approved version
+    sessions: int  # sessions held or scheduled in the round (not cancelled)
+    # A round with sessions or decisions keeps its place: it cannot move or be deleted.
+    locked: bool
+
+
+class ProgressStep(BaseModel):
+    """One step of an application: 서류, a round, or 최종 (status null: not reached yet)."""
+
+    kind: StepKind
+    round: RoundRef | None
+    status: StepStatus | None
+    at: Timestamp | None
+    session_id: str | None
 
 
 class ApplicationRow(BaseModel):
@@ -231,13 +339,15 @@ class ApplicationRow(BaseModel):
     screening: Screening | None
     years_experience: float | None
     top_skills: list[str]
-    stage: Stage
+    stage: ProgressStep  # the current step
+    progress: list[ProgressStep]  # 서류 → each round → 최종
     channel: Channel  # 수신 경로: site 연동 or 직접 upload
     created_at: Timestamp
 
 
-class SessionBrief(Schema):
+class SessionBrief(BaseModel):
     id: str
+    round: RoundRef
     status: SessionStatus
     mode: SessionMode
     scheduled_at: Timestamp | None
@@ -284,6 +394,9 @@ class ApplicationDetail(BaseModel):
     screening: Screening | None
     sessions: list[SessionBrief]
     document: DocumentInfo | None
+    stage: ProgressStep
+    progress: list[ProgressStep]
+    decisions: list[RoundDecision]  # every revision of every round, newest first
 
 
 class UploadResult(BaseModel):
@@ -304,10 +417,17 @@ class CandidateIndexItem(BaseModel):
 
 
 class SchedulableApplication(BaseModel):
+    """An application waiting for a session of `round` (round 1: passed screening; round N:
+    passed round N-1). `mode` and `recommended_interviewers` are the round's defaults."""
+
     application_id: str
     candidate: CandidateRef
     posting: PostingRefWithFamily
     fit_score: float
+    round: RoundRef
+    mode: SessionMode
+    recommended_interviewers: int
+    since: Timestamp | None  # when the previous step was passed
 
 
 class SessionInterviewerView(SessionInterviewer):
@@ -317,17 +437,31 @@ class SessionInterviewerView(SessionInterviewer):
 class SessionSummary(InterviewSession):
     candidate: CandidateRef
     posting: PostingRef
+    round: RoundRef
+    # The application's status in this session's round (예정 … 합격·보류·불합격).
+    round_status: StepStatus
     interviewers: list[SessionInterviewerView]
     qa_count: int
     ai_scoring: AiScoringState
     submitted_interviewer_ids: list[str]
 
 
-class PresetQuestion(Schema):
+class CarryoverOrigin(BaseModel):
+    """What an AI carry-over question (이어 질문) builds on: an earlier round's answer."""
+
+    round: RoundRef
+    question: str  # the earlier question, de-identified
+    grounding: str  # verbatim quote of the earlier answer
+    rationale: str
+    model: str | None
+
+
+class PresetQuestion(BaseModel):
     id: str
     competency: str
     question: str
     intent: str
+    origin: CarryoverOrigin | None = None  # set on carry-over questions only
 
 
 class CardCandidate(Schema):
@@ -343,20 +477,55 @@ class CardScreening(Schema):
     rationale: str
 
 
+class PreviousNote(BaseModel):
+    id: str
+    content: str  # de-identified
+    author_name: str
+    created_at: Timestamp
+
+
+class PreviousScore(BaseModel):
+    """An earlier round's scores per competency, only when the round allows it. Interviewer and
+    AI means stay apart."""
+
+    competency: str
+    interviewer_mean: float | None
+    ai_mean: float | None
+
+
+class PreviousRound(BaseModel):
+    """이전 차수 요약 on the candidate card. Points to check and notes always; scores, and the
+    decision reason that may echo them, only when this round shows earlier scores."""
+
+    round: RoundRef
+    session: SessionBrief
+    decision: DecisionStatus | None
+    qa_count: int
+    check_points: list[CheckPoint]
+    notes: list[PreviousNote]
+    scores_visible: bool
+    scores: list[PreviousScore] | None
+    decision_reason: str | None
+
+
 class CandidateCard(BaseModel):
     candidate: CardCandidate
     profile: CandidateProfile | None
     screening: CardScreening | None
     previous_sessions: list[SessionBrief]
+    previous_rounds: list[PreviousRound]
 
 
 class SessionDetail(BaseModel):
     session: InterviewSession
     posting: PostingRefWithFamily
+    round: RoundView
     card: CandidateCard
     interviewers: list[SessionInterviewerView]
     competency_set: CompetencySet | None
     preset_questions: list[PresetQuestion]
+    # 이어 질문: AI questions for this candidate built on earlier rounds' answers.
+    carryover_questions: list[PresetQuestion]
     qa_items: list[QAItem]
     notes: list[CandidateNote]
 
@@ -398,14 +567,28 @@ class InterviewerEvaluation(BaseModel):
     scores: list[Score]
 
 
+class DecisionPanel(BaseModel):
+    """N차 결정 on the evaluation screen. A person decides; AI scores are reference only."""
+
+    current: RoundDecision | None
+    history: list[RoundDecision]  # newest first
+    can_decide: bool
+    blocked_reason: str | None  # why not, when can_decide is false
+    is_last_round: bool  # a pass makes a final candidate (recorded officially on the site)
+    next_round: RoundRef | None
+
+
 class Evaluation(BaseModel):
     session: InterviewSession
     candidate: CandidateRef
     posting: PostingRef
+    round: RoundView
     competency_set: CompetencySet | None
     qa_items: list[QAItem]
     ai: AiEvaluation
     interviewers: list[InterviewerEvaluation]
+    decision: DecisionPanel
+    check_points: list[CheckPoint]  # for later rounds: interviewers' and AI's
 
 
 class PipelinePosting(Schema):
@@ -420,10 +603,23 @@ class PipelineRow(BaseModel):
     counts: PostingCounts
 
 
+class PendingDecision(BaseModel):
+    """An evaluated round waiting for a decision, or one decided 보류 (it stays here)."""
+
+    session_id: str
+    application_id: str
+    candidate: CandidateRef
+    posting: PostingRef
+    round: RoundRef
+    status: Literal["deciding", "hold"]
+    since: Timestamp | None
+
+
 class DashboardSummary(BaseModel):
     pipeline: list[PipelineRow]
     today_sessions: list[SessionSummary]
     pending_my_scores: list[SessionSummary]
+    pending_decisions: list[PendingDecision]
     hold_count: int
 
 
@@ -713,9 +909,45 @@ class PanelMember(BaseModel):
 
 class CreateSessionRequest(BaseModel):
     application_id: str
+    # The round of the new session; left out, the round the application is waiting for.
+    round_id: str | None = None
     mode: SessionMode
     scheduled_at: AwareDatetime
     interviewers: list[PanelMember]
+
+
+class CreateRoundRequest(BaseModel):
+    name: str = Field(max_length=100)
+    default_mode: SessionMode = SessionMode.remote
+    recommended_interviewers: int = 2
+    show_previous_scores: bool = False
+
+
+class UpdateRoundRequest(BaseModel):
+    name: str | None = Field(default=None, max_length=100)
+    default_mode: SessionMode | None = None
+    recommended_interviewers: int | None = None
+    show_previous_scores: bool | None = None
+
+
+class ReorderRoundsRequest(BaseModel):
+    round_ids: list[str]
+
+
+class PresetQuestionBody(BaseModel):
+    competency: str
+    question: str
+    intent: str = ""
+
+
+class DecisionRequest(BaseModel):
+    decision: DecisionStatus
+    reason: str
+
+
+class CreateCheckPointRequest(BaseModel):
+    text: str
+    competency: str | None = None
 
 
 class ConsentRequest(BaseModel):

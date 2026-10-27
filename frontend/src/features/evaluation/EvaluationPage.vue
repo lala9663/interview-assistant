@@ -15,7 +15,8 @@ import ModeBadge from '@/components/common/ModeBadge.vue'
 import Page from '@/components/common/Page.vue'
 import PageHeader from '@/components/common/PageHeader.vue'
 import Pseudonym from '@/components/common/Pseudonym.vue'
-import SessionStatusBadge from '@/components/common/SessionStatusBadge.vue'
+import RoundBadge from '@/components/common/RoundBadge.vue'
+import StepStatusChip from '@/components/common/StepStatusChip.vue'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
@@ -27,6 +28,8 @@ import { QUESTION_SOURCE_LABEL, ROLE_LABEL } from '@/lib/labels'
 import { formatDateTime, formatDuration, formatRelative } from '@/lib/time'
 
 import AiEvidence from './AiEvidence.vue'
+import CheckPointsCard from './CheckPointsCard.vue'
+import DecisionPanel from './DecisionPanel.vue'
 import InterviewerForm from './InterviewerForm.vue'
 import ScoreChart from './ScoreChart.vue'
 import ScoreTable from './ScoreTable.vue'
@@ -86,6 +89,7 @@ const scoresInRubricOrder = (scores: readonly Score[]) =>
         <span class="flex flex-wrap items-center gap-3">
           <Pseudonym :value="q.data.candidate.pseudonym" size="lg" />
           <span class="text-base font-normal text-muted-foreground">{{ q.data.posting.title }}</span>
+          <RoundBadge :round="q.data.round" full strong />
         </span>
       </template>
       <template #description>
@@ -97,7 +101,7 @@ const scoresInRubricOrder = (scores: readonly Score[]) =>
         </span>
       </template>
       <template #actions>
-        <SessionStatusBadge :status="q.data.session.status" />
+        <StepStatusChip :status="q.data.decision.current?.decision ?? (q.data.decision.can_decide ? 'deciding' : 'evaluating')" />
         <AiScoringBadge :status="q.data.ai.status" />
       </template>
     </PageHeader>
@@ -184,6 +188,10 @@ const scoresInRubricOrder = (scores: readonly Score[]) =>
           </Card>
         </FadeIn>
 
+        <FadeIn :delay="0.08">
+          <CheckPointsCard :ev="q.data" />
+        </FadeIn>
+
         <FadeIn :delay="0.1">
           <Card>
             <CardHeader>
@@ -218,7 +226,7 @@ const scoresInRubricOrder = (scores: readonly Score[]) =>
 
       <div class="flex min-w-0 flex-col gap-4">
         <FadeIn :delay="0.05">
-          <Card class="xl:sticky xl:top-[4.5rem]">
+          <Card>
             <CardHeader>
               <div>
                 <CardTitle class="flex items-center gap-1.5"><UserRoundCheckIcon class="size-4 text-muted-foreground" aria-hidden="true" />내 평가</CardTitle>
@@ -230,6 +238,10 @@ const scoresInRubricOrder = (scores: readonly Score[]) =>
               <p v-else class="text-[13px] text-muted-foreground">이 면접의 면접관이 아니어서 점수를 입력할 수 없습니다.</p>
             </CardContent>
           </Card>
+        </FadeIn>
+
+        <FadeIn :delay="0.08">
+          <DecisionPanel :ev="q.data" />
         </FadeIn>
 
         <FadeIn :delay="0.1">

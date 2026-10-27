@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ArrowRightIcon, BotIcon, BriefcaseIcon, CalendarIcon, FolderGit2Icon, GraduationCapIcon } from '@lucide/vue'
+import { ArrowRightIcon, BotIcon, BriefcaseIcon, CalendarIcon, FolderGit2Icon, GavelIcon, GraduationCapIcon } from '@lucide/vue'
 import { computed } from 'vue'
 import { RouterLink } from 'vue-router'
 import { toast } from 'vue-sonner'
@@ -12,7 +12,9 @@ import ErrorState from '@/components/common/ErrorState.vue'
 import FitRing from '@/components/common/FitRing.vue'
 import PrivacyNote from '@/components/common/PrivacyNote.vue'
 import Pseudonym from '@/components/common/Pseudonym.vue'
+import RoundBadge from '@/components/common/RoundBadge.vue'
 import SessionStatusBadge from '@/components/common/SessionStatusBadge.vue'
+import StepStatusChip from '@/components/common/StepStatusChip.vue'
 import { Badge } from '@/components/ui/badge'
 import { Segmented, SegmentedItem } from '@/components/ui/segmented'
 import { Separator } from '@/components/ui/separator'
@@ -23,6 +25,7 @@ import { formatDate, formatDateTime } from '@/lib/time'
 import { toastError } from '@/lib/toast'
 
 import ReadingSummary from './ReadingSummary.vue'
+import RoundStepper from './RoundStepper.vue'
 import SheetSection from './SheetSection.vue'
 
 const props = defineProps<{ applicationId: string; postingId: string }>()
@@ -30,6 +33,8 @@ const props = defineProps<{ applicationId: string; postingId: string }>()
 const q = useApplication(() => props.applicationId)
 const update = useUpdateScreening(() => props.postingId)
 const rationale = computed(() => (q.data?.screening ? parseRationale(q.data.screening.rationale) : null))
+const roundOf = (roundId: string) => q.data?.progress.find((s) => s.round?.id === roundId)?.round ?? null
+const finalCandidate = computed(() => q.data?.progress.at(-1)?.status === 'passed')
 
 const change = (status: string) => {
   const d = q.data
@@ -71,6 +76,11 @@ const change = (status: string) => {
       </div>
     </div>
 
+    <RoundStepper :steps="q.data.progress" />
+    <p v-if="finalCandidate" class="rounded-lg border bg-subtle px-3 py-2 text-[12.5px] text-muted-foreground" role="status">
+      마지막 차수에 합격한 최종 합격 후보입니다. 공식 결과는 채용 사이트에 기록합니다.
+    </p>
+
     <ReadingSummary v-if="q.data.document?.reading" :reading="q.data.document.reading" />
 
     <p v-if="q.data.application.withdrawn_at" class="rounded-lg border bg-subtle px-3 py-2 text-[13px] text-muted-foreground" role="status">
@@ -79,7 +89,7 @@ const change = (status: string) => {
 
     <div v-if="q.data.screening" class="space-y-2">
       <div class="flex items-center justify-between gap-3">
-        <span class="text-[13px] font-medium">선별 상태</span>
+        <span class="text-[13px] font-medium">서류 선별 상태</span>
         <Segmented :model-value="q.data.screening.status" aria-label="선별 상태 변경" :disabled="update.isPending" @update:model-value="change">
           <SegmentedItem v-for="s in SCREENING_STATUSES" :key="s" :value="s">{{ SCREENING_STATUS_LABEL[s] }}</SegmentedItem>
         </Segmented>
@@ -155,7 +165,7 @@ const change = (status: string) => {
     <Separator />
     <SheetSection title="면접" :icon="CalendarIcon">
       <p v-if="q.data.sessions.length === 0" class="text-[13px] text-muted-foreground">
-        잡힌 면접이 없습니다. 통과 처리 후 면접관 스케줄에서 일정을 잡을 수 있습니다.
+        잡힌 면접이 없습니다. 서류 통과 처리 후 면접관 스케줄에서 1차 일정을 잡을 수 있습니다.
       </p>
       <ul v-else class="space-y-1.5">
         <li v-for="s in q.data.sessions" :key="s.id">
@@ -163,6 +173,7 @@ const change = (status: string) => {
             :to="s.status === 'completed' ? `/sessions/${s.id}/evaluation` : `/sessions/${s.id}/live`"
             class="flex items-center gap-3 rounded-lg border px-3 py-2 text-[13px] transition-colors hover:bg-subtle"
           >
+            <RoundBadge :round="s.round" />
             <SessionStatusBadge :status="s.status" />
             <span>{{ s.scheduled_at ? formatDateTime(s.scheduled_at) : '' }}</span>
             <ArrowRightIcon class="ml-auto size-4 text-muted-foreground" aria-hidden="true" />
@@ -170,6 +181,22 @@ const change = (status: string) => {
         </li>
       </ul>
     </SheetSection>
+    <template v-if="q.data.decisions.length > 0">
+      <Separator />
+      <SheetSection title="차수 결정" :icon="GavelIcon">
+        <ol class="space-y-2.5" data-testid="application-decisions">
+          <li v-for="d in q.data.decisions" :key="d.id" class="text-[13px]">
+            <div class="flex flex-wrap items-center gap-1.5">
+              <RoundBadge :round="roundOf(d.round_id)" />
+              <StepStatusChip :status="d.decision" />
+              <span class="text-xs text-muted-foreground">{{ d.decided_by_name }} · {{ formatDateTime(d.created_at) }}</span>
+              <span class="ml-auto font-mono text-[10.5px] text-muted-foreground">#{{ d.revision }}</span>
+            </div>
+            <p class="mt-1 text-[12.5px] text-muted-foreground"><DeidText :text="d.reason" /></p>
+          </li>
+        </ol>
+      </SheetSection>
+    </template>
     <PrivacyNote />
   </div>
 </template>

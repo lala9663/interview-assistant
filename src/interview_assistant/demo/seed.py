@@ -1,7 +1,9 @@
 """Seed the database with the demo dataset, laid out relative to now like the frontend mock:
-3 postings (competency sets, preset questions), 20 candidates with screenings, 5 interviewers,
-one interview in progress, three scheduled, four completed (three AI-scored, one still being
-scored), two weeks of availability and an activity history.
+3 postings with their interview rounds (P1: 1차 직무 면접 + 2차 임원 면접, P2 and P3: one round),
+competency sets and preset questions per round, 20 candidates with screenings, 5 interviewers,
+two interviews in progress (P1 1차 and 2차), three scheduled (one of them 2차), nine completed
+(one still being scored), round decisions (합격, 보류, 불합격 after 보류, a final candidate),
+points to check for the next round, two weeks of availability and an activity history.
 
 Everything is fictional. Candidates get made-up identities (names, 010-0000-xxxx numbers,
 example.com addresses, invented schools and companies) sealed with IA_ENCRYPTION_KEY, and the
@@ -24,6 +26,7 @@ from sqlalchemy import delete
 from sqlalchemy.orm import Session
 
 from interview_assistant.ai.prompts import (
+    CHECKPOINT_PROMPT,
     FOLLOWUP_PROMPT,
     SCORING_PROMPT,
     SCREENING_PROMPT,
@@ -42,17 +45,22 @@ from interview_assistant.models import (
     Base,
     Candidate,
     CandidateNote,
+    CheckPoint,
+    CheckPointSource,
     CompetencySet,
+    DecisionStatus,
     EvaluatorType,
     FollowUpSuggestion,
     Interviewer,
     InterviewerRole,
+    InterviewRound,
     InterviewSession,
     JobPosting,
     PostingStatus,
     PresetQuestion,
     QAItem,
     QuestionSource,
+    RoundDecision,
     Score,
     Screening,
     ScreeningStatus,
@@ -90,6 +98,16 @@ def screening_id(n: int) -> str:
 
 def session_id(key: str) -> str:
     return f"0a1b2c3d-0000-4000-9000-{key.ljust(12, '0')}"
+
+
+def round_id(posting_id: str, position: int) -> str:
+    return f"b2c3d4e5-0000-4000-9000-{posting_id[-4:]}0000000{position}"
+
+
+def set_id(posting_id: str, position: int, version: int) -> str:
+    """Round 1 keeps the ids sets had before rounds existed."""
+    middle = "0000000" if position == 1 else f"00000{position}0"
+    return f"e5f6a7b8-0000-4000-9000-{posting_id[-4:]}{middle}{version}"
 
 
 def fake_identity(n: int, profile: dict[str, Any]) -> KnownIdentity:
@@ -136,6 +154,7 @@ class _Seeder:
         self.interviewers: dict[str, Interviewer] = {}
         self.postings: dict[str, JobPosting] = {}
         self.posting_keys: dict[str, str] = {}  # posting id -> P1/P2/P3
+        self.rounds: dict[tuple[str, int], InterviewRound] = {}  # (P1, 2) -> 2차 of P1
         self.presets: dict[str, PresetQuestion] = {}  # dataset preset id (p1-q1) -> row
         self.applications: dict[int, Application] = {}
 
@@ -183,33 +202,49 @@ class _Seeder:
             self.db.add(posting)
             self.postings[p["key"]] = posting
             self.posting_keys[p["id"]] = p["key"]
-            approved: CompetencySet | None = None
-            for v in p["sets"]:
-                created = self.days_ago(v["daysAgo"], 11)
-                cs = CompetencySet(
-                    id=f"e5f6a7b8-0000-4000-9000-{p['id'][-4:]}0000000{v['version']}",
+            for position, r in enumerate(p["rounds"], start=1):
+                round_ = InterviewRound(
+                    id=round_id(p["id"], position),
                     posting=posting,
-                    version=v["version"],
-                    competencies=v["competencies"],
-                    approved_by=self.interviewers[v["approvedBy"]].id if v["approvedBy"] else None,
-                    approved_at=created + timedelta(minutes=180) if v["approvedBy"] else None,
-                    created_at=created,
+                    position=position,
+                    name=r["name"],
+                    default_mode=SessionMode(r["default_mode"]),
+                    recommended_interviewers=r["recommended_interviewers"],
+                    show_previous_scores=r["show_previous_scores"],
+                    created_at=posting.created_at,
                 )
-                self.db.add(cs)
-                if v["approvedBy"]:
-                    approved = cs
-            if approved is not None:
-                for position, q in enumerate(p["presets"], start=1):
-                    preset = PresetQuestion(
-                        competency_set=approved,
-                        position=position,
-                        competency=q["competency"],
-                        question=q["question"],
-                        intent=q["intent"],
-                        created_at=approved.approved_at,
+                self.db.add(round_)
+                self.rounds[(p["key"], position)] = round_
+                approved: CompetencySet | None = None
+                for v in r["sets"]:
+                    created = self.days_ago(v["daysAgo"], 11)
+                    cs = CompetencySet(
+                        id=set_id(p["id"], position, v["version"]),
+                        posting=posting,
+                        round=round_,
+                        version=v["version"],
+                        competencies=v["competencies"],
+                        approved_by=self.interviewers[v["approvedBy"]].id
+                        if v["approvedBy"]
+                        else None,
+                        approved_at=created + timedelta(minutes=180) if v["approvedBy"] else None,
+                        created_at=created,
                     )
-                    self.db.add(preset)
-                    self.presets[q["id"]] = preset
+                    self.db.add(cs)
+                    if v["approvedBy"]:
+                        approved = cs
+                if approved is not None:
+                    for number, q in enumerate(r["presets"], start=1):
+                        preset = PresetQuestion(
+                            competency_set=approved,
+                            position=number,
+                            competency=q["competency"],
+                            question=q["question"],
+                            intent=q["intent"],
+                            created_at=approved.approved_at,
+                        )
+                        self.db.add(preset)
+                        self.presets[q["id"]] = preset
 
     def candidates_(self) -> None:
         for c in self.data["candidates"]:
@@ -270,14 +305,17 @@ class _Seeder:
         panel: list[tuple[str, InterviewerRole]],
         started: datetime | None = None,
         ended: datetime | None = None,
+        position: int = 1,
     ) -> InterviewSession:
         application = self.applications[n]
+        round_ = self.rounds[(self.posting_keys[application.posting.id], position)]
         ran = status in (SessionStatus.in_progress, SessionStatus.completed)
-        approved = [cs for cs in application.posting.competency_sets if cs.approved_at]
+        approved = [cs for cs in round_.competency_sets if cs.approved_at]
         sid = session_id(key)
         session = InterviewSession(
             id=sid,
             application=application,
+            round=round_,
             mode=SessionMode(mode),
             status=status,
             scheduled_at=scheduled,
@@ -403,6 +441,80 @@ class _Seeder:
         link = next(x for x in session.interviewers if x.interviewer is person)
         link.submitted_at = at
 
+    def decide(
+        self,
+        session: InterviewSession,
+        decision: str,
+        key: str,
+        at: datetime,
+        reason: str,
+    ) -> RoundDecision:
+        application = session.application
+        revision = 1 + sum(d.round_id == session.round.id for d in application.decisions)
+        row = RoundDecision(
+            application=application,
+            round=session.round,
+            session=session,
+            revision=revision,
+            decision=DecisionStatus(decision),
+            reason=reason,
+            decided_by=self.interviewers[key].id,
+            created_at=at,
+        )
+        self.db.add(row)
+        self.db.flush()
+        return row
+
+    def check_point(
+        self, session: InterviewSession, key: str, at: datetime, competency: str, text: str
+    ) -> None:
+        self.db.add(
+            CheckPoint(
+                session=session,
+                source=CheckPointSource.interviewer,
+                competency=competency,
+                text=text,
+                author=self.interviewers[key],
+                created_at=at,
+            )
+        )
+
+    def ai_check_points(self, session: InterviewSession) -> None:
+        """Scripted like the fake model: the two thinnest answers, quoted verbatim."""
+
+        def weight(text: str) -> int:
+            return len(re.findall(r"\d", text)) + sum(
+                w in text for w in ("검증", "확인", "비교", "데이터", "원인", "합의", "개선")
+            )
+
+        answered = [qa for qa in session.qa_items if qa.answer_deidentified]
+        for qa in sorted(answered, key=lambda q: weight(q.answer_deidentified or ""))[:2]:
+            evidence = min(split_sentences(qa.answer_deidentified or ""), key=weight)
+            competency = qa.target_competency or ""
+            self.db.add(
+                CheckPoint(
+                    session=session,
+                    source=CheckPointSource.ai,
+                    competency=competency or None,
+                    text=(
+                        f"{competency}: 이 답변은 근거가 적어 본인이 직접 한 판단과 결과를 "
+                        "다음 차수에서 구체적으로 확인할 필요가 있습니다."
+                    ),
+                    evidence=evidence,
+                    qa_item=qa,
+                    model=AI_MODEL,
+                    prompt_version=CHECKPOINT_PROMPT,
+                    created_at=(session.ended_at or self.now) + timedelta(minutes=3),
+                )
+            )
+
+    def note(self, session: InterviewSession, key: str, at: datetime, content: str) -> None:
+        self.db.add(
+            CandidateNote(
+                session=session, author=self.interviewers[key], content=content, created_at=at
+            )
+        )
+
     def sessions_(self) -> None:
         lead, panel = InterviewerRole.lead, InterviewerRole.panel
         today = self.now.astimezone(KST).date()
@@ -439,7 +551,13 @@ class _Seeder:
             [("lee", lead), ("jung", panel)],
         )
         self.session(
-            "s3", 9, "remote", SessionStatus.scheduled, tomorrow10, [("park", lead), ("kim", panel)]
+            "s3",
+            3,
+            "onsite",
+            SessionStatus.scheduled,
+            tomorrow10,
+            [("park", lead), ("kim", panel)],
+            position=2,
         )
         c1 = self.session(
             "c1",
@@ -518,9 +636,13 @@ class _Seeder:
         self.ask_preset(c4, "p2-q2", self.minutes(-108), True)
         self.ask_preset(c4, "p2-q5", self.minutes(-95), True)
 
+        self.rounds_history_(lead, panel)
+
         self.db.flush()
         for done in (c1, c2, c3):
             self.ai_scores(done)
+        for done in (c1, c2, c3):
+            self.ai_check_points(done)
         # c4 ended 75 minutes ago and is still being scored: the server picks it up at startup and
         # scores it with the configured LLM provider.
         c4.ai_scoring_status = AiScoringStatus.running
@@ -558,6 +680,249 @@ class _Seeder:
                 ("공정·장비 이해", 3, "전후 공정 영향은 설명했으나 근거가 다소 약함."),
                 ("협업과 커뮤니케이션", 3, "장비사 협업 양식 개선은 좋으나 내부 협업 사례 부족."),
             ],
+        )
+        self.interviewer_scores(
+            c3,
+            "lee",
+            self.days_ago(1, 17),
+            [
+                ("시스템 설계", 4, "대안 비교와 선택 근거가 분명함."),
+                ("운영·장애 대응", 3, "장애 대응 절차는 좋으나 운영 규모가 작음."),
+                ("코드 품질", 4, "테스트 전략 설명이 구체적."),
+                ("협업과 커뮤니케이션", 3, "타 팀 설득 사례가 적음."),
+            ],
+        )
+        self.interviewer_scores(
+            c3,
+            "jung",
+            self.days_ago(1, 17, 20),
+            [
+                ("시스템 설계", 3, "트래픽 규모 대비 설계 근거가 약함."),
+                ("운영·장애 대응", 4, "회고 문화 도입은 인상적."),
+                ("코드 품질", 3, "리뷰 기준은 보통."),
+                ("협업과 커뮤니케이션", 4, "갈등 상황 설명이 솔직함."),
+            ],
+        )
+
+        # Decisions on the sessions above: c1 passed (2차 tomorrow, s3), c3 on hold.
+        self.decide(
+            c1,
+            "passed",
+            "kim",
+            self.minutes(-200),
+            "실패 원인을 스스로 찾아 검증 절차 개선까지 연결함. 2차에서 책임감과 조직 적합 확인.",
+        )
+        self.check_point(
+            c1,
+            "kim",
+            self.days_ago(1, 15, 12),
+            "데이터 기반 분석",
+            "분석 근거는 있으나 표본 크기 설명이 부족했음. 2차에서 판단 근거를 다시 확인.",
+        )
+        self.decide(
+            c3,
+            "hold",
+            "lee",
+            self.minutes(-150),
+            "설계 근거는 충분하나 운영 경험의 규모가 작음. 같은 차수 다른 지원자 결과를 보고 다시 결정.",
+        )
+
+    def rounds_history_(self, lead: InterviewerRole, panel: InterviewerRole) -> None:
+        """Sessions of earlier days and of round 2: CAND-0001 passed 1차 and has finished 2차
+        (decision pending), CAND-0009 passed 1차 and is in 2차 now; on P2, CAND-0012 passed its
+        only round (final candidate) and CAND-0020 was put on hold, then rejected."""
+        r1n1 = self.session(
+            "r1n1",
+            1,
+            "remote",
+            SessionStatus.completed,
+            self.days_ago(9, 14),
+            [("kim", lead), ("park", panel)],
+            started=self.days_ago(9, 14, 2),
+            ended=self.days_ago(9, 14, 50),
+        )
+        q1 = self.ask_preset(r1n1, "p1-q1", self.days_ago(9, 14, 4), True)
+        self.ask_suggestion(r1n1, q1, "p1-q1", 2, self.days_ago(9, 14, 12))
+        self.ask_preset(r1n1, "p1-q5", self.days_ago(9, 14, 20), True)
+        self.ask_preset(r1n1, "p1-q7", self.days_ago(9, 14, 30), True)
+        self.note(
+            r1n1,
+            "kim",
+            self.days_ago(9, 14, 40),
+            "엣지 링 사례를 메커니즘 수준까지 설명. 협업 질문에서는 답이 짧아짐.",
+        )
+
+        r2n1 = self.session(
+            "r2n1",
+            1,
+            "onsite",
+            SessionStatus.completed,
+            self.days_ago(2, 15),
+            [("park", lead), ("kim", panel)],
+            started=self.days_ago(2, 15, 1),
+            ended=self.days_ago(2, 15, 45),
+            position=2,
+        )
+        q1 = self.ask_preset(r2n1, "p1r2-q1", self.days_ago(2, 15, 3), True)
+        self.ask_suggestion(r2n1, q1, "p1r2-q1", 0, self.days_ago(2, 15, 10))
+        self.ask_preset(r2n1, "p1r2-q3", self.days_ago(2, 15, 18), True)
+        self.ask_preset(r2n1, "p1r2-q5", self.days_ago(2, 15, 28), True)
+
+        r1n9 = self.session(
+            "r1n9",
+            9,
+            "remote",
+            SessionStatus.completed,
+            self.days_ago(6, 10),
+            [("kim", lead), ("park", panel)],
+            started=self.days_ago(6, 10, 1),
+            ended=self.days_ago(6, 10, 50),
+        )
+        self.ask_preset(r1n9, "p1-q2", self.days_ago(6, 10, 3), True)
+        self.ask_preset(r1n9, "p1-q4", self.days_ago(6, 10, 14), True)
+        self.ask_preset(r1n9, "p1-q6", self.days_ago(6, 10, 25), True)
+        self.ask_preset(r1n9, "p1-q8", self.days_ago(6, 10, 36), True)
+        self.note(
+            r1n9, "kim", self.days_ago(6, 10, 30), "설명이 차분하고 수치 근거를 스스로 제시함."
+        )
+
+        live2 = self.session(
+            "live2",
+            9,
+            "onsite",
+            SessionStatus.in_progress,
+            self.minutes(-20),
+            [("lee", lead), ("choi", panel)],
+            started=self.minutes(-19),
+            position=2,
+        )
+        l1 = self.ask_preset(live2, "p1r2-q1", self.minutes(-17), True)
+        l2 = self.ask_suggestion(live2, l1, "p1r2-q1", 1, self.minutes(-12))
+        l3 = self.ask_preset(live2, "p1r2-q3", self.minutes(-2), False)
+        self.transcript(live2, [l1, l2], l3)
+
+        r1n12 = self.session(
+            "r1n12",
+            12,
+            "remote",
+            SessionStatus.completed,
+            self.days_ago(5, 14),
+            [("lee", lead), ("jung", panel)],
+            started=self.days_ago(5, 14, 1),
+            ended=self.days_ago(5, 14, 46),
+        )
+        for i, key in enumerate(("p2-q1", "p2-q2", "p2-q4", "p2-q6")):
+            self.ask_preset(r1n12, key, self.days_ago(5, 14, 3 + i * 10), True)
+
+        r1n20 = self.session(
+            "r1n20",
+            20,
+            "remote",
+            SessionStatus.completed,
+            self.days_ago(3, 10),
+            [("jung", lead), ("lee", panel)],
+            started=self.days_ago(3, 10, 1),
+            ended=self.days_ago(3, 10, 44),
+        )
+        for i, key in enumerate(("p2-q3", "p2-q5", "p2-q2")):
+            self.ask_preset(r1n20, key, self.days_ago(3, 10, 3 + i * 12), True)
+
+        self.db.flush()
+        for done in (r1n1, r2n1, r1n9, r1n12, r1n20):
+            self.ai_scores(done)
+        for done in (r1n1, r1n9, r1n12, r1n20):
+            self.ai_check_points(done)
+
+        p1_round1 = [
+            ("공정 문제 해결", "재발 방지까지 연결한 과정이 구체적."),
+            ("데이터 기반 분석", "변수 배제 과정이 체계적."),
+            ("공정·장비 이해", "메커니즘 설명이 정확함."),
+            ("협업과 커뮤니케이션", "유관 부서 설득 경험은 짧게만 언급."),
+        ]
+        for done, scores in ((r1n1, ((4, 4, 5, 3), (5, 4, 4, 3))), (r1n9, ((4, 4, 3, 4), (4, 5, 3, 4)))):
+            for (key, at), values in zip(
+                (("kim", done.ended_at + timedelta(minutes=70)), ("park", done.ended_at + timedelta(minutes=100))),
+                scores,
+            ):
+                self.interviewer_scores(
+                    done, key, at, [(c, v, t) for (c, t), v in zip(p1_round1, values)]
+                )
+        p1_round2 = [
+            ("주도성과 책임감", "범위 밖 문제를 스스로 맡고 실수도 먼저 공유함."),
+            ("조직 적합과 성장 의지", "지원 동기와 부족한 점을 솔직하게 설명."),
+            ("협업과 영향력", "권한 없이 숫자로 다른 조직을 설득한 사례가 좋음."),
+        ]
+        for key, at, values in (
+            ("park", self.days_ago(2, 16, 30), (5, 4, 4)),
+            ("kim", self.days_ago(2, 17), (4, 4, 5)),
+        ):
+            self.interviewer_scores(r2n1, key, at, [(c, v, t) for (c, t), v in zip(p1_round2, values)])
+        p2 = [
+            ("시스템 설계", "대안 비교와 선택 근거가 분명함."),
+            ("운영·장애 대응", "관측성 구축 경험이 구체적."),
+            ("코드 품질", "테스트 전략 설명이 구체적."),
+            ("협업과 커뮤니케이션", "타 팀과의 합의 과정이 명확."),
+        ]
+        for done, panel_keys, values in (
+            (r1n12, ("lee", "jung"), ((5, 4, 4, 4), (4, 5, 4, 4))),
+            (r1n20, ("jung", "lee"), ((3, 4, 3, 3), (3, 3, 3, 4))),
+        ):
+            for i, key in enumerate(panel_keys):
+                self.interviewer_scores(
+                    done,
+                    key,
+                    done.ended_at + timedelta(minutes=60 + i * 30),
+                    [(c, v, t) for (c, t), v in zip(p2, values[i])],
+                )
+
+        self.decide(
+            r1n1,
+            "passed",
+            "kim",
+            self.days_ago(8, 10),
+            "공정 문제 해결과 데이터 근거가 구체적이고 재발 방지까지 연결함. 2차에서 리더십과 조직 간 영향력 확인 필요.",
+        )
+        self.check_point(
+            r1n1,
+            "kim",
+            self.days_ago(9, 16),
+            "협업과 커뮤니케이션",
+            "양산 이관 때 다른 부서를 설득한 경험은 짧게만 언급됨. 2차에서 영향력 사례로 확인.",
+        )
+        self.decide(
+            r1n9,
+            "passed",
+            "park",
+            self.days_ago(5, 11),
+            "데이터로 현장 직감과 다른 결론을 설득한 과정이 좋음. 증착 쪽 깊이는 2차에서 확인.",
+        )
+        self.check_point(
+            r1n9,
+            "park",
+            self.days_ago(6, 12, 30),
+            "공정·장비 이해",
+            "증착 공정 경험은 서류 대비 설명이 얕음. 2차에서 책임 범위와 함께 확인.",
+        )
+        self.decide(
+            r1n12,
+            "passed",
+            "lee",
+            self.days_ago(4, 10),
+            "추론 서빙 설계와 운영 근거가 구체적. 마지막 차수 합격으로 최종 합격 후보.",
+        )
+        self.decide(
+            r1n20,
+            "hold",
+            "jung",
+            self.days_ago(3, 15),
+            "장애 회고 경험은 좋으나 설계 리딩 근거가 부족. 다른 지원자와 비교한 뒤 결정.",
+        )
+        self.decide(
+            r1n20,
+            "rejected",
+            "lee",
+            self.days_ago(2, 11),
+            "같은 차수 지원자 대비 설계와 추론 서빙 근거가 부족해 불합격.",
         )
 
     def transcript(
@@ -712,6 +1077,35 @@ class _Seeder:
             sess,
             session_id("c3"),
             model=AI_MODEL,
+        )
+        log(
+            self.minutes(-200),
+            user,
+            "round.decided",
+            "application",
+            application_id(3),
+            who="kim",
+            decision="passed",
+            round=1,
+        )
+        log(
+            self.minutes(-190),
+            user,
+            "session.scheduled",
+            sess,
+            session_id("s3"),
+            who="kim",
+            round=2,
+        )
+        log(
+            self.minutes(-150),
+            user,
+            "round.decided",
+            "application",
+            application_id(14),
+            who="lee",
+            decision="hold",
+            round=1,
         )
         log(
             self.minutes(-180),

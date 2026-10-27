@@ -1,7 +1,8 @@
-"""FR-02: draft a competency dictionary (competencies + 1-5 BARS) from the JD.
+"""FR-02: draft a competency dictionary (competencies + 1-5 BARS) for one interview round.
 
-The draft becomes a new, unapproved version; people edit and approve it. The JD is company text,
-so no candidate data is involved.
+The draft becomes a new, unapproved version of the round; people edit and approve it. The model
+sees the JD, the round's name (what it is for) and the competencies earlier rounds already look at,
+so a later round (임원 면접) does not just repeat round 1. All company text, no candidate data.
 """
 
 from __future__ import annotations
@@ -18,14 +19,24 @@ from interview_assistant.ai.prompts import (
     competency_prompt,
 )
 from interview_assistant.domain import Competency
-from interview_assistant.models import CompetencySet, JobPosting
+from interview_assistant.interviews import approved_set, full_name, latest_set, rounds_of
+from interview_assistant.models import CompetencySet, InterviewRound
 from interview_assistant.models.base import new_id
 
 _COMPETENCIES = TypeAdapter(list[Competency])
 
 
-async def draft_competency_set(db: Session, ai: AiGateway, posting: JobPosting) -> CompetencySet:
-    latest = posting.competency_sets[-1] if posting.competency_sets else None
+async def draft_competency_set(
+    db: Session, ai: AiGateway, round_: InterviewRound
+) -> CompetencySet:
+    posting = round_.posting
+    latest = latest_set(round_)
+    earlier = [
+        c["name"]
+        for r in rounds_of(posting)
+        if r.position < round_.position and (s := approved_set(r)) is not None
+        for c in s.competencies
+    ]
     set_id = new_id()
     result = await ai.generate(
         db,
@@ -37,11 +48,14 @@ async def draft_competency_set(db: Session, ai: AiGateway, posting: JobPosting) 
                 title=posting.title,
                 job_family=posting.job_family,
                 jd_text=posting.jd_text,
+                round_name=full_name(round_),
+                earlier_rounds=list(dict.fromkeys(earlier)),
                 current=latest.competencies if latest else [],
             ),
             schema=COMPETENCY_SCHEMA,
             target_type="competency_set",
             target_id=set_id,
+            details={"round_id": round_.id},
         ),
     )
     try:
@@ -54,6 +68,7 @@ async def draft_competency_set(db: Session, ai: AiGateway, posting: JobPosting) 
     drafted = CompetencySet(
         id=set_id,
         posting=posting,
+        round=round_,
         version=(latest.version if latest else 0) + 1,
         competencies=[c.model_dump() for c in unique],
     )

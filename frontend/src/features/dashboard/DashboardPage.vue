@@ -5,6 +5,7 @@ import {
   CalendarClockIcon,
   CalendarOffIcon,
   ClipboardListIcon,
+  GavelIcon,
   HistoryIcon,
   InboxIcon,
   MicIcon,
@@ -20,6 +21,8 @@ import FadeIn from '@/components/common/FadeIn.vue'
 import Page from '@/components/common/Page.vue'
 import PageHeader from '@/components/common/PageHeader.vue'
 import Pseudonym from '@/components/common/Pseudonym.vue'
+import RoundBadge from '@/components/common/RoundBadge.vue'
+import StepStatusChip from '@/components/common/StepStatusChip.vue'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
@@ -36,7 +39,9 @@ const dash = useDashboard()
 const activity = useActivity(14)
 const today = new Date()
 
-const live = computed(() => dash.data?.today_sessions.find((s) => s.status === 'in_progress'))
+const running = computed(() => dash.data?.today_sessions.filter((s) => s.status === 'in_progress') ?? [])
+// Several interviews can run at once: the signed-in interviewer's comes first.
+const live = computed(() => running.value.find((s) => s.interviewers.some((i) => i.interviewer_id === me.data?.id)) ?? running.value[0])
 const upcoming = computed(() => dash.data?.today_sessions.filter((s) => s.status === 'scheduled').length ?? 0)
 const openPostings = computed(() => dash.data?.pipeline.filter((p) => p.posting.status === 'open').length ?? 0)
 const applications = computed(() => dash.data?.pipeline.reduce((sum, p) => sum + p.counts.applications, 0) ?? 0)
@@ -69,7 +74,7 @@ const applications = computed(() => dash.data?.pipeline.reduce((sum, p) => sum +
           :delay="0.04"
           label="오늘 면접"
           :value="dash.data.today_sessions.length"
-          :hint="live ? `1건 진행 중 · ${upcoming}건 예정` : `${upcoming}건 예정`"
+          :hint="running.length > 0 ? `${running.length}건 진행 중 · ${upcoming}건 예정` : `${upcoming}건 예정`"
           :icon="CalendarClockIcon"
           to="/sessions"
           :live="Boolean(live)"
@@ -96,7 +101,7 @@ const applications = computed(() => dash.data?.pipeline.reduce((sum, p) => sum +
             <CardHeader>
               <div>
                 <CardTitle>공고별 진행 현황</CardTitle>
-                <CardDescription>서류 → 면접 → 평가 단계별 인원</CardDescription>
+                <CardDescription>서류 → 1차 → 2차 … → 최종, 단계에 도달한 인원</CardDescription>
               </div>
               <Button as-child variant="ghost" size="sm">
                 <RouterLink to="/screening">
@@ -205,6 +210,38 @@ const applications = computed(() => dash.data?.pipeline.reduce((sum, p) => sum +
                   </li>
                 </ul>
                 <EmptyState v-else compact :icon="ClipboardListIcon" title="제출할 평가가 없습니다" />
+              </template>
+              <Skeleton v-else class="mx-2 h-14" />
+            </CardContent>
+          </Card>
+        </FadeIn>
+
+        <FadeIn :delay="0.22">
+          <Card>
+            <CardHeader>
+              <div>
+                <CardTitle>결정 대기</CardTitle>
+                <CardDescription>평가가 끝나 결정을 기다리거나 보류로 둔 차수</CardDescription>
+              </div>
+              <GavelIcon class="size-4 text-muted-foreground" aria-hidden="true" />
+            </CardHeader>
+            <CardContent class="px-3">
+              <template v-if="dash.data">
+                <ul v-if="dash.data.pending_decisions.length > 0" class="space-y-1" data-testid="pending-decisions">
+                  <li v-for="d in dash.data.pending_decisions" :key="d.session_id">
+                    <RouterLink :to="`/sessions/${d.session_id}/evaluation`" class="flex items-center gap-3 rounded-lg px-2.5 py-2.5 transition-colors hover:bg-subtle">
+                      <div class="min-w-0 flex-1">
+                        <div class="flex items-center gap-2">
+                          <Pseudonym :value="d.candidate.pseudonym" size="sm" />
+                          <RoundBadge :round="d.round" />
+                        </div>
+                        <div class="mt-0.5 truncate text-xs text-muted-foreground">{{ d.posting.title }}{{ d.since ? ` · ${formatRelative(d.since)}` : '' }}</div>
+                      </div>
+                      <StepStatusChip :status="d.status" />
+                    </RouterLink>
+                  </li>
+                </ul>
+                <EmptyState v-else compact :icon="GavelIcon" title="결정을 기다리는 지원자가 없습니다" />
               </template>
               <Skeleton v-else class="mx-2 h-14" />
             </CardContent>

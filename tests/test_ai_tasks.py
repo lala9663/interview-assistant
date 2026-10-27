@@ -9,11 +9,18 @@ from sqlalchemy import select
 from interview_assistant.ai.gateway import AiCall, AiGateway
 from interview_assistant.ai.guard import IdentifierInPrompt, check_prompt
 from interview_assistant.ai.prompts import (
+    CARRYOVER_SCHEMA,
+    CHECKPOINT_SCHEMA,
     COMPETENCY_SCHEMA,
+    PRESET_SCHEMA,
     PROFILE_SCHEMA,
     SCORING_SCHEMA,
     SCREENING_SCHEMA,
+    carryover_prompt,
+    checkpoint_prompt,
     competency_prompt,
+    followup_prompt,
+    preset_prompt,
     profile_prompt,
     scoring_prompt,
     screening_prompt,
@@ -160,7 +167,9 @@ def test_fake_model_answers_every_task_in_the_schema_the_app_validates(seed):
     rng = random.Random(seed)
     draft = fake_tasks.respond(
         "CompetencyDraft",
-        competency_prompt(title="t", job_family="SW", jd_text=JD, current=[]),
+        competency_prompt(
+            title="t", job_family="SW", jd_text=JD, round_name="1차 면접", earlier_rounds=[], current=[]
+        ),
         rng,
     )
     assert COMPETENCY_SCHEMA["title"] == "CompetencyDraft"
@@ -199,3 +208,81 @@ def test_fake_model_answers_every_task_in_the_schema_the_app_validates(seed):
         rng,
     )
     assert valid_samples(scored, answer, {c.name for c in competencies})
+
+
+def test_fake_model_answers_the_round_tasks_and_does_not_repeat_earlier_rounds():
+    rng = random.Random(1)
+    competencies = [
+        {"name": "문제 해결", "description": "d", "bars": {k: k for k in "12345"}},
+        {"name": "협업과 커뮤니케이션", "description": "d", "bars": {k: k for k in "12345"}},
+    ]
+    later = fake_tasks.respond(
+        "CompetencyDraft",
+        competency_prompt(
+            title="t",
+            job_family="SW",
+            jd_text=JD,
+            round_name="2차 임원 면접",
+            earlier_rounds=["문제 해결", "협업과 커뮤니케이션"],
+            current=[],
+        ),
+        rng,
+    )
+    names = [c["name"] for c in later["competencies"]]
+    assert "문제 해결" not in names and "주도성" in names  # what round 1 did not look at
+
+    first = fake_tasks.respond(
+        PRESET_SCHEMA["title"],
+        preset_prompt(
+            title="t", round_name="1차 면접", competencies=competencies, earlier_questions=[], existing_questions=[]
+        ),
+        rng,
+    )["questions"]
+    assert {q["competency"] for q in first} == {"문제 해결", "협업과 커뮤니케이션"}
+    deeper = fake_tasks.respond(
+        PRESET_SCHEMA["title"],
+        preset_prompt(
+            title="t",
+            round_name="2차 임원 면접",
+            competencies=competencies,
+            earlier_questions=[q["question"] for q in first],
+            existing_questions=[],
+        ),
+        rng,
+    )["questions"]
+    assert deeper and not {q["question"] for q in deeper} & {q["question"] for q in first}
+
+    earlier = [
+        ("1차-Q1", "1차", "가장 어려웠던 문제는?", "식각 산포가 커졌습니다. 3주치 데이터를 비교해 원인을 찾았습니다."),
+        ("1차-Q2", "1차", "협업 경험은?", "생산팀과 이야기했습니다. 잘 마무리됐습니다."),
+    ]
+    carried = fake_tasks.respond(
+        CARRYOVER_SCHEMA["title"],
+        carryover_prompt(round_name="2차 임원 면접", competencies=competencies, earlier=earlier, check_points=[]),
+        rng,
+    )["questions"]
+    assert carried[0]["based_on"] == "1차-Q2"  # the thinnest earlier answer first
+    assert carried[0]["grounding"] in earlier[1][3] and "1차" in carried[0]["question"]
+    assert all(q["question"] not in [e[2] for e in earlier] for q in carried)
+
+    points = fake_tasks.respond(
+        CHECKPOINT_SCHEMA["title"],
+        checkpoint_prompt(competencies=competencies, qa=[(i, e[2], e[3]) for i, e in enumerate(earlier, start=1)]),
+        rng,
+    )["points"]
+    assert points[0]["qa_seq"] == 2 and points[0]["evidence"] in earlier[1][3]
+
+    asked = "1차에서 원인을 어떻게 좁혀 갔고, 다른 가설은 어떻게 배제했나요?"
+    text = fake_tasks.follow_up_text(
+        followup_prompt(
+            competencies=competencies,
+            target_competency="문제 해결",
+            previous=[],
+            earlier_rounds=[("1차", asked, "히터 보정으로 해결했습니다.")],
+            question="q",
+            answer="원인을 찾으려고 3주치 데이터를 비교했습니다. 결국 히터 보정으로 해결했습니다.",
+        ),
+        rng,
+    )
+    assert "1차에서는" in text  # builds on the earlier answer
+    assert "원인을 어떻게 좁혀 갔고" not in text  # does not ask round 1's question again

@@ -61,7 +61,7 @@ from interview_assistant.documents import (
 from interview_assistant.documents.base import ConverterMissing, EncryptedDocument
 from interview_assistant.documents.reading import DocumentReader
 from interview_assistant.intake.forms import FormFields, build_profile, text_blocks, with_texts
-from interview_assistant.interviews import approved_set
+from interview_assistant.interviews import screening_set
 from interview_assistant.models import (
     ActorType,
     Application,
@@ -598,7 +598,7 @@ async def _apply(
         visible += [b for group in attachment_blocks for b in group if b.kind is not BlockKind.hidden]
         document_text = render_blocks(visible)
         info = _document_info(inp, documents, form_blocks, attachment_blocks, replacements)
-        approved = approved_set(posting)
+        approved = screening_set(posting)
         phase = "model"
         try:
             if deid_fields is not None and deid_fields.has_profile:

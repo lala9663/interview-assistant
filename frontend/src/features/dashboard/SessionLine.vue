@@ -6,7 +6,8 @@ import type { SessionSummary } from '@/api/types'
 import ModeBadge from '@/components/common/ModeBadge.vue'
 import PanelAvatars from '@/components/common/PanelAvatars.vue'
 import Pseudonym from '@/components/common/Pseudonym.vue'
-import SessionStatusBadge from '@/components/common/SessionStatusBadge.vue'
+import RoundBadge from '@/components/common/RoundBadge.vue'
+import StepStatusChip from '@/components/common/StepStatusChip.vue'
 import { formatTime } from '@/lib/time'
 import { cn } from '@/lib/utils'
 
@@ -30,7 +31,8 @@ defineProps<{ s: SessionSummary }>()
       <div class="min-w-0 flex-1">
         <div class="flex items-center gap-2">
           <Pseudonym :value="s.candidate.pseudonym" size="sm" />
-          <SessionStatusBadge :status="s.status" />
+          <RoundBadge :round="s.round" />
+          <StepStatusChip :status="s.round_status" />
         </div>
         <div class="mt-0.5 flex items-center gap-2 text-xs text-muted-foreground">
           <span class="truncate">{{ s.posting.title }}</span>

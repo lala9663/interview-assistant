@@ -1,6 +1,6 @@
 # API 계약 (프론트 ↔ 백엔드)
 
-2026-10-26 · v0.4 · 프론트(`frontend/`)가 모의 API(MSW)로 먼저 쓰던 계약을 백엔드(FastAPI, `src/interview_assistant/api/`)가 그대로 구현했다. 모든 경로가 동작하고, AI는 Provider 인터페이스를 거쳐 돈다. 어떤 provider가 어느 역할을 맡을지는 관리자 화면(관리자 > 모델 설정, 2장 마지막 절)에서 서버 재시작 없이 바꾸고, `config/providers*.yaml`은 처음 기동할 때의 기본값만 정한다. 첫 실제 provider로 로컬 Whisper STT(`faster_whisper`)가 붙었다. 지원서는 서류 선별 화면의 업로드와 채용 사이트 연동(서명된 이벤트 수신, 2장 "채용 사이트 연동") 두 통로로 들어오고, 둘 다 같은 처리 함수(`intake/service.py`)를 거친다. 채용 시스템 부서에 넘길 연동 명세는 [site-intake-spec.md](site-intake-spec.md). 프론트는 `npm run dev:api`로 실제 API에 붙는다. 실제 LLM 연결과 품질 검증은 남은 과제다(5장).
+2026-10-27 · v0.5 · 면접을 여러 차수(전형 차수: 1차 직무 면접, 2차 임원 면접 …)로 진행한다. 공고마다 차수 목록이 있고, 역량 사전·사전 질문은 차수별, 세션은 한 차수에 속하며, 차수마다 사람이 합격·보류·불합격을 정한다(2장 "전형", 4장 0006). 프론트(`frontend/`)가 모의 API(MSW)로 먼저 쓰던 계약을 백엔드(FastAPI, `src/interview_assistant/api/`)가 그대로 구현했다. 모든 경로가 동작하고, AI는 Provider 인터페이스를 거쳐 돈다. 어떤 provider가 어느 역할을 맡을지는 관리자 화면(관리자 > 모델 설정, 2장 마지막 절)에서 서버 재시작 없이 바꾸고, `config/providers*.yaml`은 처음 기동할 때의 기본값만 정한다. 첫 실제 provider로 로컬 Whisper STT(`faster_whisper`)가 붙었다. 지원서는 서류 선별 화면의 업로드와 채용 사이트 연동(서명된 이벤트 수신, 2장 "채용 사이트 연동") 두 통로로 들어오고, 둘 다 같은 처리 함수(`intake/service.py`)를 거친다. 채용 시스템 부서에 넘길 연동 명세는 [site-intake-spec.md](site-intake-spec.md). 프론트는 `npm run dev:api`로 실제 API에 붙는다. 실제 LLM 연결과 품질 검증은 남은 과제다(5장).
 
 - 타입 정의 원본: [`frontend/src/api/types.ts`](../frontend/src/api/types.ts) (모델과 필드 이름·enum 값 동일). 백엔드 응답 스키마: [`api/schemas.py`](../src/interview_assistant/api/schemas.py) (필드 단위로 같다. `tests/test_api_contract.py`가 enum과 이 문서의 경로 목록을 대조한다)
 - 모의 구현: [`frontend/src/mocks/handlers.ts`](../frontend/src/mocks/handlers.ts) (요청 검증, 오류 코드, 스트림 이벤트 순서까지 이 문서와 같다)
@@ -54,23 +54,45 @@
 | 메서드 | 경로 | 요청 | 응답 | 단계 |
 | --- | --- | --- | --- | --- |
 | GET | `/api/me` | | `Interviewer` | 6 |
-| GET | `/api/dashboard` | | `DashboardSummary` {pipeline[], today_sessions[], pending_my_scores[], hold_count} | 6 |
+| GET | `/api/dashboard` | | `DashboardSummary` {pipeline[], today_sessions[], pending_my_scores[], pending_decisions[], hold_count}. `pending_decisions`: 평가가 끝나 결정을 기다리는 차수(`deciding`)와 보류로 결정된 차수(`hold`), 오래된 순 {session_id, application_id, candidate, posting, round, status, since} | 6, 차수 |
 | GET | `/api/activity?limit=20` | | `ActivityItem[]` (AuditLog + actor_label, target_label), 최신순 | 3 |
 
 ### 공고·역량 사전 (FR-02)
 
 | 메서드 | 경로 | 요청 | 응답 | 단계 |
 | --- | --- | --- | --- | --- |
-| GET | `/api/postings` | | `PostingSummary[]` (jd_text 제외, counts, latest/approved competency set 요약) | 4 |
-| GET | `/api/postings/{id}` | | `PostingDetail` (JobPosting + counts) | 4 |
+| GET | `/api/postings` | | `PostingSummary[]` (jd_text 제외, counts, rounds[], 1차의 latest/approved competency set 요약) | 4 |
+| GET | `/api/postings/{id}` | | `PostingDetail` (JobPosting + counts + rounds[]) | 4 |
 | PATCH | `/api/postings/{id}` | `{site_posting_no}` (null·빈 값이면 연결 해제) | `PostingDetail`. 채용 사이트 공고 번호 연결. 영문·숫자·`._:-` 64자 이하(422), 다른 공고가 쓰는 번호면 409. 감사 로그 `posting.site_linked` {from, to} | 연동 |
-| GET | `/api/postings/{id}/competency-sets` | | `CompetencySet[]` 버전 오름차순 | 4 |
-| POST | `/api/postings/{id}/competency-sets` | `{competencies: Competency[]}` | 201 `CompetencySet` (version = 최신+1, 초안) | 4 |
-| POST | `/api/postings/{id}/competency-sets/generate` | | 201 `CompetencySet` AI 초안 (JD 기반, 최신 버전이 있으면 그것을 다듬음, 감사 로그 actor ai) | 4 |
+| GET | `/api/postings/{id}/competency-sets` | | `CompetencySet[]` 모든 차수의 버전, 차수 순·버전 오름차순 (`round_id`로 구분) | 4 |
 | PUT | `/api/competency-sets/{id}` | `{competencies}` | `CompetencySet`. 확정본이면 409 | 4 |
-| POST | `/api/competency-sets/{id}/approve` | | `CompetencySet` (approved_by = 로그인 면접관 id, approved_at). 이미 확정이면 409. 직전 확정본의 사전 질문 중 역량이 남은 것을 옮겨 붙인다 | 4 |
+| POST | `/api/competency-sets/{id}/approve` | | `CompetencySet` (approved_by = 로그인 면접관 id, approved_at). 이미 확정이면 409. 사전 질문이 하나도 없는 버전(AI 초안)이면 같은 차수 직전 확정본의 질문 중 역량이 남은 것을 옮겨 붙인다 | 4 |
+
+역량 사전 버전을 만드는 것과 AI 초안은 차수 단위다(아래 "전형").
 
 `Competency` = `{name, description, bars: {"1": "...", ..., "5": "..."}}` (`CompetencySet.competencies` JSON 그대로). 다섯 단계 모두 필수.
+
+### 전형 (차수)
+
+| 메서드 | 경로 | 요청 | 응답 | 단계 |
+| --- | --- | --- | --- | --- |
+| GET | `/api/postings/{id}/rounds` | | `RoundSummary[]` 순서대로 {InterviewRound, is_last, latest/approved_competency_set, preset_count(확정본의 사전 질문 수), sessions(취소 아닌 세션 수), locked} | 차수 |
+| POST | `/api/postings/{id}/rounds` | `CreateRoundRequest` {name, default_mode?, recommended_interviewers?(1~10), show_previous_scores?} | 201 `RoundSummary`. 마지막 뒤에 붙는다. 이름 없음·인원 범위 밖 422, 6개 넘으면 409. 감사 로그 `round.created` | 차수 |
+| PATCH | `/api/rounds/{id}` | `UpdateRoundRequest` (보낸 칸만) | `RoundSummary`. 감사 로그 `round.updated` {칸: {from, to}} | 차수 |
+| DELETE | `/api/rounds/{id}` | | 204. 세션이나 결정이 있으면 409, 공고의 마지막 하나면 409. 뒤 차수는 앞으로 당겨진다. 감사 로그 `round.deleted` | 차수 |
+| PUT | `/api/postings/{id}/rounds/order` | `{round_ids}` (공고의 차수를 모두 한 번씩) | `RoundSummary[]`. 빠지거나 겹치면 422, 세션·결정이 있는 차수의 자리가 바뀌면 409. 감사 로그 `round.reordered` | 차수 |
+| GET | `/api/rounds/{id}/competency-sets` | | `CompetencySet[]` 그 차수의 버전 오름차순 | 차수 |
+| POST | `/api/rounds/{id}/competency-sets` | `{competencies: Competency[]}` | 201 `CompetencySet` (version = 차수의 최신+1, 초안). 차수의 확정본 사전 질문 중 역량이 남은 것을 복사해 둔다(초안에서 고칠 수 있게) | 차수 |
+| POST | `/api/rounds/{id}/competency-sets/generate` | | 201 `CompetencySet` AI 초안. JD, 차수 이름(목적), 이전 차수가 이미 보는 역량을 함께 보낸다(competency-v0.3). 감사 로그 actor ai | 차수 |
+| GET | `/api/competency-sets/{id}/preset-questions` | | `PresetQuestion[]` 순서대로 | 차수 |
+| POST | `/api/competency-sets/{id}/preset-questions` | `{competency, question, intent?}` | 201 `PresetQuestion`. 초안만(확정본 409), 그 버전에 없는 역량 422 | 차수 |
+| POST | `/api/competency-sets/{id}/preset-questions/generate` | | `PresetQuestion[]` 초안의 전체 목록. AI가 역량마다 2개까지 더한다. 이전 차수의 사전 질문과 이미 있는 질문은 반복하지 않는다(preset-v0.1). 초안만 | 차수 |
+| PUT | `/api/preset-questions/{id}` | `{competency, question, intent?}` | `PresetQuestion`. 초안만 | 차수 |
+| DELETE | `/api/preset-questions/{id}` | | 204, 뒤 질문의 순서를 당긴다. 초안만 | 차수 |
+
+`InterviewRound` = {id, posting_id, position, label, name, default_mode, recommended_interviewers, show_previous_scores, created_at}. `label`은 항상 위치에서 나온다("1차", "2차" …). `name`은 차수의 목적("직무 면접", "임원 면접"). 화면의 헤더 표기는 "2차 · 임원 면접". `RoundRef` = {id, position, label, name, is_last}. `show_previous_scores`는 그 차수의 면접관이 이전 차수의 점수를 보는지다(기본 꺼짐: 이전 점수가 기준점이 되지 않게. 확인할 점과 메모는 늘 보인다).
+
+진행 규칙: 1차는 서류 통과, N+1차는 N차 합격(현재 결정이 `passed`)인 지원서만 대상이다. 불합격이면 다음 차수로 가지 않고, 보류는 결정 대기 목록(대시보드 `pending_decisions`)에 남는다. 마지막 차수 합격 = 최종 합격 후보(`final`). 공식 결과는 채용 사이트에 기록한다(이 시스템은 사본이고 사이트로 보내지 않는다, 5장).
 
 `JobPosting.site_posting_no`(`PostingSummary`·`PostingDetail`에도 있음)는 채용 사이트 공고 번호다. 사이트 이벤트는 공고를 이 번호로 가리킨다. 시드는 P1·P2를 `DS-2026-0101`·`DS-2026-0102`에 연결하고 P3은 비워 둔다(연결 전 이벤트가 `unknown_posting`으로 실패했다가 연결 후 다시 처리되는 흐름을 보이려고).
 
@@ -78,18 +100,32 @@
 
 | 메서드 | 경로 | 요청 | 응답 | 단계 |
 | --- | --- | --- | --- | --- |
-| GET | `/api/postings/{id}/applications` | | `ApplicationRow[]` {application_id, candidate{id,pseudonym}, screening, years_experience, top_skills, stage, channel, created_at}. 철회된 지원서는 빠진다 | 5 |
+| GET | `/api/postings/{id}/applications` | | `ApplicationRow[]` {application_id, candidate{id,pseudonym}, screening, years_experience, top_skills, stage, progress[], channel, created_at}. 철회된 지원서는 빠진다 | 5, 차수 |
 | POST | `/api/postings/{id}/applications` | multipart: `file`, `name`(필수), `phone`, `email`, `birthdate`, `aliases`, `addresses`, `schools`, `companies` (여러 값은 줄바꿈) | 201 `UploadResult` {application_id, candidate{id,pseudonym}, screening, document} | 5 |
-| GET | `/api/applications/{id}` | | `ApplicationDetail` {application, candidate, posting, screening, sessions[], document} | 5 |
+| GET | `/api/applications/{id}` | | `ApplicationDetail` {application, candidate, posting, screening, sessions[], document, stage, progress[], decisions[]} | 5, 차수 |
+| GET | `/api/applications/{id}/decisions` | | `RoundDecision[]` 모든 차수의 모든 개정, 최신순 | 차수 |
 | PATCH | `/api/screenings/{id}` | `{status}` | `Screening`. 사람이 바꾼 상태, 감사 로그 `screening.status_changed` {from, to} | 5 |
 | GET | `/api/candidates` | | `CandidateIndexItem[]` (명령 팔레트 검색용) | 5 |
-| GET | `/api/applications/schedulable` | | `SchedulableApplication[]` 서류 통과 + 진행·예정·완료 세션 없음 | 6 |
+| GET | `/api/applications/schedulable?round=` | | `SchedulableApplication[]` 다음 차수를 기다리는 지원서 {application_id, candidate, posting, fit_score, round, mode·recommended_interviewers(그 차수 기본값), since(이전 단계를 통과한 시각)}. 1차: 서류 통과 + 그 차수 세션 없음, N차: N-1차 합격 + 그 차수 세션 없음. `round`(1 = 1차)로 거른다 | 6, 차수 |
 
 정렬·필터는 공고당 수십 건이라 지금은 프론트에서 한다. 수백 건이 되면 `?status=&q=&sort=`를 추가한다.
 
 `Screening.rationale`은 줄 단위 텍스트다. `+ `로 시작하면 강점, `- `로 시작하면 확인 필요, 나머지는 요약. 구조화 컬럼이 생기면 이 규칙은 버린다.
 
-`stage` 계산: 진행 중 세션 있으면 `interviewing`, 예정 세션 있으면 `interview_scheduled`, 완료 세션이 없으면 `screening`, 완료 세션이 모두 평가 완료면 `evaluated`, 아니면 `interviewed`. 평가 완료 = AI 채점 completed + 세션 면접관 전원 제출.
+`progress` = 서류 → 각 차수 → 최종의 `ProgressStep` {kind screening/round/final, round, status, at, session_id}. `stage`는 그중 지금 단계(통과하지 않은 첫 단계, 모두 통과면 최종). 차수의 `status`는 그 차수의 취소 아닌 최근 세션과 현재 결정에서 나온다(`interviews.py`):
+
+| status | 뜻 | 화면 |
+| --- | --- | --- |
+| `waiting` | 차수에 도달, 세션 없음 | 일정 대기 |
+| `scheduled` | 세션 예정 | 예정 |
+| `in_progress` | 진행 중 | 진행 중 |
+| `evaluating` | 끝났고 면접관 점수가 다 안 들어옴 | 평가 대기 |
+| `deciding` | 면접관 전원 제출, 결정 없음 | 결정 대기 |
+| `passed` / `hold` / `rejected` | 현재 결정 | 합격 / 보류 / 불합격 |
+
+서류 단계의 status는 선별 상태(`passed`/`hold`/`rejected`, 선별 전이면 `waiting`), 최종은 마지막 차수에 합격했을 때만 `passed`. 아직 도달하지 않은 단계는 `null`. `at`은 그 상태가 된 시각(선별·예정·시작·종료·결정).
+
+`PostingCounts`에는 기존 칸(applications, passed, hold, rejected, interviewing, interviewed, evaluated)과 함께 `rounds[]` {round, reached, waiting, scheduled, in_progress, evaluating, deciding, passed, hold, rejected}와 `final`(최종 합격 후보 수)이 있다. 대시보드 공고별 진행 현황이 서류 → 1차 → 2차 → 최종 칸을 이것으로 그린다.
 
 `channel`(수신 경로): `upload` 직접 업로드, `site` 채용 사이트 연동. `Application`에도 `channel`과 `withdrawn_at`(사이트에서 철회한 시각)이 있다. 철회된 지원서는 목록·건수·명령 팔레트·면접 잡기 후보에서 빠지고 상세는 그대로 열린다. 면접을 새로 잡으면 409.
 
@@ -108,11 +144,12 @@
 
 | 메서드 | 경로 | 요청 | 응답 | 단계 |
 | --- | --- | --- | --- | --- |
-| GET | `/api/sessions?status=` | | `SessionSummary[]` (candidate, posting, interviewers, qa_count, ai_scoring, submitted_interviewer_ids) | 6 |
-| POST | `/api/sessions` | `CreateSessionRequest` {application_id, mode, scheduled_at, interviewers[{interviewer_id, role}]} | 201 `SessionSummary`. 주관은 정확히 1명(422), 이미 예정·진행 중이면 409 | 6 |
-| GET | `/api/sessions/{id}` | | `SessionDetail` {session, posting, card, interviewers, competency_set(세션에 고정된 확정본), preset_questions, qa_items, notes} | 6 |
+| GET | `/api/sessions?status=` | | `SessionSummary[]` (candidate, posting, round, round_status, interviewers, qa_count, ai_scoring, submitted_interviewer_ids) | 6 |
+| POST | `/api/sessions` | `CreateSessionRequest` {application_id, round_id?, mode, scheduled_at, interviewers[{interviewer_id, role}]} | 201 `SessionSummary`. `round_id`를 빼면 지원서가 기다리는 차수. 주관은 정확히 1명(422), 다른 공고의 차수 422, 대상이 아니면 409("1차 합격자만 2차 면접을 잡을 수 있습니다."), 같은 차수 세션이 이미 있으면 409("이미 예정된 2차 면접이 있습니다.", 끝났으면 "…이미 마쳤습니다.") | 6, 차수 |
+| GET | `/api/sessions/{id}` | | `SessionDetail` {session, posting, round(RoundView: RoundRef + rounds, show_previous_scores), card, interviewers, competency_set(세션에 고정된 그 차수 확정본), preset_questions, carryover_questions, qa_items, notes} | 6, 차수 |
 | POST | `/api/sessions/{id}/consent` | `{consent_recording: bool}` | `SessionDetail`. scheduled일 때만, 아니면 409. Candidate.consent_recording/consent_at 갱신 | 6 |
-| POST | `/api/sessions/{id}/start` | | `SessionDetail`. status in_progress, started_at, 그때의 확정 역량 사전을 세션에 고정, has_recording = 동의 여부. 동의 안 했으면 수기 모드 | 6 |
+| POST | `/api/sessions/{id}/start` | | `SessionDetail`. status in_progress, started_at, 그때의 그 차수 확정 역량 사전을 세션에 고정, has_recording = 동의 여부. 동의 안 했으면 수기 모드 | 6 |
+| POST | `/api/sessions/{id}/carryover-questions` | | `SessionDetail`. 이어 질문: AI가 이전 차수의 비식별 Q&A와 확인할 점으로 이 지원자에게 더 깊이 물을 질문 2~3개를 만든다(carryover-v0.1). 이전 질문 반복 금지, 기댄 이전 답변을 그대로 인용(`origin.grounding`). 아직 묻지 않은 이어 질문은 바꾸고 물은 것은 남긴다. 1차 세션·예정/진행 중이 아닌 세션·마친 이전 차수가 없으면 409, 식별 정보가 남아 가드가 막으면 502 | 차수 |
 | POST | `/api/sessions/{id}/end` | | `SessionDetail`. completed, ended_at. 답변 중이던 질문은 그때까지 들은 전사로 닫고, AI 채점을 백그라운드로 시작 | 6, 8 |
 | POST | `/api/sessions/{id}/qa-items` | `CreateQARequest` {question, question_source, preset_question_id?, suggestion?{batch_id, suggestion_id, edited, original_question}} | 201 `QAItem` (seq = 마지막+1). in_progress가 아니면 409. 다른 세션의 사전 질문·모르는 제안이면 422, 이미 쓴 제안이면 409 | 6, 7 |
 | PATCH | `/api/qa-items/{id}` | `{answer_text}` | `QAItem` (answer_deidentified, answered_at). 수기 모드·STT 장애 시. in_progress가 아니면 409 | 6 |
@@ -121,7 +158,11 @@
 | GET | `/api/sessions/{id}/transcript/stream` | | SSE (3장) | 11 |
 | POST | `/api/sessions/{id}/follow-ups` | `{qa_item_id}` | SSE (3장) | 7 |
 
-`SessionDetail.card` (FR-04 지원자 요약 카드) = {candidate{id, pseudonym, consent_recording, consent_at}, profile, screening{fit_score, status, rationale}, previous_sessions[]}.
+`SessionDetail.card` (FR-04 지원자 요약 카드) = {candidate{id, pseudonym, consent_recording, consent_at}, profile, screening{fit_score, status, rationale}, previous_sessions[], previous_rounds[]}.
+
+`previous_rounds[]` (이전 차수 요약, 차수 순) = {round, session, decision, qa_count, check_points[], notes[{id, content, author_name, created_at}], scores_visible, scores, decision_reason}. 확인할 점(면접관이 남긴 것과 AI가 근거와 함께 뽑은 것)과 메모는 늘 온다. `scores`(역량별 면접관 평균·AI 평균, 합산 안 함)와 `decision_reason`은 이 세션 차수의 `show_previous_scores`가 켜졌을 때만 오고, 아니면 `null`이다(서버가 빼고 보낸다).
+
+`PresetQuestion` = {id, competency, question, intent, origin}. 차수 사전 질문은 `origin`이 `null`. 이어 질문(`carryover_questions`)은 `origin` = {round(이전 차수), question(그때 질문), grounding(그때 답변 인용), rationale, model}. 이어 질문도 `question_source: preset` + `preset_question_id`로 기록한다.
 
 꼬리질문은 제안일 뿐이다 (FR-06). 프론트는 면접관이 "이 질문 사용" 또는 "수정 후 사용"을 눌렀을 때만 `POST qa-items`를 `question_source: ai_suggested`와 `suggestion`으로 보낸다. 고친 경우 `edited: true`, `original_question`은 AI 원문. 직접 입력은 `interviewer`, 사전 질문은 `preset` + `preset_question_id`. 서버는 제안 행에 쓰인 질문과 수정 여부를 기록하고(`FollowUpSuggestion.used_qa_item_id`, `edited`), 질문에 대상 역량(`QAItem.target_competency`)을 붙인다.
 
@@ -129,8 +170,15 @@
 
 | 메서드 | 경로 | 요청 | 응답 | 단계 |
 | --- | --- | --- | --- | --- |
-| GET | `/api/sessions/{id}/evaluation` | | `Evaluation` {session, candidate, posting, competency_set, qa_items, ai{status, model, prompt_version, samples, scores[], summary[]}, interviewers[{interviewer, role, submitted_at, scores[]}]} | 8 |
+| GET | `/api/sessions/{id}/evaluation` | | `Evaluation` {session, candidate, posting, round, competency_set, qa_items, ai{status, model, prompt_version, samples, scores[], summary[]}, interviewers[{interviewer, role, submitted_at, scores[]}], decision, check_points[]} | 8, 차수 |
 | PUT | `/api/sessions/{id}/scores/{interviewer_id}` | `{scores: [{competency, score(1~5 정수), comment}]}` | `Evaluation`. 확정 역량 전부 필요(422), 역량에 없는 이름 422, completed 아니면 409, 패널이 아니면 409. 같은 면접관의 이전 점수는 교체 | 8 |
+| POST | `/api/sessions/{id}/decision` | `{decision: passed/hold/rejected, reason}` | `Evaluation`. N차 결정. 사유 필수(422, 1000자). 면접관 전원 제출 전·종료 전 409, 다음 차수 세션이 이미 있으면 409(결정을 바꿀 수 없음), 그 면접의 면접관도 관리자도 아니면 403. 바꾸면 새 개정(revision+1)으로 쌓이고 이전 것은 남는다. 사유는 비식별화. 감사 로그 `round.decided` 또는 `round.decision_changed` {from, to, revision, round, final} | 차수 |
+| POST | `/api/sessions/{id}/check-points` | `{text, competency?}` | 201 `CheckPoint` (source interviewer, 비식별화). 종료된 면접만(409), 그 면접 역량이 아니면 422. 감사 로그 `check_point.created` | 차수 |
+| DELETE | `/api/check-points/{id}` | | 204. 직접 남긴 것만(AI 것이나 남의 것은 403) | 차수 |
+
+`Evaluation.decision` = `DecisionPanel` {current, history[](최신순), can_decide, blocked_reason, is_last_round, next_round}. `RoundDecision` = {id, application_id, round_id, session_id, revision, decision, reason, decided_by, decided_by_name, created_at}. 마지막 차수면 화면이 "합격하면 최종 합격 후보가 됩니다. 공식 결과는 채용 사이트에 기록합니다"를 보여 준다.
+
+`CheckPoint` = {id, session_id, source interviewer/ai, competency, text, evidence, qa_item_id, author_id, author_name, model, created_at}. AI 것은 AI 채점이 끝나기 전에 같은 백그라운드 작업에서 뽑는다(checkpoint-v0.1): 답변마다 근거가 약한 곳 최대 3개, `evidence`는 비식별 답변에서 그대로 복사한 문장이어야 저장한다. 실패해도 채점은 완료된다.
 
 - AI 점수와 면접관 점수는 같은 `Score` 테이블, `evaluator_type`으로 나눈다. API는 둘을 다른 필드(`ai.scores`, `interviewers[].scores`)로 주고, 둘을 섞은 값(합계, 평균, 가중 평균)은 어디에도 내려보내지 않는다.
 - AI 점수는 답변(QA) 단위라 `qa_item_id`가 있고, 면접관 점수는 세션·역량 단위라 `qa_item_id`가 `null`이다(4장).
@@ -265,7 +313,7 @@ data: {"batch_id":"…"}
 - 클라이언트가 연결을 끊으면(새 요청, 화면 이탈) 서버는 모델 스트림을 닫아 호출을 취소한다.
 - 프론트는 받은 후보를 자동으로 질문으로 만들지 않는다.
 
-## 4. 모델 결정 (Alembic 0003, 0004)
+## 4. 모델 결정 (Alembic 0003 ~ 0006)
 
 프론트 계약이 요구했지만 1단계 모델에 자리가 없던 항목을 `migrations/versions/0003_api_support.py`로 채웠다. 모델은 17개(업무정의서 6장 13개 + 비식별 역매핑 + 아래 3개)다.
 
@@ -304,6 +352,18 @@ data: {"batch_id":"…"}
 | 철회 | `Application.withdrawn_at` | 공식 기록은 사이트라 지우지 않고 비활성화한다. 원본 보존·삭제 기간은 정보보호와 정할 일 |
 | 수신 이벤트 | `intake_events` (channel+event_id UNIQUE, type, status, revision, 시각들, posting_no, application_no, 해석된 posting·candidate·application FK, fingerprint, encrypted_payload, failure_code·message·fields, dropped_fields, result) | 큐, 멱등성 기록, 연동 현황 이력을 한 테이블로. 작업 큐를 따로 두지 않아 재시작 뒤에도 잃지 않는다 |
 
+0006 (`migrations/versions/0006_interview_rounds.py`, 2026-10-27):
+
+| 항목 | 결정 | 이유 |
+| --- | --- | --- |
+| 전형 차수 | `interview_rounds` (posting_id, position UNIQUE per posting, name, default_mode, recommended_interviewers 1~10, show_previous_scores) | 차수는 공고마다 다르고 순서가 있다. 짧은 표기("1차")는 위치에서 만들어 순서를 바꿔도 어긋나지 않는다. 진행 방식·권장 인원·이전 점수 공개는 차수의 성격이라 차수에 둔다. 기존 공고는 모두 "1차 면접"(name 면접) 하나로 이관 |
+| 차수별 역량 사전 | `competency_sets.round_id` (NOT NULL, UNIQUE(round_id, version)), `posting_id`는 조회용으로 유지 | 차수마다 보는 역량이 다르다(1차 직무, 2차 임원). 버전은 차수 안에서 센다. 사전 질문은 버전에 묶여 있으니 자연히 차수별. 서류 선별은 1차 확정본을 쓴다. 기존 버전은 모두 1차로 |
+| 세션의 차수 | `interview_sessions.round_id` (NOT NULL), `active_round_id` (예정·진행 중일 때만 round_id, 아니면 NULL, flush 훅이 맞춘다) + UNIQUE(application_id, active_round_id) | 같은 차수 세션이 동시에 둘 열리지 않게 API뿐 아니라 DB도 막는다. 부분 인덱스는 MySQL에 없어 NULL이 겹쳐도 되는 UNIQUE로 대신했다. 끝난 세션은 막지 않아 취소 후 다시 잡을 수 있다(같은 차수를 다시 잡는 것은 API가 막는다) |
+| 차수 결정 | `round_decisions` (application_id, round_id, session_id, revision, decision, reason, decided_by, created_at), UNIQUE(application, round, revision) | 결정은 사람의 기록이고 바뀐 이력이 남아야 해서 덮어쓰지 않고 개정을 쌓는다. 현재 결정 = 가장 큰 revision. 서류의 `Screening.status`와 따로 둔 이유: 서류는 AI 결과 행에 사람이 상태를 정하는 구조이고, 차수 결정은 AI 점수와 분리된 사람의 판단이라 섞지 않는다 |
+| 확인이 필요한 점 | `check_points` (session_id, source interviewer/ai, competency, text, evidence, qa_item_id, author_id, model, prompt_version). CHECK: AI는 evidence 필수, 면접관은 author 필수 | 다음 차수에 넘길 내용은 점수가 아니라 확인할 것이어서 기준점 효과 없이 보여 줄 수 있다. 메모(`candidate_notes`)는 면접 중 기록이라 그대로 두고 따로 만들었다 |
+| 이어 질문 | `preset_questions.session_id` (NULL 허용, 둘 중 하나는 필수 CHECK), `based_on_qa_item_id`(FK 없음), grounding, rationale, model, prompt_version | 이 지원자에게만 묻는 사전 질문이라 같은 테이블에 두면 QA 연결(`preset_question_id`)·화면이 그대로 쓰인다. `based_on_qa_item_id`에 FK를 걸면 qa_items ↔ preset_questions 순환이 되어 테이블 생성 순서가 사라진다 |
+| 다운그레이드 | 1차만 남긴다: 이어 질문과 2차 이후 역량 사전·사전 질문을 지우고, 2차 이후 세션은 차수 없이 남긴다 | 0005 스키마에는 차수가 없다 |
+
 SQLite 마이그레이션 주의: batch 모드는 테이블을 복사한 뒤 원본을 지우는데, 외래 키가 켜져 있으면 그 DROP이 자식 행을 연쇄 삭제한다. `migrations/env.py`는 마이그레이션 동안 외래 키를 끄고 끝나면 `PRAGMA foreign_key_check`로 확인한다.
 
 ## 5. 구현 상태와 남은 과제
@@ -313,6 +373,8 @@ SQLite 마이그레이션 주의: batch 모드는 테이블을 복사한 뒤 원
 구현됨 (2026-10-26): 채용 사이트 연동 수신 6개 엔드포인트와 공고 번호 연결(PATCH 공고), 합계 52개. 통로와 분리된 처리 함수(`intake/`), 백그라운드 큐와 재시작 재개, 연동 현황 화면, 가짜 채용 사이트(`scripts/fake_recruiting_site.py`). 테스트 `tests/test_intake.py`.
 
 구현됨 (2026-10-26): 서류 읽기 확장. 관리자 > 모델 설정에 서류 읽기 역할 5개(같은 엔드포인트, 테스트에 `document`), 쪽 단위 텍스트·OCR 선택, 로컬 OCR(PaddleOCR PP-OCRv5 한국어, Tesseract), HWP·HWPX, 구형 .doc/.ppt(LibreOffice 변환), JPG·PNG, 지원서별 읽기 기록(`document.reading`), 새 실패 코드. 테스트 `tests/test_document_reading.py`, `test_document_quality.py`, `test_ocr_deid.py`, `test_document_settings.py`, `test_ocr_engines.py`(모델 파일이 있을 때만). [document-reading.md](document-reading.md), 측정은 [ocr-benchmark.md](ocr-benchmark.md).
+
+구현됨 (2026-10-27): 면접 여러 차수. 전형 5개, 차수별 역량 사전 3개, 사전 질문 5개, 결정·결정 이력 2개, 확인할 점 2개, 이어 질문 1개(합계 68개, 공고 단위 역량 사전 만들기·AI 초안 2개는 차수 단위로 옮김). 진행 규칙(`interviews.py`), 이전 차수 요약과 점수 공개 설정, 이전 차수 Q&A를 참고하는 꼬리질문(followup-v0.3)·이어 질문·사전 질문 초안, AI 확인할 점. 테스트 `tests/test_rounds.py`, `test_migrations.py`(0006 이관).
 
 구현됨 (2026-10-25): 관리자 > 모델 설정 10개 엔드포인트(합계 45개), DB 저장·이력·되돌리기, 재시작 없는 교체와 세션 고정, 연결 테스트, 모델 다운로드, 로컬 Whisper STT(`faster_whisper`, CPU int8, 한국어). 테스트 `tests/test_model_settings.py`, `test_weights.py`, `test_whisper.py`(모델 파일이 있을 때만). 측정 결과는 [Whisper 측정](whisper-benchmark.md).
 
@@ -332,6 +394,8 @@ SQLite 마이그레이션 주의: batch 모드는 테이블을 복사한 뒤 원
 - **보존 기간**: 실패 이벤트 원문, 첨부 원본, 철회된 지원서의 원본을 언제 지울지(정보보호와 결정).
 - **서류 읽기**: 실제 한글 프로그램으로 저장한 HWP·HWPX로 다시 확인(지금 HWP 5.0 픽스처는 코드로 만든 것), Google Document AI·Naver CLOVA OCR 구현(카탈로그만), HEIC·TIFF, 이 노트북 CPU에서 PaddleOCR server 검출은 쪽당 30초 이상이라 실사용 불가. 남은 한계는 [document-reading.md](document-reading.md) "알려진 한계".
 - **업로드 보완**: 업로드로 들어온 지원서는 지원자 번호가 없어 매번 새 지원자다(사이트 연동은 번호로 같은 사람을 찾는다). 바이러스 검사, 원본 파일 보존 기간·삭제.
-- **사전 질문 편집·AI 생성 API**: 지금은 시드와 확정 시 이월뿐이다.
+- **최종 결과의 채용 사이트 반영**: 이 시스템의 최종 합격 후보는 처리용 사본의 결론이다. 공식 결과는 채용 담당자가 사이트에 직접 기록한다. 사이트로 결과를 보내는 연동(한 방향 → 양방향)은 정보보호·채용 시스템 부서와 정할 일이고 만들지 않았다. 사이트에서 최종 결과를 다시 받아 대조하는 흐름도 없다.
+- **세션 취소·일정 변경 API**: 지금은 철회 이벤트만 세션을 취소한다. 결정을 바꾸려면 다음 차수 세션을 먼저 취소해야 하는데 화면이 없다.
+- **차수 결정 권한**: 지금은 그 면접의 면접관이나 관리자면 누구나 정한다. 채용 담당자 역할·합의 규칙(주관 면접관만, 전원 합의 등)은 SSO 그룹과 함께 정할 것.
 - **스케줄 그리드**: 잡힌 면접 시간을 그리드에서도 빼서 그리기.
 - **DB**: PostgreSQL/MySQL 확정 후 같은 마이그레이션으로 검증.

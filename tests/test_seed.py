@@ -8,12 +8,15 @@ from interview_assistant.demo.seed import fake_identity
 from interview_assistant.models import (
     AiScoringStatus,
     Candidate,
+    CheckPoint,
     DeidMapping,
     FollowUpSuggestion,
     Interviewer,
+    InterviewRound,
     InterviewSession,
     JobPosting,
     PresetQuestion,
+    RoundDecision,
     SessionStatus,
 )
 from tests.conftest import api_settings, file_session_factory
@@ -27,17 +30,27 @@ def test_seed_matches_the_mock_dataset_and_seals_fictional_identities(seeded_db,
         count = lambda model: db.scalar(select(func.count()).select_from(model))  # noqa: E731
         assert (count(JobPosting), count(Candidate), count(Interviewer)) == (3, 20, 5)
         statuses = db.scalars(select(InterviewSession.status)).all()
-        assert statuses.count(SessionStatus.in_progress) == 1
-        assert statuses.count(SessionStatus.completed) == 4
+        assert statuses.count(SessionStatus.in_progress) == 2
+        assert statuses.count(SessionStatus.completed) == 9
         assert statuses.count(SessionStatus.scheduled) == 3
-        assert count(PresetQuestion) == 8 + 6
-        assert count(FollowUpSuggestion) == 4 * 3
+        rounds = {(r.posting.title, r.position): r.name for r in db.scalars(select(InterviewRound))}
+        assert sorted(rounds.values()) == ["면접", "임원 면접", "직무 면접", "직무 면접"]
+        assert count(PresetQuestion) == 8 + 6 + 6
+        assert count(FollowUpSuggestion) == 7 * 3
 
         sessions = db.scalars(select(InterviewSession)).all()
         scoring = sorted(
             s.ai_scoring_status.value for s in sessions if s.status is SessionStatus.completed
         )
-        assert scoring == ["completed", "completed", "completed", "running"]
+        assert scoring == ["completed"] * 8 + ["running"]
+        assert all(s.competency_set is None or s.competency_set.round is s.round for s in sessions)
+        decisions = sorted((d.decision.value, d.revision) for d in db.scalars(select(RoundDecision)))
+        assert decisions == [("hold", 1), ("hold", 1), ("passed", 1), ("passed", 1), ("passed", 1), ("passed", 1), ("rejected", 2)]
+        points = db.scalars(select(CheckPoint)).all()
+        assert {p.source.value for p in points} == {"ai", "interviewer"}
+        for p in points:
+            if p.source.value == "ai":
+                assert p.evidence and p.evidence in (p.qa_item.answer_deidentified or "")
         assert all(s.recording_uri for s in sessions if s.status is not SessionStatus.scheduled)
         assert all(
             s.ai_scoring_status is AiScoringStatus.not_started

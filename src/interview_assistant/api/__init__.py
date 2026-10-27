@@ -11,11 +11,23 @@ from interview_assistant.api.routes import (
     intake,
     live,
     postings,
+    rounds,
     schedule,
     screening,
     sessions,
 )
 
 router = APIRouter(prefix="/api")
-for module in (dashboard, postings, screening, sessions, live, evaluation, schedule, admin, intake):
+for module in (
+    dashboard,
+    postings,
+    rounds,
+    screening,
+    sessions,
+    live,
+    evaluation,
+    schedule,
+    admin,
+    intake,
+):
     router.include_router(module.router)

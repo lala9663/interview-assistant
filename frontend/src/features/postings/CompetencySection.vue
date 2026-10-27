@@ -1,14 +1,14 @@
 <script setup lang="ts">
-import { BookCheckIcon, CopyPlusIcon, LockIcon, PencilIcon, SparklesIcon } from '@lucide/vue'
-import { computed, ref, toRaw } from 'vue'
+import { BookCheckIcon, CopyIcon, CopyPlusIcon, LockIcon, PencilIcon, SparklesIcon } from '@lucide/vue'
+import { computed, ref, toRaw, watch } from 'vue'
 import { toast } from 'vue-sonner'
 
 import {
   useApproveCompetencySet,
-  useCompetencySets,
-  useCreateCompetencySet,
-  useGenerateCompetencySet,
+  useCreateRoundSet,
+  useGenerateRoundSet,
   useInterviewers,
+  useRoundSets,
   useUpdateCompetencySet,
 } from '@/api/queries'
 import type { Competency } from '@/api/types'
@@ -36,17 +36,29 @@ import { toastError } from '@/lib/toast'
 import CompetencyEditor from './CompetencyEditor.vue'
 import CompetencyRubric from './CompetencyRubric.vue'
 import { isComplete } from './competency-utils'
+import PresetQuestionsEditor from './PresetQuestionsEditor.vue'
 
-const props = defineProps<{ postingId: string }>()
+/**
+ * One round's competency dictionary versions (FR-02) and the selected version's preset questions.
+ * `copyFrom` is the earlier round's approved dictionary, offered as a start for a new round.
+ */
+const props = defineProps<{ roundId: string; roundLabel: string; copyFrom?: { label: string; competencies: Competency[] } | null }>()
 
-const sets = useCompetencySets(() => props.postingId)
+const sets = useRoundSets(() => props.roundId)
 const interviewers = useInterviewers()
 const picked = ref<number | null>(null)
 const draft = ref<Competency[] | null>(null)
-const create = useCreateCompetencySet(() => props.postingId)
-const update = useUpdateCompetencySet(() => props.postingId)
-const approve = useApproveCompetencySet(() => props.postingId)
-const generate = useGenerateCompetencySet(() => props.postingId)
+const create = useCreateRoundSet(() => props.roundId)
+const update = useUpdateCompetencySet()
+const approve = useApproveCompetencySet()
+const generate = useGenerateRoundSet(() => props.roundId)
+watch(
+  () => props.roundId,
+  () => {
+    picked.value = null
+    draft.value = null
+  },
+)
 
 const list = computed(() => sets.data ?? [])
 const current = computed(() => list.value.find((s) => s.version === picked.value) ?? list.value[list.value.length - 1])
@@ -65,7 +77,7 @@ const onGenerate = () =>
   generate.mutate(undefined, {
     onSuccess: (s) => {
       picked.value = s.version
-      toast.success(`AI가 v${s.version} 초안을 만들었습니다`, { description: '검토하고 수정한 뒤 확정하세요.' })
+      toast.success(`AI가 ${props.roundLabel} v${s.version} 초안을 만들었습니다`, { description: '검토하고 수정한 뒤 확정하세요.' })
     },
     onError: toastError('초안을 만들지 못했습니다'),
   })
@@ -79,6 +91,18 @@ const onNewDraft = () => {
       draft.value = structuredClone(s.competencies)
     },
     onError: toastError('새 버전을 만들지 못했습니다'),
+  })
+}
+
+const onCopy = () => {
+  const from = props.copyFrom
+  if (!from) return
+  create.mutate(cloneCompetencies(from.competencies), {
+    onSuccess: (s) => {
+      picked.value = s.version
+      toast.success(`${from.label} 역량을 복사해 v${s.version} 초안을 만들었습니다`, { description: '이 차수의 목적에 맞게 고친 뒤 확정하세요.' })
+    },
+    onError: toastError('초안을 만들지 못했습니다'),
   })
 }
 
@@ -105,7 +129,7 @@ const onApprove = () => {
   const c = current.value
   if (!c) return
   approve.mutate(c.id, {
-    onSuccess: () => toast.success(`v${c.version}을 확정했습니다`, { description: '이후 선별과 평가는 이 버전을 기준으로 합니다.' }),
+    onSuccess: () => toast.success(`${props.roundLabel} v${c.version}을 확정했습니다`, { description: `이후 ${props.roundLabel} 면접은 이 버전으로 평가합니다.` }),
     onError: toastError('확정하지 못했습니다'),
   })
 }
@@ -156,9 +180,9 @@ const onPick = (v: string) => {
               </AlertDialogTrigger>
               <AlertDialogContent>
                 <AlertDialogHeader>
-                  <AlertDialogTitle>v{{ current.version }}을 확정할까요?</AlertDialogTitle>
+                  <AlertDialogTitle>{{ roundLabel }} v{{ current.version }}을 확정할까요?</AlertDialogTitle>
                   <AlertDialogDescription>
-                    확정한 버전은 수정할 수 없고, 이후 서류 선별과 면접 평가(AI·면접관 모두)의 기준이 됩니다. 이미 진행된 평가는 당시 버전을 유지합니다.
+                    확정한 버전과 그 사전 질문은 수정할 수 없고, 이후 {{ roundLabel }} 면접 평가(AI·면접관 모두)의 기준이 됩니다<template v-if="roundLabel === '1차'"> (서류 선별도 1차 확정본을 씁니다)</template>. 이미 진행된 평가는 당시 버전을 유지합니다.
                   </AlertDialogDescription>
                 </AlertDialogHeader>
                 <AlertDialogFooter>
@@ -188,18 +212,27 @@ const onPick = (v: string) => {
     <Card v-if="list.length === 0">
       <EmptyState
         :icon="SparklesIcon"
-        title="역량 사전이 없습니다"
-        description="JD를 바탕으로 AI가 역량 목록과 1~5점 행동 기준 초안을 만들고, 담당자가 검토해 확정합니다."
+        :title="`${roundLabel} 역량 사전이 없습니다`"
+        description="JD와 이 차수의 목적을 바탕으로 AI가 역량과 1~5점 행동 기준 초안을 만들고, 담당자가 검토해 확정합니다. 이전 차수에서 이미 보는 역량은 반복하지 않습니다."
       >
         <template #action>
-          <Button variant="brand" size="sm" :disabled="generate.isPending" @click="onGenerate">
-            <SparklesIcon />
-            AI 초안 생성
-          </Button>
+          <div class="flex flex-wrap justify-center gap-2">
+            <Button variant="brand" size="sm" :disabled="generate.isPending" @click="onGenerate">
+              <SparklesIcon />
+              AI 초안 생성
+            </Button>
+            <Button v-if="copyFrom" variant="outline" size="sm" :disabled="create.isPending" @click="onCopy">
+              <CopyIcon />
+              {{ copyFrom.label }} 역량 복사
+            </Button>
+          </div>
         </template>
       </EmptyState>
     </Card>
     <CompetencyEditor v-else-if="draft !== null" v-model="draft" />
-    <CompetencyRubric v-else-if="current" :competencies="current.competencies" :new-names="newNames" />
+    <template v-else-if="current">
+      <CompetencyRubric :competencies="current.competencies" :new-names="newNames" />
+      <PresetQuestionsEditor :key="current.id" :set="current" :round-label="roundLabel" />
+    </template>
   </div>
 </template>

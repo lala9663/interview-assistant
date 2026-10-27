@@ -1,7 +1,23 @@
 /**
- * Fictional postings, competency dictionaries and preset questions. No real people or documents.
+ * Fictional postings, their interview rounds (전형 차수), competency dictionaries and preset
+ * questions. No real people or documents.
  */
-import type { Competency, PostingStatus, PresetQuestion } from '@/api/types'
+import type { Competency, PostingStatus, PresetQuestion, SessionMode } from '@/api/types'
+
+/** A preset question of the dataset (no AI origin). */
+export type PresetSeed = Omit<PresetQuestion, 'origin'>
+
+export interface RoundSeed {
+  /** what the round is for; the label "1차", "2차" comes from the position */
+  name: string
+  default_mode: SessionMode
+  recommended_interviewers: number
+  show_previous_scores: boolean
+  /** competency set versions, oldest first. `approvedBy` = approved by that interviewer key. */
+  sets: { version: number; approvedBy: string | null; daysAgo: number; competencies: Competency[] }[]
+  /** preset questions of the latest approved version */
+  presets: PresetSeed[]
+}
 
 export interface PostingSeed {
   id: string
@@ -12,9 +28,8 @@ export interface PostingSeed {
   site_posting_no: string | null
   createdDaysAgo: number
   jd_text: string
-  /** competency set versions, oldest first. `approved` = approved by that interviewer key. */
-  sets: { version: number; approvedBy: string | null; daysAgo: number; competencies: Competency[] }[]
-  presets: PresetQuestion[]
+  /** rounds in order: 1차, 2차 ... */
+  rounds: RoundSeed[]
 }
 
 const bars = (l1: string, l2: string, l3: string, l4: string, l5: string) => ({ '1': l1, '2': l2, '3': l3, '4': l4, '5': l5 })
@@ -82,6 +97,134 @@ const P1_V2_EXTRA: Competency = {
   ),
 }
 
+const P1_R1_PRESETS: PresetSeed[] = [
+  {
+    id: 'p1-q1',
+    competency: '공정 문제 해결',
+    question: '최근 3년 안에 해결한 공정 불량 중 가장 어려웠던 사례를 하나 설명해 주세요. 원인을 어떻게 좁혀 갔나요?',
+    intent: '가설 수립과 검증 과정',
+  },
+  {
+    id: 'p1-q2',
+    competency: '공정 문제 해결',
+    question: '개선 조치가 기대만큼 효과가 없었던 경험이 있나요? 그때 어떻게 대응했나요?',
+    intent: '실패 대응과 재검증',
+  },
+  {
+    id: 'p1-q3',
+    competency: '데이터 기반 분석',
+    question: '공정 산포가 커졌을 때 어떤 데이터를 어떤 순서로 보는지 실제 사례로 설명해 주세요.',
+    intent: '분석 절차와 도구 활용',
+  },
+  {
+    id: 'p1-q4',
+    competency: '데이터 기반 분석',
+    question: '분석 결과가 현장 엔지니어의 직감과 달랐던 경험이 있나요? 어떻게 결론을 냈나요?',
+    intent: '데이터 근거 설득',
+  },
+  {
+    id: 'p1-q5',
+    competency: '공정·장비 이해',
+    question: '담당했던 공정에서 균일도에 가장 큰 영향을 준 변수는 무엇이었고, 그 이유는 무엇인가요?',
+    intent: '공정 메커니즘 이해',
+  },
+  {
+    id: 'p1-q6',
+    competency: '공정·장비 이해',
+    question: '앞 공정의 변경이 담당 공정 결과에 영향을 준 사례가 있나요?',
+    intent: '공정 간 상호작용',
+  },
+  {
+    id: 'p1-q7',
+    competency: '협업과 커뮤니케이션',
+    question: '양산 이관 과정에서 유관 부서와 의견이 갈렸던 사례를 말씀해 주세요.',
+    intent: '이견 조율 방식',
+  },
+  {
+    id: 'p1-q8',
+    competency: '협업과 커뮤니케이션',
+    question: '해외 장비사 엔지니어와 협업하면서 어려웠던 점과 해결 방법은 무엇이었나요?',
+    intent: '외부 협업',
+  },
+    ]
+
+  // 2차 임원 면접: what round 1 does not look at (ownership, fit, influence). Questions dig deeper
+  // than round 1 instead of asking the same again.
+  const P1_R2_COMPETENCIES: Competency[] = [
+    {
+      name: '주도성과 책임감',
+      description: '맡은 범위를 넘어서는 문제를 스스로 정의하고, 결과에 끝까지 책임진다.',
+      bars: bars(
+        '지시받은 일만 하고 결과의 책임을 다른 데서 찾는다.',
+        '문제를 발견하면 보고하지만 해결은 다른 사람에게 맡긴다.',
+        '스스로 문제를 정의하고 해결안을 실행해 결과를 설명한다.',
+        '여러 조직에 걸친 문제를 주도하고, 실패도 원인과 함께 책임진다.',
+        '조직의 우선순위를 바꾸는 개선을 주도하고 그 결과를 끝까지 관리한다.',
+      ),
+    },
+    {
+      name: '조직 적합과 성장 의지',
+      description: '조직의 일하는 방식과 가치에 맞춰 일하고, 스스로 성장 목표를 세워 실행한다.',
+      bars: bars(
+        '지원 동기와 성장 목표가 막연하다.',
+        '회사와 직무에 대한 기대를 일반론으로 설명한다.',
+        '경험에 근거해 지원 동기와 성장 계획을 구체적으로 설명한다.',
+        '조직의 우선순위와 자신의 강점을 연결해 기여 방식을 제시한다.',
+        '장기적 기여 계획을 실행 근거와 함께 제시하고 주변의 성장까지 이끈다.',
+      ),
+    },
+    {
+      name: '협업과 영향력',
+      description: '권한이 없는 상대와 이해관계가 다른 조직을 설득해 같은 방향으로 움직인다.',
+      bars: bars(
+        '자기 팀 안에서만 일한다.',
+        '요청받으면 다른 조직과 정보를 나눈다.',
+        '이해관계가 다른 조직과 목표를 맞춘 경험이 있다.',
+        '권한 없이도 근거로 다른 조직의 계획을 바꿨다.',
+        '조직 간 협업 구조를 새로 만들어 반복되는 갈등을 줄였다.',
+      ),
+    },
+]
+
+const P1_R2_PRESETS: PresetSeed[] = [
+  {
+    id: 'p1r2-q1',
+    competency: '주도성과 책임감',
+    question: '맡은 범위를 넘어 스스로 문제를 정의하고 끝까지 책임진 경험을 하나 말씀해 주세요.',
+    intent: '주도성',
+  },
+  {
+    id: 'p1r2-q2',
+    competency: '주도성과 책임감',
+    question: '본인의 판단이 틀렸다고 드러났을 때 어떻게 책임지고 수습하셨나요?',
+    intent: '책임감',
+  },
+  {
+    id: 'p1r2-q3',
+    competency: '조직 적합과 성장 의지',
+    question: '메모리 공정개발 직무를 고른 이유와, 지난 경력과 어떻게 이어지는지 말씀해 주세요.',
+    intent: '지원 동기',
+  },
+  {
+    id: 'p1r2-q4',
+    competency: '조직 적합과 성장 의지',
+    question: '앞으로 3년 동안 이루고 싶은 성장 목표와, 그 목표를 위해 지금 하고 있는 일은 무엇인가요?',
+    intent: '성장 계획',
+  },
+  {
+    id: 'p1r2-q5',
+    competency: '협업과 영향력',
+    question: '권한이 없는 다른 조직을 설득해 계획이나 일정을 바꾼 경험을 말씀해 주세요.',
+    intent: '영향력',
+  },
+  {
+    id: 'p1r2-q6',
+    competency: '협업과 영향력',
+    question: '후배나 동료의 성장을 도운 구체적인 사례가 있나요?',
+    intent: '사람의 성장',
+  },
+]
+
 export const P1: PostingSeed = {
   id: 'b1d6a0c2-1f3e-4b8a-9c41-5e2f7a9d0001',
   title: '메모리 공정개발 엔지니어 (경력)',
@@ -105,58 +248,25 @@ export const P1: PostingSeed = {
 - 수율 개선 프로젝트 리딩 경험
 - 머신러닝 기반 이상 탐지·가상 계측 경험
 - 영어 기술 문서 작성과 해외 장비사 협업 경험`,
-  sets: [
-    { version: 1, approvedBy: 'park', daysAgo: 20, competencies: P1_COMPETENCIES },
-    { version: 2, approvedBy: null, daysAgo: 2, competencies: [...P1_COMPETENCIES, P1_V2_EXTRA] },
-  ],
-  presets: [
+  rounds: [
     {
-      id: 'p1-q1',
-      competency: '공정 문제 해결',
-      question: '최근 3년 안에 해결한 공정 불량 중 가장 어려웠던 사례를 하나 설명해 주세요. 원인을 어떻게 좁혀 갔나요?',
-      intent: '가설 수립과 검증 과정',
+      name: '직무 면접',
+      default_mode: 'remote',
+      recommended_interviewers: 2,
+      show_previous_scores: false,
+      sets: [
+        { version: 1, approvedBy: 'park', daysAgo: 20, competencies: P1_COMPETENCIES },
+        { version: 2, approvedBy: null, daysAgo: 2, competencies: [...P1_COMPETENCIES, P1_V2_EXTRA] },
+      ],
+      presets: P1_R1_PRESETS,
     },
     {
-      id: 'p1-q2',
-      competency: '공정 문제 해결',
-      question: '개선 조치가 기대만큼 효과가 없었던 경험이 있나요? 그때 어떻게 대응했나요?',
-      intent: '실패 대응과 재검증',
-    },
-    {
-      id: 'p1-q3',
-      competency: '데이터 기반 분석',
-      question: '공정 산포가 커졌을 때 어떤 데이터를 어떤 순서로 보는지 실제 사례로 설명해 주세요.',
-      intent: '분석 절차와 도구 활용',
-    },
-    {
-      id: 'p1-q4',
-      competency: '데이터 기반 분석',
-      question: '분석 결과가 현장 엔지니어의 직감과 달랐던 경험이 있나요? 어떻게 결론을 냈나요?',
-      intent: '데이터 근거 설득',
-    },
-    {
-      id: 'p1-q5',
-      competency: '공정·장비 이해',
-      question: '담당했던 공정에서 균일도에 가장 큰 영향을 준 변수는 무엇이었고, 그 이유는 무엇인가요?',
-      intent: '공정 메커니즘 이해',
-    },
-    {
-      id: 'p1-q6',
-      competency: '공정·장비 이해',
-      question: '앞 공정의 변경이 담당 공정 결과에 영향을 준 사례가 있나요?',
-      intent: '공정 간 상호작용',
-    },
-    {
-      id: 'p1-q7',
-      competency: '협업과 커뮤니케이션',
-      question: '양산 이관 과정에서 유관 부서와 의견이 갈렸던 사례를 말씀해 주세요.',
-      intent: '이견 조율 방식',
-    },
-    {
-      id: 'p1-q8',
-      competency: '협업과 커뮤니케이션',
-      question: '해외 장비사 엔지니어와 협업하면서 어려웠던 점과 해결 방법은 무엇이었나요?',
-      intent: '외부 협업',
+      name: '임원 면접',
+      default_mode: 'onsite',
+      recommended_interviewers: 2,
+      show_previous_scores: false,
+      sets: [{ version: 1, approvedBy: 'park', daysAgo: 12, competencies: P1_R2_COMPETENCIES }],
+      presets: P1_R2_PRESETS,
     },
   ],
 }
@@ -235,43 +345,51 @@ export const P2: PostingSeed = {
 - GPU 추론 서버(vLLM, Triton 등) 운영 경험
 - 대용량 트래픽 서비스의 SLO 정의와 장애 회고 경험
 - 오픈소스 기여 경험`,
-  sets: [{ version: 1, approvedBy: 'lee', daysAgo: 1, competencies: P2_COMPETENCIES }],
-  presets: [
+  rounds: [
     {
-      id: 'p2-q1',
-      competency: '시스템 설계',
-      question: '가장 트래픽이 컸던 시스템을 설계할 때 어떤 대안을 비교했고, 왜 그 구조를 골랐나요?',
-      intent: '대안 비교와 트레이드오프',
-    },
-    {
-      id: 'p2-q2',
-      competency: '시스템 설계',
-      question: 'GPU 추론 요청이 몰릴 때 대기열과 배치 처리를 어떻게 설계하시겠어요?',
-      intent: '추론 서빙 설계',
-    },
-    {
-      id: 'p2-q3',
-      competency: '운영·장애 대응',
-      question: '기억에 남는 장애 하나를 탐지부터 회고까지 순서대로 설명해 주세요.',
-      intent: '장애 대응 절차',
-    },
-    {
-      id: 'p2-q4',
-      competency: '운영·장애 대응',
-      question: 'SLO를 처음 정할 때 어떤 지표를 고르고 목표치는 어떻게 정했나요?',
-      intent: 'SLO 설계',
-    },
-    {
-      id: 'p2-q5',
-      competency: '코드 품질',
-      question: '테스트하기 어려운 코드를 테스트 가능하게 바꾼 경험을 말씀해 주세요.',
-      intent: '리팩터링과 테스트 전략',
-    },
-    {
-      id: 'p2-q6',
-      competency: '협업과 커뮤니케이션',
-      question: '다른 팀과 API 계약을 두고 의견이 갈렸던 경험이 있나요?',
-      intent: '팀 간 합의',
+      name: '직무 면접',
+      default_mode: 'remote',
+      recommended_interviewers: 2,
+      show_previous_scores: false,
+      sets: [{ version: 1, approvedBy: 'lee', daysAgo: 1, competencies: P2_COMPETENCIES }],
+      presets: [
+        {
+          id: 'p2-q1',
+          competency: '시스템 설계',
+          question: '가장 트래픽이 컸던 시스템을 설계할 때 어떤 대안을 비교했고, 왜 그 구조를 골랐나요?',
+          intent: '대안 비교와 트레이드오프',
+        },
+        {
+          id: 'p2-q2',
+          competency: '시스템 설계',
+          question: 'GPU 추론 요청이 몰릴 때 대기열과 배치 처리를 어떻게 설계하시겠어요?',
+          intent: '추론 서빙 설계',
+        },
+        {
+          id: 'p2-q3',
+          competency: '운영·장애 대응',
+          question: '기억에 남는 장애 하나를 탐지부터 회고까지 순서대로 설명해 주세요.',
+          intent: '장애 대응 절차',
+        },
+        {
+          id: 'p2-q4',
+          competency: '운영·장애 대응',
+          question: 'SLO를 처음 정할 때 어떤 지표를 고르고 목표치는 어떻게 정했나요?',
+          intent: 'SLO 설계',
+        },
+        {
+          id: 'p2-q5',
+          competency: '코드 품질',
+          question: '테스트하기 어려운 코드를 테스트 가능하게 바꾼 경험을 말씀해 주세요.',
+          intent: '리팩터링과 테스트 전략',
+        },
+        {
+          id: 'p2-q6',
+          competency: '협업과 커뮤니케이션',
+          question: '다른 팀과 API 계약을 두고 의견이 갈렸던 경험이 있나요?',
+          intent: '팀 간 합의',
+        },
+      ],
     },
   ],
 }
@@ -301,49 +419,57 @@ export const P3: PostingSeed = {
 우대 사항
 - 접근성 가이드라인(WCAG) 적용 경험
 - 디자인 시스템 구축·운영 경험`,
-  sets: [
+  rounds: [
     {
-      version: 1,
-      approvedBy: null,
-      daysAgo: 1,
-      competencies: [
+      name: '면접',
+      default_mode: 'remote',
+      recommended_interviewers: 2,
+      show_previous_scores: false,
+      sets: [
         {
-          name: '사용자 리서치',
-          description: '사용자 문제를 근거로 정의하고 검증 방법을 설계한다.',
-          bars: bars(
-            '가정만으로 문제를 정의한다.',
-            '기존 리서치 결과를 참고한다.',
-            '인터뷰·테스트를 직접 설계해 문제를 검증했다.',
-            '정성·정량 근거를 결합해 우선순위를 정했다.',
-            '리서치 체계를 만들어 팀 의사결정에 정착시켰다.',
-          ),
-        },
-        {
-          name: '인터랙션 설계',
-          description: '흐름과 상태를 빠짐없이 설계하고 프로토타입으로 검증한다.',
-          bars: bars(
-            '주요 화면만 그린다.',
-            '기본 흐름과 주요 상태를 설계한다.',
-            '예외·빈 상태까지 설계하고 프로토타입으로 검증했다.',
-            '복잡한 흐름을 단순화해 측정 가능한 개선을 만들었다.',
-            '인터랙션 원칙을 정의해 여러 서비스에 적용했다.',
-          ),
-        },
-        {
-          name: '협업과 커뮤니케이션',
-          description: '개발·기획과 합의하며 설계 의도를 전달한다.',
-          bars: bars(
-            '결과물만 전달한다.',
-            '요청 시 의도를 설명한다.',
-            '개발 제약을 반영해 대안을 함께 정했다.',
-            '이견을 근거로 조율해 합의를 이끌었다.',
-            '협업 방식을 개선해 리드타임을 줄였다.',
-          ),
+          version: 1,
+          approvedBy: null,
+          daysAgo: 1,
+          competencies: [
+            {
+              name: '사용자 리서치',
+              description: '사용자 문제를 근거로 정의하고 검증 방법을 설계한다.',
+              bars: bars(
+                '가정만으로 문제를 정의한다.',
+                '기존 리서치 결과를 참고한다.',
+                '인터뷰·테스트를 직접 설계해 문제를 검증했다.',
+                '정성·정량 근거를 결합해 우선순위를 정했다.',
+                '리서치 체계를 만들어 팀 의사결정에 정착시켰다.',
+              ),
+            },
+            {
+              name: '인터랙션 설계',
+              description: '흐름과 상태를 빠짐없이 설계하고 프로토타입으로 검증한다.',
+              bars: bars(
+                '주요 화면만 그린다.',
+                '기본 흐름과 주요 상태를 설계한다.',
+                '예외·빈 상태까지 설계하고 프로토타입으로 검증했다.',
+                '복잡한 흐름을 단순화해 측정 가능한 개선을 만들었다.',
+                '인터랙션 원칙을 정의해 여러 서비스에 적용했다.',
+              ),
+            },
+            {
+              name: '협업과 커뮤니케이션',
+              description: '개발·기획과 합의하며 설계 의도를 전달한다.',
+              bars: bars(
+                '결과물만 전달한다.',
+                '요청 시 의도를 설명한다.',
+                '개발 제약을 반영해 대안을 함께 정했다.',
+                '이견을 근거로 조율해 합의를 이끌었다.',
+                '협업 방식을 개선해 리드타임을 줄였다.',
+              ),
+            },
+          ],
         },
       ],
+      presets: [],
     },
   ],
-  presets: [],
 }
 
 export const POSTING_SEEDS = [P1, P2, P3]

@@ -1,19 +1,21 @@
 <script setup lang="ts">
-import { MicIcon, MicOffIcon, PlayIcon, ShieldCheckIcon } from '@lucide/vue'
+import { MicIcon, MicOffIcon, PlayIcon, ShieldCheckIcon, SparklesIcon } from '@lucide/vue'
 import { RadioGroupItem, RadioGroupRoot } from 'reka-ui'
 import { computed, ref } from 'vue'
 import { RouterLink } from 'vue-router'
 
-import { useSessionLifecycle } from '@/api/queries'
+import { useCarryover, useSessionLifecycle } from '@/api/queries'
 import type { SessionDetail } from '@/api/types'
 import ModeBadge from '@/components/common/ModeBadge.vue'
 import Page from '@/components/common/Page.vue'
 import Pseudonym from '@/components/common/Pseudonym.vue'
+import RoundBadge from '@/components/common/RoundBadge.vue'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent } from '@/components/ui/card'
 import { ROLE_LABEL } from '@/lib/labels'
 import { formatDateTime, formatRelative } from '@/lib/time'
+import { toastError } from '@/lib/toast'
 
 import CandidateSummary from './CandidateSummary.vue'
 import PreStartStep from './PreStartStep.vue'
@@ -23,6 +25,9 @@ const props = defineProps<{ detail: SessionDetail }>()
 const emit = defineEmits<{ started: [] }>()
 
 const lifecycle = useSessionLifecycle(props.detail.session.id)
+const carryover = useCarryover(props.detail.session.id)
+const earlier = computed(() => props.detail.card.previous_rounds.at(-1) ?? null)
+const makeCarryover = () => carryover.mutate(undefined, { onError: toastError('이어 질문을 만들지 못했습니다') })
 const candidate = computed(() => props.detail.card.candidate)
 const choice = ref<'yes' | 'no' | undefined>(candidate.value.consent_at !== null ? (candidate.value.consent_recording ? 'yes' : 'no') : undefined)
 const consentSaved = computed(() => lifecycle.consent.isSuccess || candidate.value.consent_at !== null)
@@ -51,6 +56,7 @@ const start = () =>
       <h1 class="mt-1 flex flex-wrap items-center gap-3 text-[22px] font-semibold tracking-tight">
         <Pseudonym :value="candidate.pseudonym" size="lg" />
         <span class="text-base font-normal text-muted-foreground">{{ detail.posting.title }}</span>
+        <RoundBadge :round="detail.round" full strong />
       </h1>
     </div>
     <div class="grid gap-4 lg:grid-cols-[minmax(0,1fr)_340px]">
@@ -102,8 +108,18 @@ const start = () =>
                   <Badge v-for="p in detail.interviewers" :key="p.interviewer_id" variant="outline">{{ p.interviewer.name }} · {{ ROLE_LABEL[p.role] }}</Badge>
                 </li>
                 <li class="text-muted-foreground">
-                  사전 질문 {{ detail.preset_questions.length }}개 · 역량 {{ detail.competency_set?.competencies.length ?? 0 }}개
-                  <template v-if="detail.competency_set"> (역량 사전 v{{ detail.competency_set.version }})</template>
+                  {{ detail.round.label }} 사전 질문 {{ detail.preset_questions.length }}개 · 역량 {{ detail.competency_set?.competencies.length ?? 0 }}개
+                  <template v-if="detail.competency_set"> ({{ detail.round.label }} 역량 사전 v{{ detail.competency_set.version }})</template>
+                </li>
+                <li v-if="earlier" class="flex flex-wrap items-center gap-2 text-muted-foreground">
+                  <span>
+                    {{ earlier.round.label }} 요약: 확인이 필요한 점 {{ earlier.check_points.length }}개 · 메모 {{ earlier.notes.length }}개 · 이어 질문
+                    {{ detail.carryover_questions.length }}개
+                  </span>
+                  <Button size="xs" variant="brand" :disabled="carryover.isPending" @click="makeCarryover">
+                    <SparklesIcon />
+                    {{ carryover.isPending ? '만드는 중…' : detail.carryover_questions.length > 0 ? '이어 질문 다시 만들기' : '이어 질문 만들기' }}
+                  </Button>
                 </li>
               </ul>
             </PreStartStep>

@@ -323,6 +323,9 @@ def test_withdrawal_hides_the_application_cancels_interviews_and_blocks_other_ve
     assert submit(site, person, "A-0009", P1_NO)["status"] == "done"
     app = row_of(site, "A-0009")
     people = [i["id"] for i in site.get("/api/interviewers").json()]
+    # 1차 opens once a person passed the screening.
+    screening = site.get(f"/api/applications/{app.id}").json()["screening"]
+    site.patch(f"/api/screenings/{screening['id']}", json={"status": "passed"})
     booked = site.post(
         "/api/sessions",
         json={

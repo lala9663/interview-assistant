@@ -9,7 +9,7 @@ shows the pseudonym. Withdrawn applications (recruiting site) leave every list.
 
 from __future__ import annotations
 
-from fastapi import APIRouter, File, Form, HTTPException, UploadFile
+from fastapi import APIRouter, File, Form, HTTPException, Query, UploadFile
 from sqlalchemy import select
 
 from interview_assistant.api import schemas as s
@@ -69,8 +69,12 @@ def applications(posting_id: str, db: Db) -> list[s.ApplicationRow]:
 
 
 @router.get("/applications/schedulable", response_model=list[s.SchedulableApplication])
-def schedulable(db: Db) -> list[s.SchedulableApplication]:
-    return views.schedulable(_live_applications(db))
+def schedulable(
+    db: Db, round: int | None = Query(None, ge=1, description="only those waiting for this round (1 = 1차)")
+) -> list[s.SchedulableApplication]:
+    """Applications waiting for their next round: round 1 after screening passed, round N after
+    round N-1 was passed."""
+    return views.schedulable(_live_applications(db), round)
 
 
 @router.get("/applications/{application_id}", response_model=s.ApplicationDetail)

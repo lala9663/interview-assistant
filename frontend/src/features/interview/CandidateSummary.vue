@@ -13,6 +13,8 @@ import { parseRationale } from '@/lib/labels'
 import { formatDate } from '@/lib/time'
 import { cn } from '@/lib/utils'
 
+import PreviousRoundSummary from './PreviousRoundSummary.vue'
+
 const props = defineProps<{ card: CandidateCard }>()
 const open = ref(false)
 const r = computed(() => (props.card.screening ? parseRationale(props.card.screening.rationale) : null))
@@ -23,7 +25,7 @@ const canExpand = computed(() => {
 })
 const history = computed(() =>
   props.card.previous_sessions.length > 0
-    ? `이전 면접 ${props.card.previous_sessions.length}회 (${props.card.previous_sessions.map((s) => (s.ended_at ? formatDate(s.ended_at) : '')).join(', ')})`
+    ? `이전 면접 ${props.card.previous_sessions.length}회 (${props.card.previous_sessions.map((s) => `${s.round.label}${s.ended_at ? ` ${formatDate(s.ended_at)}` : ''}`).join(', ')})`
     : '이전 면접 기록 없음',
 )
 </script>
@@ -77,6 +79,8 @@ const history = computed(() =>
         <div v-for="e in p.education" :key="e.school" class="text-muted-foreground"><DeidText :text="e.school" /> {{ e.degree }} · {{ e.major }}</div>
       </div>
     </div>
+
+    <PreviousRoundSummary v-for="pr in card.previous_rounds" :key="pr.session.id" :previous="pr" />
 
     <div class="flex items-center gap-1.5 text-xs text-muted-foreground">
       <HistoryIcon class="size-3.5" aria-hidden="true" />

@@ -9,14 +9,19 @@ import { endpoints } from './endpoints'
 import type {
   ApplyModelRequest,
   Competency,
+  CreateCheckPointRequest,
+  CreateRoundRequest,
+  DecisionRequest,
   IntakeEventFilter,
   CreateQARequest,
   CreateSessionRequest,
+  PresetQuestionBody,
   RevertModelRequest,
   ScheduleSuggestionRequest,
   ScreeningStatus,
   SessionStatus,
   SubmitInterviewerScoresRequest,
+  UpdateRoundRequest,
   UploadApplicationRequest,
 } from './types'
 
@@ -26,7 +31,9 @@ export const qk = {
   activity: (limit: number) => ['activity', limit] as const,
   postings: ['postings'] as const,
   posting: (id: string) => ['postings', id] as const,
-  competencySets: (postingId: string) => ['postings', postingId, 'competency-sets'] as const,
+  rounds: (postingId: string) => ['postings', postingId, 'rounds'] as const,
+  roundSets: (roundId: string) => ['rounds', roundId, 'competency-sets'] as const,
+  presetQuestions: (setId: string) => ['competency-sets', setId, 'preset-questions'] as const,
   applications: (postingId: string) => ['postings', postingId, 'applications'] as const,
   application: (id: string) => ['applications', id] as const,
   schedulable: ['applications', 'schedulable'] as const,
@@ -68,11 +75,27 @@ export const usePosting = (id: MaybeRefOrGetter<string>) =>
     }),
   )
 
-export const useCompetencySets = (postingId: MaybeRefOrGetter<string>) =>
+export const useRounds = (postingId: MaybeRefOrGetter<string>) =>
   reactive(
     useQuery(() => {
       const v = toValue(postingId)
-      return { queryKey: qk.competencySets(v), queryFn: ({ signal }) => endpoints.competencySets(v, signal), enabled: Boolean(v) }
+      return { queryKey: qk.rounds(v), queryFn: ({ signal }) => endpoints.rounds(v, signal), enabled: Boolean(v) }
+    }),
+  )
+
+export const useRoundSets = (roundId: MaybeRefOrGetter<string>) =>
+  reactive(
+    useQuery(() => {
+      const v = toValue(roundId)
+      return { queryKey: qk.roundSets(v), queryFn: ({ signal }) => endpoints.roundSets(v, signal), enabled: Boolean(v) }
+    }),
+  )
+
+export const usePresetQuestions = (setId: MaybeRefOrGetter<string>) =>
+  reactive(
+    useQuery(() => {
+      const v = toValue(setId)
+      return { queryKey: qk.presetQuestions(v), queryFn: ({ signal }) => endpoints.presetQuestions(v, signal), enabled: Boolean(v) }
     }),
   )
 
@@ -197,29 +220,52 @@ export function useUploadApplication(postingId: MaybeRefOrGetter<string>) {
   )
 }
 
-function useInvalidateCompetency(postingId: MaybeRefOrGetter<string>) {
+/** Rounds, their dictionaries and preset questions all show up in the 전형 tab and the posting list. */
+function useInvalidateRounds() {
   const qc = useQueryClient()
   return () => {
-    void qc.invalidateQueries({ queryKey: qk.competencySets(toValue(postingId)) })
-    void qc.invalidateQueries({ queryKey: qk.postings })
+    void qc.invalidateQueries({ queryKey: ['rounds'] })
+    void qc.invalidateQueries({ queryKey: ['competency-sets'] })
+    void qc.invalidateQueries({ queryKey: ['postings'] })
     void qc.invalidateQueries({ queryKey: ['activity'] })
   }
 }
 
-export function useCreateCompetencySet(postingId: MaybeRefOrGetter<string>) {
-  const invalidate = useInvalidateCompetency(postingId)
-  return reactive(
-    useMutation({ mutationFn: (c: Competency[]) => endpoints.createCompetencySet(toValue(postingId), c), onSuccess: invalidate }),
-  )
+export function useRoundMutations(postingId: MaybeRefOrGetter<string>) {
+  const invalidate = useInvalidateRounds()
+  const qc = useQueryClient()
+  const everywhere = () => {
+    invalidate()
+    // Labels, stages and counts of applications and sessions follow the rounds.
+    void qc.invalidateQueries({ queryKey: ['applications'] })
+    void qc.invalidateQueries({ queryKey: ['sessions'] })
+    void qc.invalidateQueries({ queryKey: qk.dashboard })
+  }
+  return {
+    create: reactive(useMutation({ mutationFn: (body: CreateRoundRequest) => endpoints.createRound(toValue(postingId), body), onSuccess: everywhere })),
+    update: reactive(
+      useMutation({
+        mutationFn: ({ id, body }: { id: string; body: UpdateRoundRequest }) => endpoints.updateRound(id, body),
+        onSuccess: everywhere,
+      }),
+    ),
+    remove: reactive(useMutation({ mutationFn: (id: string) => endpoints.deleteRound(id), onSuccess: everywhere })),
+    reorder: reactive(useMutation({ mutationFn: (ids: string[]) => endpoints.reorderRounds(toValue(postingId), ids), onSuccess: everywhere })),
+  }
 }
 
-export function useGenerateCompetencySet(postingId: MaybeRefOrGetter<string>) {
-  const invalidate = useInvalidateCompetency(postingId)
-  return reactive(useMutation({ mutationFn: () => endpoints.generateCompetencySet(toValue(postingId)), onSuccess: invalidate }))
+export function useCreateRoundSet(roundId: MaybeRefOrGetter<string>) {
+  const invalidate = useInvalidateRounds()
+  return reactive(useMutation({ mutationFn: (c: Competency[]) => endpoints.createRoundSet(toValue(roundId), c), onSuccess: invalidate }))
 }
 
-export function useUpdateCompetencySet(postingId: MaybeRefOrGetter<string>) {
-  const invalidate = useInvalidateCompetency(postingId)
+export function useGenerateRoundSet(roundId: MaybeRefOrGetter<string>) {
+  const invalidate = useInvalidateRounds()
+  return reactive(useMutation({ mutationFn: () => endpoints.generateRoundSet(toValue(roundId)), onSuccess: invalidate }))
+}
+
+export function useUpdateCompetencySet() {
+  const invalidate = useInvalidateRounds()
   return reactive(
     useMutation({
       mutationFn: ({ id, competencies }: { id: string; competencies: Competency[] }) => endpoints.updateCompetencySet(id, competencies),
@@ -228,9 +274,26 @@ export function useUpdateCompetencySet(postingId: MaybeRefOrGetter<string>) {
   )
 }
 
-export function useApproveCompetencySet(postingId: MaybeRefOrGetter<string>) {
-  const invalidate = useInvalidateCompetency(postingId)
+export function useApproveCompetencySet() {
+  const invalidate = useInvalidateRounds()
   return reactive(useMutation({ mutationFn: (id: string) => endpoints.approveCompetencySet(id), onSuccess: invalidate }))
+}
+
+export function usePresetMutations(setId: MaybeRefOrGetter<string>) {
+  const invalidate = useInvalidateRounds()
+  return {
+    create: reactive(
+      useMutation({ mutationFn: (body: PresetQuestionBody) => endpoints.createPresetQuestion(toValue(setId), body), onSuccess: invalidate }),
+    ),
+    update: reactive(
+      useMutation({
+        mutationFn: ({ id, body }: { id: string; body: PresetQuestionBody }) => endpoints.updatePresetQuestion(id, body),
+        onSuccess: invalidate,
+      }),
+    ),
+    remove: reactive(useMutation({ mutationFn: (id: string) => endpoints.deletePresetQuestion(id), onSuccess: invalidate })),
+    generate: reactive(useMutation({ mutationFn: () => endpoints.generatePresetQuestions(toValue(setId)), onSuccess: invalidate })),
+  }
 }
 
 function useInvalidateSession(sessionId: string) {
@@ -281,6 +344,20 @@ export function useAnswerQA(sessionId: string) {
   )
 }
 
+/** 이어 질문: AI questions for this candidate from earlier rounds (replaces the session detail). */
+export function useCarryover(sessionId: string) {
+  const qc = useQueryClient()
+  return reactive(
+    useMutation({
+      mutationFn: () => endpoints.carryoverQuestions(sessionId),
+      onSuccess: (d) => {
+        qc.setQueryData(qk.session(sessionId), d)
+        void qc.invalidateQueries({ queryKey: ['activity'] })
+      },
+    }),
+  )
+}
+
 export function useCreateNote(sessionId: string) {
   const invalidate = useInvalidateSession(sessionId)
   return reactive(useMutation({ mutationFn: (content: string) => endpoints.createNote(sessionId, content), onSuccess: invalidate }))
@@ -301,6 +378,35 @@ export function useSubmitScores(sessionId: string) {
       },
     }),
   )
+}
+
+/** N차 결정 and points to check: they move the application on, so lists and counts refresh. */
+function useAfterDecision(sessionId: string) {
+  const qc = useQueryClient()
+  return (ev?: Awaited<ReturnType<typeof endpoints.evaluation>>) => {
+    if (ev) qc.setQueryData(qk.evaluation(sessionId), ev)
+    else void qc.invalidateQueries({ queryKey: qk.evaluation(sessionId) })
+    void qc.invalidateQueries({ queryKey: ['sessions'] })
+    void qc.invalidateQueries({ queryKey: ['applications'] })
+    void qc.invalidateQueries({ queryKey: ['postings'] })
+    void qc.invalidateQueries({ queryKey: qk.dashboard })
+    void qc.invalidateQueries({ queryKey: ['activity'] })
+  }
+}
+
+export function useDecide(sessionId: string) {
+  const after = useAfterDecision(sessionId)
+  return reactive(useMutation({ mutationFn: (body: DecisionRequest) => endpoints.decide(sessionId, body), onSuccess: (ev) => after(ev) }))
+}
+
+export function useCheckPointMutations(sessionId: string) {
+  const after = useAfterDecision(sessionId)
+  return {
+    create: reactive(
+      useMutation({ mutationFn: (body: CreateCheckPointRequest) => endpoints.createCheckPoint(sessionId, body), onSuccess: () => after() }),
+    ),
+    remove: reactive(useMutation({ mutationFn: (id: string) => endpoints.deleteCheckPoint(id), onSuccess: () => after() })),
+  }
 }
 
 export function useCreateSession() {

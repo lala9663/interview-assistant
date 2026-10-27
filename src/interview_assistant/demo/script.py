@@ -24,7 +24,7 @@ class DemoScript:
         self.by_question: dict[str, str] = {}
         self.generic: dict[str, list[str]] = {}
         for posting in data["postings"]:
-            for preset in posting["presets"]:
+            for preset in (q for r in posting["rounds"] for q in r["presets"]):
                 seed = bank.get(preset["id"])
                 if seed is None:
                     continue

@@ -1,26 +1,38 @@
-"""평가 (FR-07, 08): AI and interviewer scores side by side, never combined.
+"""평가 (FR-07, 08): AI and interviewer scores side by side, never combined; the round's decision
+(N차 결정) and the points a later round should check.
 
 Interviewer scores are one per competency for the whole session (Score.qa_item_id is null). A
-resubmission replaces the interviewer's previous scores; comments are de-identified like any
-other free text.
+resubmission replaces the interviewer's previous scores; comments, decision reasons and points to
+check are de-identified like any other free text. Decisions are people's: AI scores are reference
+only, and the official result of a final candidate is recorded on the recruiting site.
 """
 
 from __future__ import annotations
 
-from fastapi import APIRouter
+from fastapi import APIRouter, HTTPException, Response
 from sqlalchemy import delete
 
 from interview_assistant.ai.gateway import model_name
 from interview_assistant.api import schemas as s
 from interview_assistant.api import views
 from interview_assistant.api.deps import Db, Me, RuntimeDep, audit
-from interview_assistant.api.errors import conflict, invalid
+from interview_assistant.api.errors import conflict, invalid, not_found
 from interview_assistant.api.routes.sessions import get_session
-from interview_assistant.interviews import session_competency_set
-from interview_assistant.models import EvaluatorType, Score, SessionStatus
+from interview_assistant.interviews import current_decision, is_last_round, session_competency_set
+from interview_assistant.models import (
+    Application,
+    CheckPoint,
+    CheckPointSource,
+    EvaluatorType,
+    RoundDecision,
+    Score,
+    SessionStatus,
+)
 from interview_assistant.models.base import utcnow
 
 router = APIRouter(tags=["evaluation"])
+
+MAX_REASON = 1000
 
 
 @router.get("/sessions/{session_id}/evaluation", response_model=s.Evaluation)
@@ -90,3 +102,116 @@ def submit_scores(
     db.expire_all()
     found = get_session(db, session_id)
     return views.evaluation(db, found, model_name(runtime.pinned(found).ai.llm("primary")))
+
+
+# --- N차 결정 and points to check ---------------------------------------------------------------
+
+
+@router.post("/sessions/{session_id}/decision", response_model=s.Evaluation)
+def decide(
+    session_id: str, body: s.DecisionRequest, db: Db, me: Me, runtime: RuntimeDep
+) -> s.Evaluation:
+    """A person's decision on the session's round: 합격 (the next round opens; in the last round,
+    a final candidate), 보류 (stays on the pending list) or 불합격. Only once every interviewer
+    submitted; a change is a new revision with the old ones kept, and both are audited."""
+    found = get_session(db, session_id)
+    if not me.is_admin and all(link.interviewer_id != me.id for link in found.interviewers):
+        raise HTTPException(403, "이 면접의 면접관이나 관리자만 결정할 수 있습니다.")
+    refusal = views.decision_refusal(found)
+    if refusal is not None:
+        raise conflict(refusal)
+    reason = body.reason.strip()
+    if not reason:
+        raise invalid("reason", "결정 사유를 입력하세요.")
+    if len(reason) > MAX_REASON:
+        raise invalid("reason", f"결정 사유는 {MAX_REASON}자까지 쓸 수 있습니다.")
+    application = found.application
+    current = current_decision(application, found.round)
+    row = RoundDecision(
+        application=application,
+        round=found.round,
+        session=found,
+        revision=(current.revision if current else 0) + 1,
+        decision=body.decision,
+        reason=runtime.deid.deidentify(db, reason, application.candidate),
+        decided_by=me.id,
+    )
+    db.add(row)
+    db.flush()
+    details = {
+        "round_id": found.round_id,
+        "round": found.round.position,
+        "session_id": found.id,
+        "revision": row.revision,
+        "final": body.decision.value == "passed" and is_last_round(found.round),
+    }
+    if current is None:
+        audit(db, me, "round.decided", "application", application.id, decision=body.decision.value, **details)
+    else:
+        audit(
+            db,
+            me,
+            "round.decision_changed",
+            "application",
+            application.id,
+            **{"from": current.decision.value, "to": body.decision.value},
+            **details,
+        )
+    db.commit()
+    db.expire_all()
+    found = get_session(db, session_id)
+    return views.evaluation(db, found, model_name(runtime.pinned(found).ai.llm("primary")))
+
+
+@router.get("/applications/{application_id}/decisions", response_model=list[s.RoundDecision])
+def decisions(application_id: str, db: Db) -> list[s.RoundDecision]:
+    """Every revision of every round, newest first."""
+    application = db.get(Application, application_id)
+    if application is None or application.deleted_at is not None:
+        raise not_found("지원서")
+    return views.application_detail(application).decisions
+
+
+@router.post(
+    "/sessions/{session_id}/check-points", response_model=s.CheckPoint, status_code=201
+)
+def create_check_point(
+    session_id: str, body: s.CreateCheckPointRequest, db: Db, me: Me, runtime: RuntimeDep
+) -> s.CheckPoint:
+    """확인이 필요한 점 for later rounds, written by an interviewer (de-identified)."""
+    found = get_session(db, session_id)
+    if found.status is not SessionStatus.completed:
+        raise conflict("종료된 면접에만 확인할 점을 남길 수 있습니다.")
+    text = body.text.strip()
+    if not text:
+        raise invalid("text", "확인할 점을 입력하세요.")
+    pinned = session_competency_set(db, found)
+    names = [c["name"] for c in pinned.competencies] if pinned else []
+    if body.competency is not None and body.competency not in names:
+        raise invalid("competency", f"'{body.competency}'은(는) 이 면접의 역량이 아닙니다.")
+    row = CheckPoint(
+        session_id=found.id,
+        source=CheckPointSource.interviewer,
+        competency=body.competency,
+        text=runtime.deid.deidentify(db, text, found.application.candidate),
+        author_id=me.id,
+    )
+    db.add(row)
+    db.flush()
+    audit(db, me, "check_point.created", "interview_session", found.id, check_point_id=row.id)
+    db.commit()
+    db.refresh(row)
+    return views.check_point_view(row)
+
+
+@router.delete("/check-points/{check_point_id}", status_code=204)
+def delete_check_point(check_point_id: str, db: Db, me: Me) -> Response:
+    row = db.get(CheckPoint, check_point_id)
+    if row is None:
+        raise not_found("확인할 점")
+    if row.source is not CheckPointSource.interviewer or row.author_id != me.id:
+        raise HTTPException(403, "직접 남긴 확인할 점만 지울 수 있습니다.")
+    audit(db, me, "check_point.deleted", "interview_session", row.session_id, check_point_id=row.id)
+    db.delete(row)
+    db.commit()
+    return Response(status_code=204)

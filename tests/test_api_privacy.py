@@ -17,9 +17,13 @@ from interview_assistant.providers.fake import FakeLLM
 from tests.api_util import (
     COMPLETED,
     LIVE,
+    LIVE2,
+    NEXT_ROUND2,
     P3,
+    ROUND2_DONE,
     SCHEDULED,
     get_paths,
+    round_id,
     json_keys,
     sse_events,
     wait_for,
@@ -101,6 +105,20 @@ def _feed_identifiers(api) -> list[str]:
         == 200
     )
 
+    # Earlier rounds: a point to check and a decision reason, then 2차 work that reads them.
+    point = f"{_seeded_identity(3).name} 지원자 협업 사례 재확인, 연락처 {_seeded_identity(3).phones[0]}"
+    raw.append(point)
+    assert api.post(f"/api/sessions/{COMPLETED}/check-points", json={"text": point}).status_code == 201
+    reason = f"{_seeded_identity(1).name} 지원자 2차 결과 정리"
+    raw += [reason, _seeded_identity(1).name]
+    decided = api.post(f"/api/sessions/{ROUND2_DONE}/decision", json={"decision": "hold", "reason": reason})
+    assert decided.status_code == 200
+    assert api.post(f"/api/sessions/{NEXT_ROUND2}/carryover-questions").status_code == 200
+    live2 = api.get(f"/api/sessions/{LIVE2}").json()
+    answered = next(q for q in reversed(live2["qa_items"]) if q["answer_deidentified"])
+    follow2 = api.post(f"/api/sessions/{LIVE2}/follow-ups", json={"qa_item_id": answered["id"]})
+    assert [e for e, _ in sse_events(follow2.text)][-1] == "batch.done"
+
     api.post(f"/api/sessions/{LIVE}/end")
     wait_for(api, f"/api/sessions/{LIVE}/evaluation", lambda b: b["ai"]["status"] == "completed")
     return raw
@@ -173,19 +191,14 @@ def test_providers_come_from_the_yaml_and_only_see_deidentified_text(
             "screening": "SpyLLM",
         }
         raw = _feed_identifiers(api)
-        assert (
-            api.post(
-                "/api/postings/b1d6a0c2-1f3e-4b8a-9c41-5e2f7a9d0003/competency-sets/generate"
-            ).status_code
-            == 201
-        )
+        assert api.post(f"/api/rounds/{round_id(api, P3)}/competency-sets/generate").status_code == 201
         ev = api.get(f"/api/sessions/{LIVE}/evaluation").json()
         assert ev["ai"]["model"] == "spy-primary"
         upload_result = api.get(f"/api/postings/{P2}/applications").json()[-1]
         assert upload_result["screening"]["model"] == "spy-screening"
     factory.kw["bind"].dispose()
 
-    kinds = {"<document>", "<follow_up_request>", "<answer>", "<job_posting>"}
+    kinds = {"<document>", "<follow_up_request>", "<answer>", "<job_posting>", "<earlier_rounds>", "<check_points>"}
     assert all(any(k in p for p in SpyLLM.prompts) for k in kinds)
     taeo = _manifest_identity("이력서_문태오.docx")
     org_values = [*taeo["schools"], *taeo["companies"], *_seeded_identity(7).companies]
@@ -238,7 +251,7 @@ def test_a_model_switched_at_runtime_still_only_sees_deidentified_text(api, monk
             api, f"/api/sessions/{SCHEDULED}/evaluation", lambda b: b["ai"]["status"] == "completed"
         )
         assert ev["ai"]["model"] == "spy-llm.primary"
-        assert api.post(f"/api/postings/{P3}/competency-sets/generate").status_code == 201
+        assert api.post(f"/api/rounds/{round_id(api, P3)}/competency-sets/generate").status_code == 201
         assert (
             api.get(f"/api/postings/{P2}/applications").json()[-1]["screening"]["model"]
             == "spy-llm.screening"

@@ -5,7 +5,8 @@ A sample counts only if its competency is in the dictionary, its score is 1-5 an
 copied verbatim from the de-identified answer (근거 없는 점수 거부). Per answer and competency the
 median of the valid samples is kept; confidence is the samples' own confidence scaled down by
 their spread and by the share of samples that were rejected. An answer with no valid sample gets
-no score ("근거 없음").
+no score ("근거 없음"). Before scoring is marked done, the AI also notes points the next round
+should check (ai/checkpoints.py); if that fails, the scores stand without them.
 """
 
 from __future__ import annotations
@@ -21,6 +22,7 @@ from pydantic import BaseModel, ValidationError
 from sqlalchemy import delete
 from sqlalchemy.orm import Session, sessionmaker
 
+from interview_assistant.ai.checkpoints import extract_check_points
 from interview_assistant.ai.gateway import AiCall, AiGateway, model_name
 from interview_assistant.ai.prompts import (
     SCORING_PROMPT,
@@ -167,6 +169,13 @@ async def score_session(
                 db.add_all(rows)
                 scored += len(rows)
                 db.commit()
+            try:
+                await extract_check_points(db, ai, session, competencies, known)
+            except Exception:  # points to check are extra: scoring stands without them
+                log.exception("check points failed for session %s", session_id)
+                db.rollback()
+                session = db.get(InterviewSession, session_id)
+                assert session is not None
             session.ai_scoring_status = AiScoringStatus.completed
             session.ai_scoring_finished_at = utcnow()
             db.add(

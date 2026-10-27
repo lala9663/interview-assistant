@@ -28,7 +28,16 @@ from interview_assistant.models import (
 from interview_assistant.providers import catalog, registry
 from interview_assistant.providers.catalog import ROLES, DataLocation, ImplInfo, OptionField
 from interview_assistant.providers.fake import FakeLLM, FakeSTT
-from tests.api_util import COMPLETED, LIVE, P3, SCHEDULED, sse_events, wait_for
+from tests.api_util import (
+    COMPLETED,
+    LIVE,
+    LIVE2,
+    P3,
+    SCHEDULED,
+    round_id,
+    sse_events,
+    wait_for,
+)
 from tests.conftest import ROOT, api_settings, file_session_factory, instant_providers
 
 FAST_LLM = {"impl": "fake", "options": {"model": "fake-llm-v2", "speed": 0}}
@@ -247,7 +256,7 @@ def test_a_broken_stored_spec_does_not_stop_the_server(seeded_db, tmp_path, no_e
             r for r in api.get("/api/admin/models").json()["roles"] if r["role"] == "llm.primary"
         )
         assert primary["status"] == "unavailable" and "구현" in primary["status_detail"]
-        response = api.post(f"/api/postings/{P3}/competency-sets/generate")
+        response = api.post(f"/api/rounds/{round_id(api, P3)}/competency-sets/generate")
         assert response.status_code == 503
         assert "LLM 주 모델" in response.json()["detail"]
     factory.kw["bind"].dispose()
@@ -317,7 +326,7 @@ def test_apply_swaps_new_work_while_sessions_keep_their_providers(api):
     assert audit.details["revision"] == INITIAL + 1 and audit.details["model"] == "fake-llm-v2"
 
     # New work outside sessions: the new model.
-    assert api.post(f"/api/postings/{P3}/competency-sets/generate").status_code == 201
+    assert api.post(f"/api/rounds/{round_id(api, P3)}/competency-sets/generate").status_code == 201
     assert _audits(api, "competency_set.generated")[-1].model == "fake-llm-v2"
 
     # The interview already running keeps the model it started with ...
@@ -548,8 +557,9 @@ def test_a_streaming_stt_that_cannot_read_the_simulated_candidate_goes_manual(ap
 def test_unused_provider_instances_are_dropped(api):
     old = api.runtime.models.active.get("llm.primary")
     _apply(api, "llm.primary", FAST_LLM)
-    api.post(f"/api/sessions/{LIVE}/end")
-    wait_for(api, f"/api/sessions/{LIVE}/evaluation", lambda b: b["ai"]["status"] == "completed")
+    for live in (LIVE, LIVE2):  # both interviews in progress keep the old provider until they end
+        api.post(f"/api/sessions/{live}/end")
+        wait_for(api, f"/api/sessions/{live}/evaluation", lambda b: b["ai"]["status"] == "completed")
     c4 = "0a1b2c3d-0000-4000-9000-c40000000000"
     wait_for(api, f"/api/sessions/{c4}/evaluation", lambda b: b["ai"]["status"] == "completed")
     api.runtime.models.evict()

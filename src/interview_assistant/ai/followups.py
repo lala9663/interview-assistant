@@ -4,6 +4,10 @@ The model writes tagged blocks (prompts.FOLLOWUP_FORMAT); `SuggestionParser` tur
 stream into the SSE events of docs/api-contract.md 3.2 as text arrives, so the question appears
 while it is being written. Every finished suggestion is stored (FollowUpSuggestion) whether or not
 the interviewer uses it. Suggestions are never turned into questions here.
+
+In round 2 and later the prompt also carries the earlier rounds' Q&A (de-identified, as stored),
+so the model does not ask again what an earlier round asked and digs deeper instead. Those texts
+are declared to the guard like the current answer.
 """
 
 from __future__ import annotations
@@ -23,7 +27,7 @@ from interview_assistant.ai.prompts import (
     followup_prompt,
 )
 from interview_assistant.deid.service import DeidService
-from interview_assistant.interviews import session_competency_set
+from interview_assistant.interviews import earlier_round_qa, session_competency_set
 from interview_assistant.models import FollowUpSuggestion, QAItem
 from interview_assistant.models.base import new_id
 
@@ -174,6 +178,7 @@ async def follow_up_events(
             for q in session.qa_items
             if q.seq < qa.seq and q.answer_deidentified
         ][-CONTEXT_ANSWERS:]
+        earlier_rounds = earlier_round_qa(session)
         answer = qa.answer_deidentified
         target = qa.target_competency
         call = AiCall(
@@ -184,14 +189,24 @@ async def follow_up_events(
                 competencies=competencies,
                 target_competency=target,
                 previous=earlier,
+                earlier_rounds=earlier_rounds,
                 question=qa.question,
                 answer=answer,
             ),
-            candidate_texts=[answer, qa.question, *(t for pair in earlier for t in pair)],
+            candidate_texts=[
+                answer,
+                qa.question,
+                *(t for pair in earlier for t in pair),
+                *(t for _, q, a in earlier_rounds for t in (q, a)),
+            ],
             known=deid.identity(session.application.candidate),
             target_type="interview_session",
             target_id=session_id,
-            details={"qa_item_id": qa.id, "batch_id": batch_id},
+            details={
+                "qa_item_id": qa.id,
+                "batch_id": batch_id,
+                "earlier_round_answers": len(earlier_rounds),
+            },
         )
         try:
             model, stream = ai.stream(db, call)

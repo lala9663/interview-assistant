@@ -20,8 +20,10 @@ const IS_MAC = typeof navigator !== 'undefined' && /Mac|iPhone|iPad/.test(naviga
 const route = useRoute()
 const me = useMe()
 const live = useSessions('in_progress')
+// Several interviews can run at once (1차 and 2차 panels): the signed-in interviewer's comes first.
 const liveSession = computed(() => {
-  const s = live.data?.[0]
+  const list = live.data ?? []
+  const s = list.find((x) => x.interviewers.some((i) => i.interviewer_id === me.data?.id)) ?? list[0]
   return s && !route.path.endsWith(`${s.id}/live`) ? s : null
 })
 const paletteOpen = ref(false)
@@ -97,7 +99,7 @@ const errorMessage = computed(() => (renderError.value instanceof Error ? render
           <span class="size-2 shrink-0 animate-live rounded-full bg-live" aria-hidden="true"></span>
           <span class="hidden min-w-0 lg:block">
             <span class="block font-medium text-live">진행 중 면접</span>
-            <span class="block truncate font-mono text-muted-foreground">{{ liveSession.candidate.pseudonym }}</span>
+            <span class="block truncate font-mono text-muted-foreground">{{ liveSession.candidate.pseudonym }} · {{ liveSession.round.label }}</span>
           </span>
         </RouterLink>
       </Tooltip>

@@ -9,6 +9,9 @@ from interview_assistant.models.interview import (
     Availability,
     AvailabilitySource,
     CandidateNote,
+    CheckPoint,
+    CheckPointSource,
+    DecisionStatus,
     EvaluatorType,
     FollowUpSuggestion,
     Interviewer,
@@ -16,6 +19,7 @@ from interview_assistant.models.interview import (
     InterviewSession,
     QAItem,
     QuestionSource,
+    RoundDecision,
     Score,
     SessionInterviewer,
     SessionMode,
@@ -25,10 +29,12 @@ from interview_assistant.models.interview import (
 )
 from interview_assistant.models.intake import IntakeEvent, IntakeEventType, IntakeStatus
 from interview_assistant.models.recruiting import (
+    DEFAULT_ROUND_NAME,
     Application,
     ApplicationChannel,
     Candidate,
     CompetencySet,
+    InterviewRound,
     JobPosting,
     PostingStatus,
     PresetQuestion,
@@ -37,6 +43,7 @@ from interview_assistant.models.recruiting import (
 )
 
 __all__ = [
+    "DEFAULT_ROUND_NAME",
     "ActorType",
     "AiModelChange",
     "AiModelSetting",
@@ -49,9 +56,12 @@ __all__ = [
     "Base",
     "Candidate",
     "CandidateNote",
+    "CheckPoint",
+    "CheckPointSource",
     "CompetencySet",
     "DeidCategory",
     "DeidMapping",
+    "DecisionStatus",
     "EvaluatorType",
     "FollowUpSuggestion",
     "IntakeEvent",
@@ -59,6 +69,7 @@ __all__ = [
     "IntakeStatus",
     "Interviewer",
     "InterviewerRole",
+    "InterviewRound",
     "InterviewSession",
     "JobPosting",
     "ModelChangeKind",
@@ -66,6 +77,7 @@ __all__ = [
     "PresetQuestion",
     "QAItem",
     "QuestionSource",
+    "RoundDecision",
     "Score",
     "Screening",
     "ScreeningStatus",

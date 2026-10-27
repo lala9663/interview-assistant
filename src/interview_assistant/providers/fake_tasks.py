@@ -32,6 +32,9 @@ def respond(title: str | None, prompt: str, rng: random.Random) -> dict[str, Any
         "CandidateProfile": extract_profile,
         "ScreeningAssessment": assess_screening,
         "AnswerScores": score_answer,
+        "PresetDraft": draft_presets,
+        "CarryoverQuestions": carryover_questions,
+        "CheckPointDraft": check_points,
         "ConnectionTest": connection_test,
     }
     handler = handlers.get(title or "")
@@ -190,8 +193,22 @@ _INITIATIVE = {
 }
 
 
+_ORG_FIT = {
+    "name": "조직 적합과 성장 의지",
+    "description": "조직의 일하는 방식과 가치에 맞춰 일하고, 스스로 성장 목표를 세워 실행한다.",
+    "bars": _bars(
+        "지원 동기와 성장 목표가 막연하다.",
+        "회사와 직무에 대한 기대를 일반론으로 설명한다.",
+        "경험에 근거해 지원 동기와 성장 계획을 구체적으로 설명한다.",
+        "조직의 우선순위와 자신의 강점을 연결해 기여 방식을 제시한다.",
+        "장기적 기여 계획을 실행 근거와 함께 제시하고 주변의 성장까지 이끈다.",
+    ),
+}
+
+
 def draft_competencies(prompt: str, rng: random.Random) -> dict[str, Any]:
     jd = tag(prompt, "jd") or ""
+    earlier = tag(prompt, "earlier_round_competencies") or "없음"
     raw_current = tag(prompt, "current_competencies") or ""
     try:
         current = json.loads(raw_current) if raw_current.startswith("[") else []
@@ -204,6 +221,12 @@ def draft_competencies(prompt: str, rng: random.Random) -> dict[str, Any]:
             None,
         )
         return {"competencies": [*current, *([extra] if extra else [])]}
+
+    if earlier != "없음":
+        # A later round (임원 면접 ...): what the earlier rounds did not look at, plus fit.
+        seen = set(earlier.split("\n"))
+        picked = [c for c in (_INITIATIVE, _ORG_FIT, _COLLABORATION) if c["name"] not in seen]
+        return {"competencies": picked or [_INITIATIVE, _ORG_FIT]}
 
     scored = [(sum(jd.count(k) for k in keys), item) for keys, item in _LIBRARY]
     picked = [item for hits, item in sorted(scored, key=lambda x: -x[0]) if hits > 0][:4]
@@ -446,47 +469,93 @@ def score_answer(prompt: str, rng: random.Random) -> dict[str, Any]:
 
 # --- 꼬리질문 (stream) -------------------------------------------------------------------
 
-_FOLLOW_UPS: list[tuple[tuple[str, ...], str, str]] = [
+# (competency keywords, what the question is about (matched against earlier rounds' questions),
+#  question, rationale, deeper question for when an earlier round already asked it)
+_FOLLOW_UPS: list[tuple[tuple[str, ...], tuple[str, ...], str, str, str]] = [
     (
         ("문제",),
+        ("원인", "가설"),
         "원인을 어떻게 좁혀 갔고, 다른 가설은 어떻게 배제했나요?",
         "원인 규명과 검증 과정을 확인합니다. 답변에는 결과 위주로 설명되어 있습니다.",
+        "같은 방법이 통하지 않았던 사례가 있다면, 그때는 판단을 어떻게 바꾸셨나요?",
     ),
     (
         ("데이터", "분석"),
+        ("근거", "데이터"),
         "그 판단의 근거가 된 데이터는 무엇이었고, 충분하다고 본 이유는 무엇인가요?",
         "판단 근거 데이터의 출처와 충분성을 확인합니다.",
+        "데이터가 부족한 상황에서 결정해야 했다면 무엇을 기준으로 삼으셨나요?",
     ),
     (
         ("협업", "커뮤니케이션"),
+        ("합의", "의견", "갈렸"),
         "그 과정에서 의견이 달랐던 사람과는 어떻게 합의했나요?",
         "이해관계자와의 조율 방식을 확인합니다.",
+        "합의한 뒤에도 결과가 기대와 달랐을 때 관계와 일정은 어떻게 다시 맞추셨나요?",
     ),
     (
         ("설계",),
+        ("대안", "구조"),
         "그 구조를 정할 때 비교한 대안과 포기한 것은 무엇이었나요?",
         "설계 트레이드오프 인식을 확인합니다.",
+        "그 결정을 지금 다시 한다면 무엇을 바꾸고, 그 이유는 무엇인가요?",
     ),
     (
         ("운영", "장애"),
+        ("재발", "다시"),
         "그 뒤로 같은 문제가 다시 생기지 않았다는 것은 어떻게 확인했나요?",
         "재발 방지 조치의 실효성을 확인합니다.",
+        "그 조치를 다른 팀이나 서비스로 넓힐 때 무엇이 걸림돌이었나요?",
     ),
     (
         ("품질", "코드"),
+        ("보장", "테스트"),
         "그 변경이 기존 동작을 깨지 않았다는 것은 어떻게 보장했나요?",
         "안전한 변경 방식과 테스트 전략을 확인합니다.",
+        "팀 전체의 품질 기준을 바꾸려 할 때 어떤 반대가 있었고 어떻게 설득하셨나요?",
     ),
     (
         ("이해", "장비", "공정"),
+        ("원리", "변수"),
         "그 부분의 원리를 조금 더 구체적으로 설명해 주실 수 있나요?",
         "메커니즘 수준의 이해를 확인합니다.",
+        "그 원리가 다른 공정이나 조건에서는 어떻게 달라지는지 설명해 주시겠어요?",
+    ),
+    (
+        ("주도", "리더", "책임"),
+        ("주도", "책임"),
+        "그 일을 맡게 된 계기와, 본인이 먼저 나서서 바꾼 것은 무엇이었나요?",
+        "스스로 문제를 정의하고 끝까지 책임진 정도를 확인합니다.",
+        "성과가 나지 않았을 때 그 책임을 어떻게 지고 다음 결정을 내리셨나요?",
+    ),
+    (
+        ("조직", "성장", "적합"),
+        ("동기", "성장"),
+        "그 경험이 지원하신 직무에서 어떻게 이어질 것이라고 보시나요?",
+        "경험과 지원 동기, 성장 계획의 연결을 확인합니다.",
+        "입사 후 첫해에 스스로 세운 목표를 이루지 못한다면 무엇부터 바꾸시겠어요?",
     ),
 ]
 _DEFAULT_FOLLOW_UP = (
     "그 일에서 본인이 직접 한 부분과 판단 근거를 더 구체적으로 말씀해 주시겠어요?",
     "본인 기여와 판단 근거를 확인합니다.",
 )
+
+
+def _earlier_rounds(text: str | None) -> list[tuple[str, str, str]]:
+    """(round label, question, answer) of an `<earlier_rounds>` block (prompts.earlier_rounds_text)."""
+    if not text or text == "없음":
+        return []
+    found = []
+    for block in re.split(r"\n\n(?=\[)", text):
+        m = re.match(r"\[([^\]]+)\] Q: (.*?)\nA: (.*)", block, re.S)
+        if m:
+            found.append((m.group(1), m.group(2).strip(), m.group(3).strip()))
+    return found
+
+
+def _asked_before(about: tuple[str, ...], questions: list[str]) -> bool:
+    return any(word in q for q in questions for word in about)
 
 
 def _fragment(sentence: str, words: int = 5) -> str:
@@ -508,15 +577,37 @@ def follow_up_text(prompt: str, rng: random.Random) -> str | None:
     if not picks:
         return ""
 
+    earlier = _earlier_rounds(tag(request, "earlier_rounds"))
+    earlier_questions = [q for _, q, _ in earlier]
     blocks = []
     for i in range(3):
         competency = order[i % len(order)]
         grounding = picks[i % len(picks)]
-        tail, rationale = next(
-            ((q, r) for keys, q, r in _FOLLOW_UPS if any(k in competency for k in keys)),
-            _DEFAULT_FOLLOW_UP,
-        )
+        tail, rationale = _DEFAULT_FOLLOW_UP
+        for keys, about, q, r, deeper in _FOLLOW_UPS:
+            if any(k in competency for k in keys):
+                tail, rationale = q, r
+                if _asked_before(about, earlier_questions):
+                    label = earlier[-1][0]
+                    tail = deeper
+                    rationale = (
+                        f"{label}에서 '{about[0]}'은(는) 이미 물었으므로 반복하지 않고 한 단계 더 "
+                        "깊이 확인합니다."
+                    )
+                break
         question = f"“{_fragment(grounding)}”라고 하셨는데, {tail}"
+        if i == 0 and earlier:
+            label, _, before = earlier[-1]
+            echo = sentences(before)
+            if echo:
+                question = (
+                    f"{label}에서는 “{_fragment(echo[0])}”라고 하셨는데, 이번에 말씀하신 "
+                    f"“{_fragment(grounding)}”와는 어떻게 이어지나요?"
+                )
+                rationale = (
+                    f"{label} 답변과 이어 보며 일관성과 깊이를 확인합니다. {label}에서 물은 "
+                    "질문은 반복하지 않습니다."
+                )
         blocks.append(
             "<suggestion>"
             f"<competency>{competency}</competency>"
@@ -535,3 +626,165 @@ def chunks(text: str, rng: random.Random) -> Iterator[str]:
         step = rng.randint(2, 4)
         yield text[i : i + step]
         i += step
+
+
+# --- 사전 질문 초안 (차수별) --------------------------------------------------------------------
+
+# (competency keywords, questions, deeper questions for a later round)
+_PRESETS: list[tuple[tuple[str, ...], tuple[tuple[str, str], ...], tuple[tuple[str, str], ...]]] = [
+    (
+        ("문제",),
+        (
+            ("가장 어려웠던 문제를 하나 골라, 원인을 어떻게 좁혀 갔는지 설명해 주세요.", "가설 수립과 검증"),
+            ("해결책이 기대만큼 효과가 없었던 경험과 그 뒤의 대응을 말씀해 주세요.", "실패 대응과 재검증"),
+        ),
+        (
+            ("같은 문제가 다른 조건에서 다시 생긴다면 무엇부터 다르게 하시겠어요?", "학습과 일반화"),
+            ("해결 방법을 팀의 표준으로 만든 경험이 있나요? 무엇이 어려웠나요?", "확산과 표준화"),
+        ),
+    ),
+    (
+        ("데이터", "분석"),
+        (
+            ("데이터로 판단을 바꾼 사례를 하나 설명해 주세요. 어떤 데이터를 어떤 순서로 보셨나요?", "분석 절차"),
+            ("분석 결과가 현장의 직감과 달랐던 경험과 그때의 결론을 말씀해 주세요.", "데이터 근거 설득"),
+        ),
+        (
+            ("데이터가 불완전한 상황에서 결정해야 했던 경험과 그 기준을 말씀해 주세요.", "불확실성 아래 판단"),
+            ("분석 체계를 다른 사람도 쓸 수 있게 만든 경험이 있나요?", "분석의 확산"),
+        ),
+    ),
+    (
+        ("협업", "커뮤니케이션", "영향"),
+        (
+            ("유관 부서와 의견이 갈렸던 사례와 합의에 이른 과정을 말씀해 주세요.", "이견 조율"),
+            ("외부 협력사와 일하며 어려웠던 점과 해결 방법은 무엇이었나요?", "외부 협업"),
+        ),
+        (
+            ("권한이 없는 상대를 설득해 일정을 바꾼 경험을 말씀해 주세요.", "영향력"),
+            ("협업이 실패했던 경험에서 본인이 바꾼 일하는 방식은 무엇인가요?", "회고와 변화"),
+        ),
+    ),
+    (
+        ("주도", "리더", "책임"),
+        (
+            ("맡은 범위를 넘어 스스로 문제를 정의하고 끝까지 해결한 경험을 말씀해 주세요.", "주도성"),
+            ("팀의 우선순위를 바꾸자고 제안한 경험과 결과를 말씀해 주세요.", "변화 주도"),
+        ),
+        (
+            ("결정이 틀렸다고 드러났을 때 책임을 어떻게 지셨나요?", "책임감"),
+            ("후배나 동료의 성장을 이끈 구체적 사례를 말씀해 주세요.", "사람의 성장"),
+        ),
+    ),
+    (
+        ("조직", "성장", "적합"),
+        (
+            ("이 직무를 고른 이유와, 지난 경력과 어떻게 이어지는지 말씀해 주세요.", "지원 동기"),
+            ("앞으로 3년 동안 이루고 싶은 성장 목표와 그 근거는 무엇인가요?", "성장 계획"),
+        ),
+        (
+            ("조직의 방향과 본인의 판단이 달랐던 경험과 그때의 선택을 말씀해 주세요.", "가치 판단"),
+            ("입사 후 첫해에 회사에 기여할 방법을 구체적으로 말씀해 주세요.", "기여 방식"),
+        ),
+    ),
+]
+_DEFAULT_PRESETS = (
+    ("이 역량이 드러난 최근 경험을 하나 골라 상황, 행동, 결과 순으로 설명해 주세요.", "행동 사례"),
+    ("그 경험에서 다시 한다면 무엇을 바꾸시겠어요?", "회고"),
+)
+
+
+def _lines(block: str | None) -> list[str]:
+    if not block or block == "없음":
+        return []
+    return [ln.strip()[2:].strip() for ln in block.splitlines() if ln.strip().startswith("- ")]
+
+
+def draft_presets(prompt: str, rng: random.Random) -> dict[str, Any]:
+    names = competency_names(prompt)
+    earlier = _lines(tag(prompt, "earlier_round_questions"))
+    existing = set(_lines(tag(prompt, "existing_questions")))
+    questions = []
+    for name in names:
+        base, deeper = next(
+            ((b, d) for keys, b, d in _PRESETS if any(k in name for k in keys)),
+            (_DEFAULT_PRESETS, _DEFAULT_PRESETS),
+        )
+        # A later round digs deeper than what earlier rounds asked.
+        pool = [*deeper, *base] if earlier else [*base, *deeper]
+        picked = [(q, i) for q, i in pool if q not in existing and q not in earlier][:2]
+        questions += [{"competency": name, "question": q, "intent": i} for q, i in picked]
+    return {"questions": questions}
+
+
+# --- 이어 질문 ---------------------------------------------------------------------------------
+
+_QA_BLOCK = re.compile(r'<qa ref="([^"]+)" round="([^"]+)">\nQ: (.*?)\nA: (.*?)\n</qa>', re.S)
+
+
+def _specificity(answer: str) -> int:
+    """Rough evidence weight of an answer: numbers and signal words."""
+    return len(re.findall(r"\d", answer)) + sum(word in answer for word in _SIGNALS)
+
+
+def carryover_questions(prompt: str, rng: random.Random) -> dict[str, Any]:
+    names = competency_names(prompt) or ["역량"]
+    blocks = [m.groups() for m in _QA_BLOCK.finditer(tag(prompt, "earlier_rounds") or "")]
+    if not blocks:
+        return {"questions": []}
+    # The thinnest earlier answers first: that is where the earlier round left most to check.
+    ordered = sorted(blocks, key=lambda b: _specificity(b[3]))[:3]
+    questions = []
+    for i, (ref, label, question, answer) in enumerate(ordered):
+        parts = sentences(answer) or [answer]
+        grounding = min(parts, key=_specificity).rstrip(".")
+        competency = names[i % len(names)]
+        topic = _fragment(question, 4)
+        questions.append(
+            {
+                "competency": competency,
+                "question": (
+                    f"{label}에서 “{_fragment(grounding)}”라고 하셨습니다. 그 일에서 본인이 내린 "
+                    "가장 어려운 판단은 무엇이었고, 결과에 대해 어떤 책임을 지셨나요?"
+                ),
+                "intent": f"{label} 답변 심화",
+                "based_on": ref,
+                "grounding": grounding,
+                "rationale": (
+                    f"{label}에서 '{topic}'은(는) 이미 물었고 답변이 결과 위주였습니다. 같은 "
+                    f"질문을 반복하지 않고 {competency} 관점에서 판단과 책임을 더 깊이 확인합니다."
+                ),
+            }
+        )
+    return {"questions": questions}
+
+
+# --- 확인이 필요한 점 ---------------------------------------------------------------------------
+
+_INTERVIEW_QA = re.compile(r'<qa seq="(\d+)">\nQ: (.*?)\nA: (.*?)\n</qa>', re.S)
+
+
+def check_points(prompt: str, rng: random.Random) -> dict[str, Any]:
+    names = competency_names(prompt)
+    blocks = [m.groups() for m in _INTERVIEW_QA.finditer(tag(prompt, "interview") or "")]
+    answered = [(int(n), q, a) for n, q, a in blocks if a.strip()]
+    points = []
+    for seq, question, answer in sorted(answered, key=lambda b: _specificity(b[2]))[:2]:
+        parts = sentences(answer) or [answer]
+        evidence = min(parts, key=_specificity)
+        competency = next(
+            (n for n in names if any(p in question + answer for p in re.split(r"[\s·과와]+", n) if len(p) >= 2)),
+            names[0] if names else "",
+        )
+        points.append(
+            {
+                "competency": competency,
+                "point": (
+                    f"{competency}: 이 답변은 근거가 적어 본인이 직접 한 판단과 결과를 다음 "
+                    "차수에서 구체적으로 확인할 필요가 있습니다."
+                ),
+                "evidence": evidence,
+                "qa_seq": seq,
+            }
+        )
+    return {"points": points}

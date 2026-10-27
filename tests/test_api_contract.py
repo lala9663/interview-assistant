@@ -9,6 +9,8 @@ from interview_assistant.models import (
     ActorType,
     ApplicationChannel,
     AvailabilitySource,
+    CheckPointSource,
+    DecisionStatus,
     EvaluatorType,
     IntakeEventType,
     IntakeStatus,
@@ -53,7 +55,7 @@ def test_every_contract_endpoint_is_served(api):
         if path.startswith("/api")
         for method in ops
     }
-    assert len(documented) == 52
+    assert len(documented) == 68
     assert documented == served
 
 
@@ -72,6 +74,8 @@ def test_every_contract_endpoint_is_served(api):
         ("APPLICATION_CHANNELS", ApplicationChannel),
         ("INTAKE_EVENT_TYPES", IntakeEventType),
         ("INTAKE_STATUSES", IntakeStatus),
+        ("DECISION_STATUSES", DecisionStatus),
+        ("CHECK_POINT_SOURCES", CheckPointSource),
     ],
 )
 def test_enum_values_match_the_frontend(ts_name, enum):
@@ -101,17 +105,29 @@ def test_seeded_dashboard_matches_the_mock_dataset(api):
     assert p1["latest_competency_set"]["version"] == 2
     assert "jd_text" not in p1
 
+    assert [r["label"] for r in p1["rounds"]] == ["1차", "2차"]
+    assert [r["name"] for r in p1["rounds"]] == ["직무 면접", "임원 면접"]
+    assert [r["label"] for r in postings["AI 플랫폼 백엔드 엔지니어"]["rounds"]] == ["1차"]
+
     sessions = api.get("/api/sessions").json()
     statuses = [x["status"] for x in sessions]
-    assert statuses.count("in_progress") == 1
-    assert statuses.count("completed") == 4
+    assert statuses.count("in_progress") == 2
+    assert statuses.count("completed") == 9
     assert statuses.count("scheduled") == 3
+    by_round = {(x["round"]["label"], x["status"]) for x in sessions if x["posting"]["id"] == P1}
+    assert {("2차", "scheduled"), ("2차", "in_progress"), ("2차", "completed")} <= by_round
 
     me = api.get("/api/me").json()
     assert me["name"] == "김서연"
     dashboard = api.get("/api/dashboard").json()
     assert {row["posting"]["status"] for row in dashboard["pipeline"]} <= {"draft", "open"}
-    assert dashboard["hold_count"] == 4
+    assert dashboard["hold_count"] == 2
+    pending = {(x["candidate"]["pseudonym"], x["round"]["label"], x["status"]) for x in dashboard["pending_decisions"]}
+    assert pending == {("CAND-0001", "2차", "deciding"), ("CAND-0014", "1차", "hold")}
+    pipeline = {row["posting"]["title"]: row["counts"] for row in dashboard["pipeline"]}
+    p1_rounds = pipeline["메모리 공정개발 엔지니어 (경력)"]["rounds"]
+    assert [(r["round"]["label"], r["reached"], r["passed"]) for r in p1_rounds] == [("1차", 7, 3), ("2차", 3, 0)]
+    assert pipeline["AI 플랫폼 백엔드 엔지니어"]["final"] == 1
     assert all(
         me["id"] in [i["interviewer_id"] for i in x["interviewers"]]
         for x in dashboard["pending_my_scores"]
@@ -121,14 +137,29 @@ def test_seeded_dashboard_matches_the_mock_dataset(api):
 def test_application_rows_and_stage(api):
     rows = api.get(f"/api/postings/{P1}/applications").json()
     by_pseudonym = {r["candidate"]["pseudonym"]: r for r in rows}
-    assert by_pseudonym["CAND-0007"]["stage"] == "interviewing"
-    assert by_pseudonym["CAND-0011"]["stage"] == "interview_scheduled"
-    assert by_pseudonym["CAND-0001"]["stage"] == "screening"
-    assert (
-        by_pseudonym["CAND-0003"]["stage"] == "evaluated"
-    )  # AI done, both panel members submitted
-    assert by_pseudonym["CAND-0005"]["stage"] == "interviewed"  # kim has not submitted
+
+    def now(pseudonym):
+        stage = by_pseudonym[pseudonym]["stage"]
+        return stage["kind"], (stage["round"] or {}).get("label"), stage["status"]
+
+    def trail(pseudonym):
+        return [s["status"] for s in by_pseudonym[pseudonym]["progress"]]
+
+    assert now("CAND-0007") == ("round", "1차", "in_progress")
+    assert now("CAND-0011") == ("round", "1차", "scheduled")
+    assert now("CAND-0002") == ("round", "1차", "waiting")  # passed screening, nothing booked
+    assert now("CAND-0005") == ("round", "1차", "evaluating")  # kim has not submitted
+    assert now("CAND-0003") == ("round", "2차", "scheduled")  # passed 1차, 2차 tomorrow
+    assert now("CAND-0009") == ("round", "2차", "in_progress")
+    assert now("CAND-0001") == ("round", "2차", "deciding")  # both submitted, no decision yet
+    assert now("CAND-0004") == ("screening", None, "rejected")
+    assert trail("CAND-0001") == ["passed", "passed", "deciding", None]
+    assert trail("CAND-0004") == ["rejected", None, None, None]
+    assert [s["kind"] for s in by_pseudonym["CAND-0001"]["progress"]] == ["screening", "round", "round", "final"]
     assert by_pseudonym["CAND-0007"]["top_skills"] == ["건식 식각", "FDC", "SPC"]
+    p2 = {r["candidate"]["pseudonym"]: r for r in api.get("/api/postings/b1d6a0c2-1f3e-4b8a-9c41-5e2f7a9d0002/applications").json()}
+    assert p2["CAND-0012"]["stage"]["kind"] == "final"  # passed the only round
+    assert p2["CAND-0020"]["stage"]["status"] == "rejected" and p2["CAND-0014"]["stage"]["status"] == "hold"
     assert api.get(f"/api/postings/{P3}/applications").json() == []
 
 
@@ -143,6 +174,16 @@ def test_session_detail_has_card_presets_and_pinned_set(api):
     assert [q["seq"] for q in detail["qa_items"]] == [1, 2, 3]
     assert detail["interviewers"][0]["role"] == "lead"
     assert detail["notes"][0]["content"].startswith("엣지 링")
+    assert detail["round"] == {
+        "id": detail["session"]["round_id"],
+        "position": 1,
+        "label": "1차",
+        "name": "직무 면접",
+        "is_last": False,
+        "rounds": 2,
+        "show_previous_scores": False,
+    }
+    assert detail["card"]["previous_rounds"] == [] and detail["carryover_questions"] == []
 
 
 def test_evaluation_keeps_ai_and_interviewer_scores_apart(api):
@@ -186,6 +227,8 @@ def test_activity_has_labels_and_only_feed_actions(api):
         "score.ai_started",
         "score.ai_completed",
         "score.interviewer_submitted",
+        "round.decided",
+        "round.decision_changed",
     }
     labels = {item["target_label"] for item in feed}
     assert "CAND-0007" in labels
@@ -228,3 +271,10 @@ def test_transcript_stream_of_a_finished_session_sends_status_and_ends(api):
     assert sse_events(response.text) == [
         ("status", {"recording": "stopped", "stt": "off", "latency_ms": None})
     ]
+
+
+def test_step_statuses_match_the_frontend():
+    from interview_assistant.interviews import STEP_STATUSES
+
+    m = re.search(r"export const STEP_STATUSES = \[([^\]]*)\] as const", TYPES)
+    assert m and re.findall(r"'([^']+)'", m.group(1)) == list(STEP_STATUSES)

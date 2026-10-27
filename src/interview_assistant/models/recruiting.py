@@ -1,4 +1,5 @@
-"""Job postings, competency dictionaries, candidates, applications, screening results."""
+"""Job postings, their interview rounds (전형 차수), competency dictionaries, candidates,
+applications, screening results."""
 
 from __future__ import annotations
 
@@ -23,7 +24,10 @@ from sqlalchemy.orm import Mapped, mapped_column, relationship
 from interview_assistant.models.base import Base, IdMixin, TimestampMixin, enum_column
 
 if TYPE_CHECKING:
-    from interview_assistant.models.interview import InterviewSession
+    from interview_assistant.models.interview import InterviewSession, RoundDecision
+
+# A posting without rounds gets this one (and so did every posting before 0006): "1차 면접".
+DEFAULT_ROUND_NAME = "면접"
 
 
 class PostingStatus(str, enum.Enum):
@@ -36,6 +40,11 @@ class ScreeningStatus(str, enum.Enum):
     passed = "passed"
     hold = "hold"
     rejected = "rejected"
+
+
+class SessionMode(str, enum.Enum):
+    onsite = "onsite"
+    remote = "remote"
 
 
 class ApplicationChannel(str, enum.Enum):
@@ -58,6 +67,11 @@ class JobPosting(IdMixin, TimestampMixin, Base):
     # it; empty until someone links the posting on its detail screen.
     site_posting_no: Mapped[str | None] = mapped_column(String(64), unique=True)
 
+    rounds: Mapped[list[InterviewRound]] = relationship(
+        back_populates="posting",
+        cascade="all, delete-orphan",
+        order_by="InterviewRound.position",
+    )
     competency_sets: Mapped[list[CompetencySet]] = relationship(
         back_populates="posting",
         cascade="all, delete-orphan",
@@ -66,17 +80,64 @@ class JobPosting(IdMixin, TimestampMixin, Base):
     applications: Mapped[list[Application]] = relationship(back_populates="posting")
 
 
-class CompetencySet(IdMixin, TimestampMixin, Base):
-    """One version of the competency dictionary for a posting.
+class InterviewRound(IdMixin, TimestampMixin, Base):
+    """One interview round of a posting (전형 차수): 1차 직무 면접, 2차 임원 면접 ...
 
-    `competencies` is a list of {name, description, bars: {"1": ..., "5": ...}}.
+    Rounds run in `position` order. Round 1 takes applications that passed screening; round N+1
+    takes those a person passed in round N (RoundDecision). The short label is always
+    "{position}차"; `name` says what the round is for. Each round has its own competency
+    dictionary versions and preset questions. `show_previous_scores` decides whether the
+    interviewers of this round see earlier rounds' scores (off by default, so earlier scores do
+    not anchor them; they still see the points to check and the notes).
     """
 
-    __tablename__ = "competency_sets"
-    __table_args__ = (UniqueConstraint("posting_id", "version", name="uq_competency_sets_posting_version"),)
+    __tablename__ = "interview_rounds"
+    __table_args__ = (
+        UniqueConstraint("posting_id", "position", name="uq_interview_rounds_posting_position"),
+        CheckConstraint(
+            "recommended_interviewers >= 1 AND recommended_interviewers <= 10",
+            name="recommended_interviewers_range",
+        ),
+    )
 
     posting_id: Mapped[str] = mapped_column(
         ForeignKey("job_postings.id", ondelete="CASCADE"), nullable=False
+    )
+    position: Mapped[int] = mapped_column(Integer, nullable=False)
+    name: Mapped[str] = mapped_column(String(100), nullable=False)
+    default_mode: Mapped[SessionMode] = mapped_column(
+        enum_column(SessionMode), default=SessionMode.remote, nullable=False
+    )
+    recommended_interviewers: Mapped[int] = mapped_column(Integer, default=2, nullable=False)
+    show_previous_scores: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+
+    posting: Mapped[JobPosting] = relationship(back_populates="rounds")
+    competency_sets: Mapped[list[CompetencySet]] = relationship(
+        back_populates="round", cascade="all, delete-orphan", order_by="CompetencySet.version"
+    )
+
+    @property
+    def label(self) -> str:
+        return f"{self.position}차"
+
+
+class CompetencySet(IdMixin, TimestampMixin, Base):
+    """One version of the competency dictionary of an interview round.
+
+    `competencies` is a list of {name, description, bars: {"1": ..., "5": ...}}. Versions count
+    per round; `posting_id` is the round's posting, kept for lookups (filled in from the round).
+    """
+
+    __tablename__ = "competency_sets"
+    __table_args__ = (
+        UniqueConstraint("round_id", "version", name="uq_competency_sets_round_version"),
+    )
+
+    posting_id: Mapped[str] = mapped_column(
+        ForeignKey("job_postings.id", ondelete="CASCADE"), nullable=False
+    )
+    round_id: Mapped[str] = mapped_column(
+        ForeignKey("interview_rounds.id", ondelete="CASCADE"), nullable=False, index=True
     )
     version: Mapped[int] = mapped_column(Integer, default=1, nullable=False)
     competencies: Mapped[list[dict[str, Any]]] = mapped_column(JSON, nullable=False)
@@ -85,6 +146,7 @@ class CompetencySet(IdMixin, TimestampMixin, Base):
     approved_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
 
     posting: Mapped[JobPosting] = relationship(back_populates="competency_sets")
+    round: Mapped[InterviewRound] = relationship(back_populates="competency_sets")
     preset_questions: Mapped[list[PresetQuestion]] = relationship(
         back_populates="competency_set",
         cascade="all, delete-orphan",
@@ -93,27 +155,46 @@ class CompetencySet(IdMixin, TimestampMixin, Base):
 
 
 class PresetQuestion(IdMixin, TimestampMixin, Base):
-    """사전 질문 (FR-06), written against one competency-set version.
+    """사전 질문 (FR-06). Two kinds:
 
-    Tied to the version rather than the posting because each question targets one of that
-    version's competencies. Approving a new version carries over the questions whose competency
-    it keeps.
+    - A round's question, written against one competency-set version (`competency_set_id`), since
+      each targets one of that version's competencies. A new draft copies the questions of the
+      version it starts from; approving an AI draft carries over those whose competency it keeps.
+    - A carry-over question (이어 질문) for one candidate's session in round 2 or later
+      (`session_id`): drafted by AI from the de-identified Q&A of earlier rounds, so the round
+      digs deeper instead of asking the same again. `based_on_qa_item_id` is the earlier answer
+      it builds on and `grounding` quotes that answer verbatim.
     """
 
     __tablename__ = "preset_questions"
     __table_args__ = (
         UniqueConstraint("competency_set_id", "position", name="uq_preset_questions_set_position"),
+        UniqueConstraint("session_id", "position", name="uq_preset_questions_session_position"),
+        CheckConstraint(
+            "competency_set_id IS NOT NULL OR session_id IS NOT NULL", name="set_or_session"
+        ),
     )
 
-    competency_set_id: Mapped[str] = mapped_column(
-        ForeignKey("competency_sets.id", ondelete="CASCADE"), nullable=False
+    competency_set_id: Mapped[str | None] = mapped_column(
+        ForeignKey("competency_sets.id", ondelete="CASCADE")
+    )
+    session_id: Mapped[str | None] = mapped_column(
+        ForeignKey("interview_sessions.id", ondelete="CASCADE"), index=True
     )
     position: Mapped[int] = mapped_column(Integer, nullable=False)
     competency: Mapped[str] = mapped_column(String(100), nullable=False)
     question: Mapped[str] = mapped_column(Text, nullable=False)
     intent: Mapped[str] = mapped_column(String(200), default="", nullable=False)
+    # Carry-over questions only (AI): the earlier answer, a verbatim quote of it, and why. A plain
+    # id, not a foreign key: qa_items already points here (preset_question_id), and a key both
+    # ways would leave the tables without a creation order.
+    based_on_qa_item_id: Mapped[str | None] = mapped_column(String(36))
+    grounding: Mapped[str | None] = mapped_column(Text)
+    rationale: Mapped[str | None] = mapped_column(Text)
+    model: Mapped[str | None] = mapped_column(String(100))
+    prompt_version: Mapped[str | None] = mapped_column(String(50))
 
-    competency_set: Mapped[CompetencySet] = relationship(back_populates="preset_questions")
+    competency_set: Mapped[CompetencySet | None] = relationship(back_populates="preset_questions")
 
 
 class Candidate(IdMixin, TimestampMixin, Base):
@@ -174,6 +255,11 @@ class Application(IdMixin, TimestampMixin, Base):
     )
     sessions: Mapped[list[InterviewSession]] = relationship(
         back_populates="application", cascade="all, delete-orphan"
+    )
+    decisions: Mapped[list[RoundDecision]] = relationship(
+        back_populates="application",
+        cascade="all, delete-orphan",
+        order_by="RoundDecision.revision",
     )
 
 

@@ -51,6 +51,11 @@ def dashboard(db: Db, me: Me) -> s.DashboardSummary:
             link.interviewer_id == me.id and link.submitted_at is None for link in x.interviewers
         )
     ]
+    live = db.scalars(
+        select(Application).where(
+            Application.deleted_at.is_(None), Application.withdrawn_at.is_(None)
+        )
+    ).all()
     hold = db.scalar(
         select(func.count())
         .select_from(Screening)
@@ -65,7 +70,7 @@ def dashboard(db: Db, me: Me) -> s.DashboardSummary:
         pipeline=[
             s.PipelineRow(
                 posting=s.PipelinePosting.model_validate(p),
-                counts=views.posting_summary(p).counts,
+                counts=views.posting_counts(p),
             )
             for p in postings
         ],
@@ -75,6 +80,7 @@ def dashboard(db: Db, me: Me) -> s.DashboardSummary:
         pending_my_scores=[
             views.session_summary(x) for x in views.sort_sessions(pending, newest_first=True)
         ],
+        pending_decisions=views.pending_decisions(live),
         hold_count=hold or 0,
     )
 

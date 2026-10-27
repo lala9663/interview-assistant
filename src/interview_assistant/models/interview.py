@@ -1,4 +1,5 @@
-"""Interviewers, sessions, Q&A items, scores, notes, availability, follow-ups, transcripts."""
+"""Interviewers, sessions, Q&A items, scores, notes, availability, follow-ups, transcripts,
+round decisions and points to check in a later round."""
 
 from __future__ import annotations
 
@@ -21,17 +22,18 @@ from sqlalchemy import (
 )
 from sqlalchemy.orm import Mapped, Session, mapped_column, relationship
 
-from interview_assistant.models.base import Base, IdMixin, TimestampMixin, enum_column
+from interview_assistant.models.base import Base, IdMixin, TimestampMixin, enum_column, new_id
 from interview_assistant.models.recruiting import (
+    DEFAULT_ROUND_NAME,
     Application,
     CompetencySet,
+    InterviewRound,
+    JobPosting,
     PresetQuestion,
+    SessionMode,
 )
 
-
-class SessionMode(str, enum.Enum):
-    onsite = "onsite"
-    remote = "remote"
+__all__ = ["SessionMode"]  # defined with the rounds (InterviewRound.default_mode), re-exported
 
 
 class SessionStatus(str, enum.Enum):
@@ -74,6 +76,23 @@ class Speaker(str, enum.Enum):
     candidate = "candidate"
 
 
+class DecisionStatus(str, enum.Enum):
+    """A person's decision on a round (합격 / 보류 / 불합격). AI scores are reference only."""
+
+    passed = "passed"
+    hold = "hold"
+    rejected = "rejected"
+
+
+class CheckPointSource(str, enum.Enum):
+    interviewer = "interviewer"
+    ai = "ai"
+
+
+# Sessions that still hold their round open: an application has at most one per round.
+OPEN_STATUSES = frozenset({SessionStatus.scheduled, SessionStatus.in_progress})
+
+
 class Interviewer(IdMixin, TimestampMixin, Base):
     __tablename__ = "interviewers"
 
@@ -93,11 +112,27 @@ class Interviewer(IdMixin, TimestampMixin, Base):
 
 
 class InterviewSession(IdMixin, TimestampMixin, Base):
+    """One interview of one application in one round (차수).
+
+    `active_round_id` repeats `round_id` while the session is scheduled or in progress and is
+    null otherwise (kept in step by a flush hook), so the unique constraint on (application,
+    active_round_id) stops a second open session of the same round at the database too.
+    """
+
     __tablename__ = "interview_sessions"
+    __table_args__ = (
+        UniqueConstraint(
+            "application_id", "active_round_id", name="uq_interview_sessions_open_round"
+        ),
+    )
 
     application_id: Mapped[str] = mapped_column(
         ForeignKey("applications.id", ondelete="CASCADE"), nullable=False
     )
+    round_id: Mapped[str] = mapped_column(
+        ForeignKey("interview_rounds.id"), nullable=False, index=True
+    )
+    active_round_id: Mapped[str | None] = mapped_column(String(36))
     mode: Mapped[SessionMode] = mapped_column(enum_column(SessionMode), nullable=False)
     status: Mapped[SessionStatus] = mapped_column(
         enum_column(SessionStatus), default=SessionStatus.scheduled, nullable=False
@@ -123,7 +158,15 @@ class InterviewSession(IdMixin, TimestampMixin, Base):
     ai_config_revision: Mapped[int | None] = mapped_column(Integer)
 
     application: Mapped[Application] = relationship(back_populates="sessions")
+    round: Mapped[InterviewRound] = relationship()
     competency_set: Mapped[CompetencySet | None] = relationship()
+    # 이어 질문: AI questions for this candidate from earlier rounds' Q&A (PresetQuestion.session_id).
+    carryover_questions: Mapped[list[PresetQuestion]] = relationship(
+        cascade="all, delete-orphan", order_by="PresetQuestion.position"
+    )
+    check_points: Mapped[list[CheckPoint]] = relationship(
+        back_populates="session", cascade="all, delete-orphan", order_by="CheckPoint.created_at"
+    )
     interviewers: Mapped[list[SessionInterviewer]] = relationship(
         back_populates="session", cascade="all, delete-orphan"
     )
@@ -187,7 +230,7 @@ class QAItem(IdMixin, TimestampMixin, Base):
     answered_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
 
     session: Mapped[InterviewSession] = relationship(back_populates="qa_items")
-    preset_question: Mapped[PresetQuestion | None] = relationship()
+    preset_question: Mapped[PresetQuestion | None] = relationship(foreign_keys=[preset_question_id])
     scores: Mapped[list[Score]] = relationship(
         back_populates="qa_item", cascade="all, delete-orphan"
     )
@@ -313,3 +356,105 @@ class TranscriptSegment(IdMixin, TimestampMixin, Base):
     model: Mapped[str | None] = mapped_column(String(100))
 
     session: Mapped[InterviewSession] = relationship(back_populates="transcript")
+
+
+class RoundDecision(IdMixin, TimestampMixin, Base):
+    """A person's decision on one application in one round (N차 결정): 합격, 보류 or 불합격.
+
+    Append-only: changing a decision adds the next `revision`, so the history stays. The current
+    decision is the highest revision. `reason` is de-identified like every other free text.
+    Recorded only after the round's interview was evaluated (every interviewer submitted). A pass
+    in the posting's last round makes the application a final candidate (최종 합격 후보); the
+    official result is recorded on the recruiting site, not here.
+    """
+
+    __tablename__ = "round_decisions"
+    __table_args__ = (
+        UniqueConstraint(
+            "application_id", "round_id", "revision", name="uq_round_decisions_revision"
+        ),
+        CheckConstraint("revision >= 1", name="revision_positive"),
+    )
+
+    application_id: Mapped[str] = mapped_column(
+        ForeignKey("applications.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    round_id: Mapped[str] = mapped_column(ForeignKey("interview_rounds.id"), nullable=False)
+    # The evaluated session the decision was made on.
+    session_id: Mapped[str | None] = mapped_column(
+        ForeignKey("interview_sessions.id", ondelete="SET NULL")
+    )
+    revision: Mapped[int] = mapped_column(Integer, nullable=False)
+    decision: Mapped[DecisionStatus] = mapped_column(enum_column(DecisionStatus), nullable=False)
+    reason: Mapped[str] = mapped_column(Text, nullable=False)
+    decided_by: Mapped[str] = mapped_column(ForeignKey("interviewers.id"), nullable=False)
+
+    application: Mapped[Application] = relationship(back_populates="decisions")
+    round: Mapped[InterviewRound] = relationship()
+    session: Mapped[InterviewSession | None] = relationship()
+    decider: Mapped[Interviewer] = relationship()
+
+
+class CheckPoint(IdMixin, TimestampMixin, Base):
+    """확인이 필요한 점: something a later round should check, noted on one session.
+
+    Interviewers write them on the evaluation screen; AI extracts them after scoring, each with
+    `evidence` quoted verbatim from the de-identified answer (`qa_item_id`). The next round's
+    candidate card shows them whatever the score setting, since they carry no scores.
+    """
+
+    __tablename__ = "check_points"
+    __table_args__ = (
+        CheckConstraint("source <> 'ai' OR evidence IS NOT NULL", name="ai_requires_evidence"),
+        CheckConstraint(
+            "source <> 'interviewer' OR author_id IS NOT NULL", name="interviewer_requires_author"
+        ),
+    )
+
+    session_id: Mapped[str] = mapped_column(
+        ForeignKey("interview_sessions.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    source: Mapped[CheckPointSource] = mapped_column(
+        enum_column(CheckPointSource), nullable=False
+    )
+    competency: Mapped[str | None] = mapped_column(String(100))
+    text: Mapped[str] = mapped_column(Text, nullable=False)
+    evidence: Mapped[str | None] = mapped_column(Text)
+    qa_item_id: Mapped[str | None] = mapped_column(ForeignKey("qa_items.id", ondelete="SET NULL"))
+    author_id: Mapped[str | None] = mapped_column(ForeignKey("interviewers.id"))
+    model: Mapped[str | None] = mapped_column(String(100))
+    prompt_version: Mapped[str | None] = mapped_column(String(50))
+
+    session: Mapped[InterviewSession] = relationship(back_populates="check_points")
+    qa_item: Mapped[QAItem | None] = relationship()
+    author: Mapped[Interviewer | None] = relationship()
+
+
+@event.listens_for(Session, "before_flush")
+def _rounds_fill_in(session: Session, _context: Any, _instances: Any) -> None:
+    """Rounds callers need not spell out: a new posting gets its first round ("1차 면접"), a
+    competency set or session without a round goes to the posting's first round, a set takes its
+    round's posting, and every session's `active_round_id` follows its status."""
+    for obj in list(session.new):
+        if isinstance(obj, JobPosting) and not obj.rounds:
+            obj.rounds.append(InterviewRound(id=new_id(), position=1, name=DEFAULT_ROUND_NAME))
+    for obj in list(session.new):
+        if isinstance(obj, CompetencySet):
+            if obj.round is None and obj.round_id is None:
+                posting = obj.posting or session.get(JobPosting, obj.posting_id)
+                if posting is not None and posting.rounds:
+                    obj.round = posting.rounds[0]
+            if obj.posting is None and obj.posting_id is None and obj.round is not None:
+                obj.posting = obj.round.posting
+    for obj in [*session.new, *session.dirty]:
+        if not isinstance(obj, InterviewSession):
+            continue
+        if obj.round is None and obj.round_id is None:
+            application = obj.application or session.get(Application, obj.application_id)
+            if application is not None and application.posting.rounds:
+                obj.round = application.posting.rounds[0]
+        if obj.round is not None and obj.round.id is None:
+            obj.round.id = new_id()
+        round_id = obj.round.id if obj.round is not None else obj.round_id
+        status = obj.status or SessionStatus.scheduled
+        obj.active_round_id = round_id if status in OPEN_STATUSES else None

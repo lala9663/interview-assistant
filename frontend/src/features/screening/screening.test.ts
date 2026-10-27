@@ -2,16 +2,31 @@ import { screen, waitFor, within } from '@testing-library/vue'
 import userEvent from '@testing-library/user-event'
 import { describe, expect, it, vi } from 'vitest'
 
-import type { ApplicationRow, ScreeningStatus } from '@/api/types'
+import type { ApplicationRow, ProgressStep, ScreeningStatus, StepStatus } from '@/api/types'
 import { endpoints } from '@/api/endpoints'
 import { getDb } from '@/mocks/db'
 import { renderPlain, renderRoute } from '@/test/render'
 
 import ScreeningPage from './ScreeningPage.vue'
 import ScreeningTable from './ScreeningTable.vue'
-import { countByStatus, filterRows, sortRows } from './table-logic'
+import { countByStatus, filterRows, sortRows, stepOptions } from './table-logic'
 
-function row(n: number, status: ScreeningStatus, fit: number, skills: string[] = []): ApplicationRow {
+const R1 = { id: 'r1', position: 1, label: '1차', name: '직무 면접', is_last: false }
+const R2 = { id: 'r2', position: 2, label: '2차', name: '임원 면접', is_last: true }
+
+/** 서류 → 1차 → 2차 → 최종 for a row that is at `round` (0 = still 서류) with `status` there. */
+function trail(screening: ScreeningStatus, round = 0, status: StepStatus | null = null): ProgressStep[] {
+  const at = (n: number): StepStatus | null => (n < round ? 'passed' : n === round ? status : null)
+  return [
+    { kind: 'screening', round: null, status: screening, at: null, session_id: null },
+    { kind: 'round', round: R1, status: screening === 'passed' ? (round === 0 ? 'waiting' : at(1)) : null, at: null, session_id: null },
+    { kind: 'round', round: R2, status: at(2), at: null, session_id: null },
+    { kind: 'final', round: null, status: round > 2 ? 'passed' : null, at: null, session_id: null },
+  ]
+}
+
+function row(n: number, status: ScreeningStatus, fit: number, skills: string[] = [], progress = trail(status)): ApplicationRow {
+  const stage = progress.find((s) => s.status !== 'passed') ?? progress.at(-1)!
   return {
     application_id: `app-${n}`,
     candidate: { id: `cand-${n}`, pseudonym: `CAND-${String(n).padStart(4, '0')}` },
@@ -27,13 +42,20 @@ function row(n: number, status: ScreeningStatus, fit: number, skills: string[] =
     },
     years_experience: n,
     top_skills: skills,
-    stage: 'screening',
+    stage,
+    progress,
     channel: n % 2 ? 'site' : 'upload',
     created_at: `2026-10-${String(n).padStart(2, '0')}T00:00:00Z`,
   }
 }
 
-const ROWS = [row(1, 'passed', 91, ['건식 식각']), row(2, 'hold', 68, ['포토']), row(3, 'rejected', 40), row(4, 'hold', 72, ['Python']), row(5, 'passed', 80)]
+const ROWS = [
+  row(1, 'passed', 91, ['건식 식각'], trail('passed', 2, 'in_progress')),
+  row(2, 'hold', 68, ['포토']),
+  row(3, 'rejected', 40),
+  row(4, 'hold', 72, ['Python']),
+  row(5, 'passed', 80, [], trail('passed', 1, 'deciding')),
+]
 
 describe('screening table logic', () => {
   it('filters by status and by pseudonym or skill', () => {
@@ -65,8 +87,32 @@ describe('<ScreeningTable>', () => {
     await user.click(screen.getByRole('radio', { name: /탈락/ }))
     expect(screen.getAllByTestId('screening-row')).toHaveLength(1)
 
-    await user.click(screen.getByRole('radio', { name: /전체/ }))
+    await user.click(screen.getByRole('radio', { name: /서류 전체/ }))
     expect(screen.getAllByTestId('screening-row')).toHaveLength(5)
+  })
+
+  it('shows where each candidate is: a short trail, the round badge apart from the status chip', () => {
+    renderPlain(ScreeningTable, { rows: ROWS, selectedId: null, onOpen: vi.fn() })
+    const first = screen.getAllByTestId('screening-row').find((r) => within(r).queryByText('CAND-0001'))!
+    expect(within(first).getByTestId('progress-trail')).toHaveAccessibleName('서류 통과, 1차 합격, 2차 진행 중')
+    expect(within(first).getByTestId('round-badge')).toHaveTextContent('2차')
+    expect(within(first).getByTestId('status-chip')).toHaveTextContent('진행 중')
+    const fifth = screen.getAllByTestId('screening-row').find((r) => within(r).queryByText('CAND-0005'))!
+    expect(within(fifth).getByTestId('status-chip')).toHaveTextContent('결정 대기')
+  })
+
+  it('filters by the round a candidate is in', async () => {
+    const user = userEvent.setup()
+    expect(stepOptions(ROWS).map((o) => [o.label, o.count])).toEqual([
+      ['전체', 5],
+      ['서류', 3],
+      ['1차', 1],
+      ['2차', 1],
+      ['최종', 0],
+    ])
+    renderPlain(ScreeningTable, { rows: ROWS, selectedId: null, onOpen: vi.fn() })
+    await user.click(within(screen.getByTestId('step-filter')).getByRole('radio', { name: /2차/ }))
+    expect(screen.getAllByTestId('screening-row').map((r) => within(r).getByText(/CAND-/).textContent)).toEqual(['CAND-0001'])
   })
 
   it('shows how each application came in: the recruiting site or an upload', () => {

@@ -11,7 +11,7 @@ from interview_assistant.models import (
     InterviewSession,
     QAItem,
 )
-from tests.api_util import LIVE, P1, P3, SCHEDULED, sse_events, wait_for
+from tests.api_util import LIVE, P1, P3, SCHEDULED, round_id, sse_events, wait_for
 
 ROOT = Path(__file__).resolve().parents[1]
 RESUMES = ROOT / "tests" / "fixtures" / "resumes"
@@ -35,13 +35,17 @@ def _audits(api, action: str) -> list[AuditLog]:
 
 
 def test_competency_versions_edit_approve_and_carry_presets(api):
+    first = round_id(api, P1)
     created = api.post(
-        f"/api/postings/{P1}/competency-sets",
+        f"/api/rounds/{first}/competency-sets",
         json={"competencies": [_competency("공정 문제 해결")]},
     )
     assert created.status_code == 201
     v3 = created.json()
-    assert v3["version"] == 3 and v3["approved_at"] is None
+    assert v3["version"] == 3 and v3["approved_at"] is None and v3["round_id"] == first
+    # The draft starts with the approved version's questions for the competencies it keeps.
+    copied = api.get(f"/api/competency-sets/{v3['id']}/preset-questions").json()
+    assert [q["competency"] for q in copied] == ["공정 문제 해결", "공정 문제 해결"]
 
     edited = api.put(
         f"/api/competency-sets/{v3['id']}",
@@ -59,11 +63,24 @@ def test_competency_versions_edit_approve_and_carry_presets(api):
     assert bad.status_code == 422
     assert bad.json()["detail"][0]["msg"] == "역량마다 1~5점 기준이 모두 필요합니다."
 
+    question = {"competency": "데이터 기반 분석", "question": "데이터로 판단을 바꾼 사례는?", "intent": "근거"}
+    added = api.post(f"/api/competency-sets/{v3['id']}/preset-questions", json=question)
+    assert added.status_code == 201 and added.json()["origin"] is None
+    stranger = api.post(
+        f"/api/competency-sets/{v3['id']}/preset-questions", json={**question, "competency": "없는 역량"}
+    )
+    assert stranger.status_code == 422
+    renamed = api.put(f"/api/preset-questions/{copied[1]['id']}", json={**copied[1], "question": "실패 대응 사례는?"})
+    assert renamed.json()["question"] == "실패 대응 사례는?"
+
     approved = api.post(f"/api/competency-sets/{v3['id']}/approve").json()
     me = api.get("/api/me").json()
     assert approved["approved_by"] == me["id"] and approved["approved_at"]
     assert api.post(f"/api/competency-sets/{v3['id']}/approve").status_code == 409
     assert api.put(f"/api/competency-sets/{v3['id']}", json={"competencies": []}).status_code == 409
+    # An approved version's questions are read-only too.
+    assert api.post(f"/api/competency-sets/{v3['id']}/preset-questions", json=question).status_code == 409
+    assert api.delete(f"/api/preset-questions/{copied[0]['id']}").status_code == 409
 
     posting = next(p for p in api.get("/api/postings").json() if p["id"] == P1)
     assert posting["approved_competency_set"]["version"] == 3
@@ -72,15 +89,15 @@ def test_competency_versions_edit_approve_and_carry_presets(api):
     # A session not started yet uses the newest approved version and its carried-over presets.
     upcoming = api.get(f"/api/sessions/{SCHEDULED}").json()
     assert upcoming["competency_set"]["version"] == 3
-    assert {q["competency"] for q in upcoming["preset_questions"]} == {
-        "공정 문제 해결",
-        "데이터 기반 분석",
-    }
-    assert len(upcoming["preset_questions"]) == 4
+    assert [q["question"] for q in upcoming["preset_questions"]] == [
+        copied[0]["question"],
+        "실패 대응 사례는?",
+        "데이터로 판단을 바꾼 사례는?",
+    ]
 
 
 def test_ai_draft_goes_through_the_provider_and_is_audited(api):
-    drafted = api.post(f"/api/postings/{P3}/competency-sets/generate")
+    drafted = api.post(f"/api/rounds/{round_id(api, P3)}/competency-sets/generate")
     assert drafted.status_code == 201
     body = drafted.json()
     assert body["version"] == 2 and body["approved_at"] is None
@@ -89,7 +106,7 @@ def test_ai_draft_goes_through_the_provider_and_is_audited(api):
     assert len(names) == 4 and all(len(c["bars"]) == 5 for c in body["competencies"])
     [log] = _audits(api, "competency_set.generated")[-1:]
     assert log.actor_type.value == "ai" and log.model == "fake-llm"
-    assert log.prompt_version == "competency-v0.2" and log.target_id == body["id"]
+    assert log.prompt_version == "competency-v0.3" and log.target_id == body["id"]
     assert log.input_tokens and log.output_tokens
 
 
@@ -98,15 +115,15 @@ def test_ai_draft_goes_through_the_provider_and_is_audited(api):
 
 def test_screening_status_change_is_audited_and_counted(api):
     rows = api.get(f"/api/postings/{P1}/applications").json()
-    row = next(r for r in rows if r["candidate"]["pseudonym"] == "CAND-0002")
+    row = next(r for r in rows if r["candidate"]["pseudonym"] == "CAND-0006")
     assert row["screening"]["status"] == "hold"
     changed = api.patch(f"/api/screenings/{row['screening']['id']}", json={"status": "passed"})
     assert changed.json()["status"] == "passed"
-    assert api.get("/api/dashboard").json()["hold_count"] == 3
+    assert api.get("/api/dashboard").json()["hold_count"] == 1
     item = api.get("/api/activity?limit=1").json()[0]
     assert item["action"] == "screening.status_changed"
     assert item["details"] == {"from": "hold", "to": "passed"}
-    assert item["target_label"] == "CAND-0002" and item["actor_label"] == "김서연"
+    assert item["target_label"] == "CAND-0006" and item["actor_label"] == "김서연"
     assert row["application_id"] in [
         a["application_id"] for a in api.get("/api/applications/schedulable").json()
     ]
@@ -374,7 +391,7 @@ def test_live_interview_transcript_follow_ups_and_scoring(api):
     assert names[0] == "batch.start" and names[-1] == "batch.done"
     assert names.count("suggestion.start") == names.count("suggestion.done") == 3
     batch = events[0][1]
-    assert batch["model"] == "fake-llm" and batch["prompt_version"] == "followup-v0.2"
+    assert batch["model"] == "fake-llm" and batch["prompt_version"] == "followup-v0.3"
     done = [d for e, d in events if e == "suggestion.done"]
     for d in done:
         streamed = "".join(

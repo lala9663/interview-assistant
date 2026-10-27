@@ -44,6 +44,14 @@ export type ActorType = (typeof ACTOR_TYPES)[number]
 export const APPLICATION_CHANNELS = ['upload', 'site'] as const
 export type ApplicationChannel = (typeof APPLICATION_CHANNELS)[number]
 
+/** A person's decision on a round (N차 결정): 합격 / 보류 / 불합격. */
+export const DECISION_STATUSES = ['passed', 'hold', 'rejected'] as const
+export type DecisionStatus = (typeof DECISION_STATUSES)[number]
+
+/** Who noted a point for a later round to check (확인이 필요한 점). */
+export const CHECK_POINT_SOURCES = ['interviewer', 'ai'] as const
+export type CheckPointSource = (typeof CHECK_POINT_SOURCES)[number]
+
 // ---------------------------------------------------------------------------------------------
 // 1. Entities
 // ---------------------------------------------------------------------------------------------
@@ -73,12 +81,30 @@ export interface Competency {
 }
 
 /**
- * models.CompetencySet. Approved when `approved_at` is set; approved versions are read-only.
- * `approved_by` holds the approver's interviewer id (SSO user id later).
+ * models.InterviewRound: one round of a posting's interview process (전형 차수). `label` is always
+ * "{position}차"; `name` says what the round is for ("직무 면접"). Headers show "2차 · 임원 면접".
+ */
+export interface InterviewRound {
+  id: string
+  posting_id: string
+  position: number
+  label: string
+  name: string
+  default_mode: SessionMode
+  recommended_interviewers: number
+  /** interviewers of this round see earlier rounds' scores (off by default) */
+  show_previous_scores: boolean
+  created_at: string
+}
+
+/**
+ * models.CompetencySet: one version of a round's dictionary. Approved when `approved_at` is set;
+ * approved versions are read-only. `approved_by` holds the approver's interviewer id.
  */
 export interface CompetencySet {
   id: string
   posting_id: string
+  round_id: string
   version: number
   competencies: Competency[]
   approved_by: string | null
@@ -152,6 +178,7 @@ export interface Interviewer {
 export interface InterviewSession {
   id: string
   application_id: string
+  round_id: string
   mode: SessionMode
   status: SessionStatus
   scheduled_at: string | null
@@ -218,6 +245,36 @@ export interface Availability {
   created_at: string
 }
 
+/** models.RoundDecision: one revision of a decision on an application in a round. Newest wins. */
+export interface RoundDecision {
+  id: string
+  application_id: string
+  round_id: string
+  session_id: string | null
+  revision: number
+  decision: DecisionStatus
+  /** de-identified */
+  reason: string
+  decided_by: string
+  decided_by_name: string
+  created_at: string
+}
+
+/** models.CheckPoint: 확인이 필요한 점 for a later round. AI ones quote the answer in `evidence`. */
+export interface CheckPoint {
+  id: string
+  session_id: string
+  source: CheckPointSource
+  competency: string | null
+  text: string
+  evidence: string | null
+  qa_item_id: string | null
+  author_id: string | null
+  author_name: string | null
+  model: string | null
+  created_at: string
+}
+
 /** models.AuditLog (payload_ref and token counts are not exposed to the UI). */
 export interface AuditLog {
   id: string
@@ -244,17 +301,62 @@ export interface ApiErrorBody {
 /** GET /api/me — the signed-in interviewer (SSO later; the mock picks one). */
 export type Me = Interviewer
 
+export interface RoundRef {
+  id: string
+  position: number
+  label: string
+  name: string
+  is_last: boolean
+}
+
+/** The round of a session, with what its interviewers may see of earlier rounds. */
+export interface RoundView extends RoundRef {
+  /** how many rounds the posting has */
+  rounds: number
+  show_previous_scores: boolean
+}
+
+export const STEP_KINDS = ['screening', 'round', 'final'] as const
+export type StepKind = (typeof STEP_KINDS)[number]
+
+/**
+ * Where an application stands in a step (interviews.py). Rounds: waiting (일정 대기) → scheduled →
+ * in_progress → evaluating (평가 대기) → deciding (결정 대기) → passed / hold / rejected. The
+ * screening step uses passed / hold / rejected (waiting before screening), 최종 only passed.
+ */
+export const STEP_STATUSES = ['waiting', 'scheduled', 'in_progress', 'evaluating', 'deciding', 'passed', 'hold', 'rejected'] as const
+export type StepStatus = (typeof STEP_STATUSES)[number]
+
+/** One step of an application: 서류, a round, or 최종. `status` null: not reached yet. */
+export interface ProgressStep {
+  kind: StepKind
+  round: RoundRef | null
+  status: StepStatus | null
+  at: string | null
+  session_id: string | null
+}
+
+/** Applications that reached a round, and how many are at each status in it. */
+export interface RoundCount extends Record<StepStatus, number> {
+  round: RoundRef
+  reached: number
+}
+
 export interface PostingCounts {
   applications: number
   passed: number
   hold: number
   rejected: number
-  /** applications with a session that is scheduled or in progress */
+  /** applications whose current step has a scheduled or running session */
   interviewing: number
   /** applications with a completed session */
   interviewed: number
   /** of those, AI scoring finished and every session interviewer submitted */
   evaluated: number
+  /** per round: 서류 → 1차 → 2차 … */
+  rounds: RoundCount[]
+  /** passed the last round: 최종 합격 후보 (the official result is the recruiting site's) */
+  final: number
 }
 
 export interface CompetencySetBrief {
@@ -266,6 +368,8 @@ export interface CompetencySetBrief {
 /** GET /api/postings item */
 export interface PostingSummary extends Omit<JobPosting, 'jd_text'> {
   counts: PostingCounts
+  rounds: RoundRef[]
+  /** round 1's dictionary (screening uses its approved version) */
   latest_competency_set: CompetencySetBrief | null
   approved_competency_set: CompetencySetBrief | null
 }
@@ -273,9 +377,21 @@ export interface PostingSummary extends Omit<JobPosting, 'jd_text'> {
 /** GET /api/postings/{id} */
 export interface PostingDetail extends JobPosting {
   counts: PostingCounts
+  rounds: RoundRef[]
 }
 
-export type ApplicationStage = 'screening' | 'interview_scheduled' | 'interviewing' | 'interviewed' | 'evaluated'
+/** GET /api/postings/{id}/rounds item */
+export interface RoundSummary extends InterviewRound {
+  is_last: boolean
+  latest_competency_set: CompetencySetBrief | null
+  approved_competency_set: CompetencySetBrief | null
+  /** preset questions of the approved version */
+  preset_count: number
+  /** sessions held or scheduled in the round */
+  sessions: number
+  /** has sessions or decisions: cannot move or be deleted */
+  locked: boolean
+}
 
 /** GET /api/postings/{id}/applications item: one row of the screening table. */
 export interface ApplicationRow {
@@ -284,13 +400,17 @@ export interface ApplicationRow {
   screening: Screening | null
   years_experience: number | null
   top_skills: string[]
-  stage: ApplicationStage
+  /** the current step */
+  stage: ProgressStep
+  /** 서류 → each round → 최종 */
+  progress: ProgressStep[]
   channel: ApplicationChannel
   created_at: string
 }
 
 export interface SessionBrief {
   id: string
+  round: RoundRef
   status: SessionStatus
   mode: SessionMode
   scheduled_at: string | null
@@ -348,6 +468,10 @@ export interface ApplicationDetail {
   sessions: SessionBrief[]
   /** null for applications that did not come from an upload */
   document: DocumentInfo | null
+  stage: ProgressStep
+  progress: ProgressStep[]
+  /** every revision of every round, newest first */
+  decisions: RoundDecision[]
 }
 
 /**
@@ -381,12 +505,20 @@ export interface CandidateIndexItem {
   fit_score: number | null
 }
 
-/** GET /api/applications/schedulable item: passed applications without an active session. */
+/**
+ * GET /api/applications/schedulable item: an application waiting for `round` (round 1: passed
+ * screening; round N: passed round N-1). `mode` and `recommended_interviewers` are the round's.
+ */
 export interface SchedulableApplication {
   application_id: string
   candidate: Pick<Candidate, 'id' | 'pseudonym'>
   posting: Pick<JobPosting, 'id' | 'title' | 'job_family'>
   fit_score: number
+  round: RoundRef
+  mode: SessionMode
+  recommended_interviewers: number
+  /** when the previous step was passed */
+  since: string | null
 }
 
 export interface SessionInterviewerView extends SessionInterviewer {
@@ -397,6 +529,9 @@ export interface SessionInterviewerView extends SessionInterviewer {
 export interface SessionSummary extends InterviewSession {
   candidate: Pick<Candidate, 'id' | 'pseudonym'>
   posting: Pick<JobPosting, 'id' | 'title'>
+  round: RoundRef
+  /** the application's status in this session's round */
+  round_status: StepStatus
   interviewers: SessionInterviewerView[]
   qa_count: number
   ai_scoring: AiScoringStatus
@@ -404,30 +539,76 @@ export interface SessionSummary extends InterviewSession {
   submitted_interviewer_ids: string[]
 }
 
-/** Preset question (FR-06 사전 질문 세트). Not a table yet; see api-contract.md. */
+/** What an AI carry-over question (이어 질문) builds on: an earlier round's answer. */
+export interface CarryoverOrigin {
+  round: RoundRef
+  /** the earlier question, de-identified */
+  question: string
+  /** verbatim quote of the earlier answer */
+  grounding: string
+  rationale: string
+  model: string | null
+}
+
+/** models.PresetQuestion (FR-06 사전 질문). `origin` is set on carry-over questions only. */
 export interface PresetQuestion {
   id: string
   competency: string
   question: string
   intent: string
+  origin?: CarryoverOrigin | null
 }
 
-/** Candidate summary card (FR-04): de-identified profile + screening digest + previous sessions. */
+export interface PreviousNote {
+  id: string
+  content: string
+  author_name: string
+  created_at: string
+}
+
+/** An earlier round's scores per competency, only when the round shows them. Never combined. */
+export interface PreviousScore {
+  competency: string
+  interviewer_mean: number | null
+  ai_mean: number | null
+}
+
+/**
+ * 이전 차수 요약. Points to check and notes always; scores and the decision reason only when the
+ * session's round shows earlier scores (`scores_visible`), otherwise the server leaves them null.
+ */
+export interface PreviousRound {
+  round: RoundRef
+  session: SessionBrief
+  decision: DecisionStatus | null
+  qa_count: number
+  check_points: CheckPoint[]
+  notes: PreviousNote[]
+  scores_visible: boolean
+  scores: PreviousScore[] | null
+  decision_reason: string | null
+}
+
+/** Candidate summary card (FR-04): de-identified profile + screening digest + earlier rounds. */
 export interface CandidateCard {
   candidate: Pick<Candidate, 'id' | 'pseudonym' | 'consent_recording' | 'consent_at'>
   profile: CandidateProfile | null
   screening: Pick<Screening, 'fit_score' | 'status' | 'rationale'> | null
   previous_sessions: SessionBrief[]
+  previous_rounds: PreviousRound[]
 }
 
 /** GET /api/sessions/{id} */
 export interface SessionDetail {
   session: InterviewSession
   posting: Pick<JobPosting, 'id' | 'title' | 'job_family'>
+  round: RoundView
   card: CandidateCard
   interviewers: SessionInterviewerView[]
   competency_set: CompetencySet | null
   preset_questions: PresetQuestion[]
+  /** 이어 질문: AI questions for this candidate built on earlier rounds' answers */
+  carryover_questions: PresetQuestion[]
   qa_items: QAItem[]
   notes: CandidateNote[]
 }
@@ -539,11 +720,24 @@ export interface InterviewerEvaluation {
   scores: Score[]
 }
 
+/** N차 결정 on the evaluation screen. A person decides; AI scores are reference only. */
+export interface DecisionPanel {
+  current: RoundDecision | null
+  /** newest first */
+  history: RoundDecision[]
+  can_decide: boolean
+  blocked_reason: string | null
+  /** a pass makes a final candidate (recorded officially on the recruiting site) */
+  is_last_round: boolean
+  next_round: RoundRef | null
+}
+
 /** GET /api/sessions/{id}/evaluation */
 export interface Evaluation {
   session: InterviewSession
   candidate: Pick<Candidate, 'id' | 'pseudonym'>
   posting: Pick<JobPosting, 'id' | 'title'>
+  round: RoundView
   competency_set: CompetencySet | null
   qa_items: QAItem[]
   ai: {
@@ -556,6 +750,21 @@ export interface Evaluation {
     summary: AiCompetencySummary[]
   }
   interviewers: InterviewerEvaluation[]
+  decision: DecisionPanel
+  /** for later rounds: interviewers' and AI's */
+  check_points: CheckPoint[]
+}
+
+/** POST /api/sessions/{id}/decision */
+export interface DecisionRequest {
+  decision: DecisionStatus
+  reason: string
+}
+
+/** POST /api/sessions/{id}/check-points */
+export interface CreateCheckPointRequest {
+  text: string
+  competency?: string | null
 }
 
 export interface InterviewerScoreInput {
@@ -577,12 +786,24 @@ export interface PipelineRow {
   counts: PostingCounts
 }
 
+/** An evaluated round waiting for a decision, or one decided 보류 (it stays on the list). */
+export interface PendingDecision {
+  session_id: string
+  application_id: string
+  candidate: Pick<Candidate, 'id' | 'pseudonym'>
+  posting: Pick<JobPosting, 'id' | 'title'>
+  round: RoundRef
+  status: 'deciding' | 'hold'
+  since: string | null
+}
+
 /** GET /api/dashboard */
 export interface DashboardSummary {
   pipeline: PipelineRow[]
   today_sessions: SessionSummary[]
   /** completed sessions where the signed-in interviewer has not submitted scores */
   pending_my_scores: SessionSummary[]
+  pending_decisions: PendingDecision[]
   hold_count: number
 }
 
@@ -618,9 +839,28 @@ export interface ScheduleSuggestion {
 
 export interface CreateSessionRequest {
   application_id: string
+  /** left out: the round the application is waiting for */
+  round_id?: string
   mode: SessionMode
   scheduled_at: string
   interviewers: { interviewer_id: string; role: InterviewerRole }[]
+}
+
+// --- 전형 (interview rounds) -------------------------------------------------------------------
+
+export interface CreateRoundRequest {
+  name: string
+  default_mode?: SessionMode
+  recommended_interviewers?: number
+  show_previous_scores?: boolean
+}
+
+export type UpdateRoundRequest = Partial<CreateRoundRequest>
+
+export interface PresetQuestionBody {
+  competency: string
+  question: string
+  intent?: string
 }
 
 // --- 관리자 > 모델 설정 (admin only) ------------------------------------------------------------

@@ -4,11 +4,11 @@ import { computed, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import { toast } from 'vue-sonner'
 
-import { qk, useAnswerQA, useCreateNote, useCreateQA, useSessionLifecycle } from '@/api/queries'
+import { qk, useAnswerQA, useCarryover, useCreateNote, useCreateQA, useSessionLifecycle } from '@/api/queries'
 import type { CreateQARequest, PresetQuestion, QAItem, SessionDetail } from '@/api/types'
 import { Separator } from '@/components/ui/separator'
 import { Sheet, SheetContent, SheetDescription, SheetTitle } from '@/components/ui/sheet'
-import { errorMessage } from '@/lib/toast'
+import { errorMessage, toastError } from '@/lib/toast'
 
 import CandidateSummary from './CandidateSummary.vue'
 import ConnectionBanner from './ConnectionBanner.vue'
@@ -33,7 +33,14 @@ const { state: followUps, request: requestFollowUps, markUsed } = useFollowUps(s
 const createQA = useCreateQA(sessionId)
 const answerQA = useAnswerQA(sessionId)
 const createNote = useCreateNote(sessionId)
+const carryover = useCarryover(sessionId)
 const { end } = useSessionLifecycle(sessionId)
+const earlierLabel = computed(() => props.detail.card.previous_rounds.at(-1)?.round.label ?? null)
+const makeCarryover = () =>
+  carryover.mutate(undefined, {
+    onSuccess: (d) => toast.success(`이어 질문 ${d.carryover_questions.length}개를 만들었습니다`, { description: `${earlierLabel.value}에서 물은 질문은 반복하지 않습니다.` }),
+    onError: toastError('이어 질문을 만들지 못했습니다'),
+  })
 const editedIds = ref<ReadonlySet<string>>(new Set())
 const pendingPreset = ref<string | null>(null)
 const pendingSuggestion = ref<string | null>(null)
@@ -167,10 +174,14 @@ const retryFollowUps = () => {
           <Separator />
           <PresetQuestions
             :presets="detail.preset_questions"
+            :carryover="detail.carryover_questions"
+            :earlier-label="earlierLabel"
+            :generating="carryover.isPending"
             :qa-items="qaItems"
             :disabled="createQA.isPending"
             :pending-id="pendingPreset"
             @ask="askPreset"
+            @generate="makeCarryover"
           />
         </div>
       </aside>
@@ -221,10 +232,14 @@ const retryFollowUps = () => {
           <Separator />
           <PresetQuestions
             :presets="detail.preset_questions"
+            :carryover="detail.carryover_questions"
+            :earlier-label="earlierLabel"
+            :generating="carryover.isPending"
             :qa-items="qaItems"
             :disabled="createQA.isPending"
             :pending-id="pendingPreset"
             @ask="askPreset"
+            @generate="makeCarryover"
           />
         </div>
       </SheetContent>

@@ -68,9 +68,9 @@ export const CANDIDATES: CandidateSeed[] = [
     n: 2,
     posting: 'P1',
     fit: 68,
-    status: 'hold',
+    status: 'passed',
     appliedDaysAgo: 11,
-    summaryLine: '포토 공정 경험은 충분하나 데이터 분석 도구 활용 근거가 약해 보류합니다.',
+    summaryLine: '포토 공정 경험은 충분하나 데이터 분석 도구 활용 근거가 약해 면접에서 확인이 필요합니다.',
     strengths: ['포토 공정 5년, 필수 요건 충족', '오버레이 개선 경험'],
     concerns: ['Python·JMP 등 분석 도구 활용 근거 없음', 'DOE 활용 사례가 서류에 없음'],
     profile: {
@@ -360,9 +360,9 @@ export const CANDIDATES: CandidateSeed[] = [
     n: 17,
     posting: 'P2',
     fit: 72,
-    status: 'hold',
+    status: 'passed',
     appliedDaysAgo: 7,
-    summaryLine: '역량은 맞지만 동일 직무 지원자 대비 근거가 약해 보류합니다.',
+    summaryLine: '역량은 맞지만 동일 직무 지원자 대비 근거가 약해 면접에서 확인이 필요합니다.',
     strengths: ['백엔드 4년, 필수 요건 충족', '오픈소스 기여 (우대 충족)'],
     concerns: ['트래픽 규모가 작은 서비스 위주'],
     profile: {

@@ -8,6 +8,11 @@ recording; ending the session closes the open answer and starts AI scoring in th
 A session pins the AI model config in force when it starts (`ai_config_revision`): the live
 transcript, follow-ups and the AI scoring after it all use those providers, whatever an admin
 switches meanwhile. New sessions pick up the new config.
+
+Every session belongs to one round (차수). Round 1 can be scheduled once screening passed, round
+N+1 once a person passed round N; an application never has two sessions of one round open (the
+database refuses it too). Starting a session pins its round's approved competency version. In
+round 2 and later, AI can draft carry-over questions (이어 질문) from the earlier rounds' answers.
 """
 
 from __future__ import annotations
@@ -16,12 +21,19 @@ from fastapi import APIRouter, Query
 from sqlalchemy import func, select
 
 from interview_assistant.ai.gateway import model_name
+from interview_assistant.ai.presets import draft_carryover_questions
 from interview_assistant.ai.scoring import score_session
 from interview_assistant.api import schemas as s
 from interview_assistant.api import views
 from interview_assistant.api.deps import Db, Me, RuntimeDep, audit
 from interview_assistant.api.errors import conflict, invalid, not_found
-from interview_assistant.interviews import approved_set, session_competency_set
+from interview_assistant.interviews import (
+    approved_set,
+    earlier_sessions,
+    next_round,
+    schedule_refusal,
+    session_competency_set,
+)
 from interview_assistant.live.hub import close_answer
 from interview_assistant.models import (
     ActorType,
@@ -32,6 +44,7 @@ from interview_assistant.models import (
     FollowUpSuggestion,
     Interviewer,
     InterviewerRole,
+    InterviewRound,
     InterviewSession,
     PresetQuestion,
     QAItem,
@@ -77,13 +90,25 @@ def create_session(body: s.CreateSessionRequest, db: Db, me: Me) -> s.SessionSum
         raise invalid("interviewers", "같은 면접관을 두 번 지정할 수 없습니다.")
     if any(db.get(Interviewer, i) is None for i in ids):
         raise not_found("면접관")
-    if any(
-        x.status in (SessionStatus.scheduled, SessionStatus.in_progress)
-        for x in application.sessions
-    ):
-        raise conflict("이미 예정된 면접이 있습니다.")
+    if body.round_id is not None:
+        round_ = db.get(InterviewRound, body.round_id)
+        if round_ is None or round_.posting_id != application.posting_id:
+            raise invalid("round_id", "이 공고의 차수가 아닙니다.")
+    else:
+        round_ = next_round(application)
+        if round_ is None:
+            if any(
+                x.status in (SessionStatus.scheduled, SessionStatus.in_progress)
+                for x in application.sessions
+            ):
+                raise conflict("이미 예정된 면접이 있습니다.")
+            raise conflict("면접을 잡을 차수가 없습니다. 서류 통과나 이전 차수 합격이 먼저입니다.")
+    refusal = schedule_refusal(application, round_)
+    if refusal is not None:
+        raise conflict(refusal)
     created = InterviewSession(
         application=application,
+        round=round_,
         mode=body.mode,
         status=SessionStatus.scheduled,
         scheduled_at=as_utc(body.scheduled_at),
@@ -101,6 +126,8 @@ def create_session(body: s.CreateSessionRequest, db: Db, me: Me) -> s.SessionSum
         "interview_session",
         created.id,
         scheduled_at=iso_z(created.scheduled_at),
+        round_id=round_.id,
+        round=round_.position,
     )
     db.commit()
     return views.session_summary(created)
@@ -138,7 +165,7 @@ def start_session(session_id: str, db: Db, me: Me, runtime: RuntimeDep) -> s.Ses
         raise conflict("예정된 면접만 시작할 수 있습니다.")
     found.status = SessionStatus.in_progress
     found.started_at = utcnow()
-    pinned = approved_set(found.application.posting)
+    pinned = approved_set(found.round)
     found.competency_set_id = pinned.id if pinned else None
     found.ai_config_revision = runtime.models.active.revision
     if found.application.candidate.consent_recording:
@@ -222,8 +249,13 @@ async def create_qa(
     if body.question_source is QuestionSource.preset and body.preset_question_id:
         preset = db.get(PresetQuestion, body.preset_question_id)
         pinned = session_competency_set(db, found)
-        if preset is None or pinned is None or preset.competency_set_id != pinned.id:
+        ours = preset is not None and (
+            preset.session_id == found.id
+            or (preset.session_id is None and pinned is not None and preset.competency_set_id == pinned.id)
+        )
+        if not ours:
             raise invalid("preset_question_id", "이 면접의 사전 질문이 아닙니다.")
+        assert preset is not None
         target = preset.competency
     elif body.question_source is QuestionSource.ai_suggested:
         if body.suggestion is None:
@@ -311,3 +343,25 @@ def create_note(
     audit(db, me, "note.created", "interview_session", found.id)
     db.commit()
     return s.CandidateNote.model_validate(note)
+
+
+@router.post("/sessions/{session_id}/carryover-questions", response_model=s.SessionDetail)
+async def carryover_questions(
+    session_id: str, db: Db, runtime: RuntimeDep
+) -> s.SessionDetail:
+    """이어 질문: AI drafts questions for this candidate from the earlier rounds' de-identified
+    answers and points to check, replacing the ones not asked yet."""
+    found = get_session(db, session_id)
+    if found.round.position == 1:
+        raise conflict("1차 면접에는 이어 볼 이전 차수가 없습니다.")
+    if found.status not in (SessionStatus.scheduled, SessionStatus.in_progress):
+        raise conflict("예정되었거나 진행 중인 면접에서만 이어 질문을 만들 수 있습니다.")
+    if not earlier_sessions(found):
+        raise conflict("마친 이전 차수 면접이 없습니다.")
+    providers = runtime.pinned(found)  # the active config until the session starts
+    try:
+        await draft_carryover_questions(db, providers.ai, runtime.deid, found)
+    finally:
+        db.commit()  # the AI call's audit row stays even when the output is unusable
+    db.expire_all()
+    return views.session_detail(db, get_session(db, session_id))

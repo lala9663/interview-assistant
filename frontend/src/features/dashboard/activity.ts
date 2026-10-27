@@ -1,6 +1,7 @@
 import {
   BookCheckIcon,
   BotIcon,
+  GavelIcon,
   CalendarPlusIcon,
   CircleCheckIcon,
   ClipboardCheckIcon,
@@ -12,8 +13,8 @@ import {
 } from '@lucide/vue'
 import type { Component } from 'vue'
 
-import type { ActivityItem, QuestionSource, ScreeningStatus } from '@/api/types'
-import { QUESTION_SOURCE_LABEL, SCREENING_STATUS_LABEL } from '@/lib/labels'
+import type { ActivityItem, DecisionStatus, QuestionSource, ScreeningStatus } from '@/api/types'
+import { DECISION_LABEL, QUESTION_SOURCE_LABEL, SCREENING_STATUS_LABEL } from '@/lib/labels'
 
 /** One run of text in an activity line: plain, emphasised (`strong`), a pseudonym, or muted. */
 export interface Part {
@@ -54,7 +55,27 @@ export function describeActivity(a: ActivityItem): { icon: Component; ai?: boole
     case 'consent.recorded':
       return { icon: ShieldCheckIcon, parts: [P(target), t(` 녹음·전사 ${d.consent_recording ? '동의' : '미동의(수기 모드)'}를 기록했습니다`)] }
     case 'session.scheduled':
-      return { icon: CalendarPlusIcon, parts: [T(actor), t('님이 '), P(target), t(' 면접 일정을 잡았습니다')] }
+      return {
+        icon: CalendarPlusIcon,
+        parts: [T(actor), t('님이 '), P(target), t(` ${typeof d.round === 'number' ? `${d.round}차 ` : ''}면접 일정을 잡았습니다`)],
+      }
+    case 'round.decided':
+      return {
+        icon: GavelIcon,
+        parts: [T(actor), t('님이 '), P(target), t(` ${String(d.round ?? '')}차를 `), T(DECISION_LABEL[d.decision as DecisionStatus] ?? ''), t('(으)로 결정했습니다')],
+      }
+    case 'round.decision_changed':
+      return {
+        icon: GavelIcon,
+        parts: [
+          T(actor),
+          t('님이 '),
+          P(target),
+          t(` ${String(d.round ?? '')}차 결정을 ${DECISION_LABEL[d.from as DecisionStatus] ?? ''} → `),
+          T(DECISION_LABEL[d.to as DecisionStatus] ?? ''),
+          t('(으)로 바꿨습니다'),
+        ],
+      }
     case 'session.started':
       return { icon: MicIcon, parts: [T(actor), t('님이 '), P(target), t(' 면접을 시작했습니다')] }
     case 'session.completed':

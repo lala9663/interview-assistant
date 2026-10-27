@@ -7,7 +7,7 @@
  */
 import type { FollowUpEvent, QAItem, StreamStatus, TranscriptEvent, TranscriptSegment } from '@/api/types'
 
-import { GENERIC_BANK } from './data/banks'
+import { GENERIC_BANK, type SuggestionSeed } from './data/banks'
 import { FOLLOWUP_PROMPT, AI_MODEL, getDb, newId, splitSentences, type MockDb } from './db'
 
 /** Timing multiplier: 1 = demo speed, tests set it close to 0. */
@@ -161,6 +161,11 @@ export function resetLive() {
   states.clear()
 }
 
+const fragment = (sentence: string, words = 5) => {
+  const parts = sentence.replace(/[.?! ]+$/, '').split(/\s+/)
+  return parts.slice(0, words).join(' ') + (parts.length > words ? '…' : '')
+}
+
 /** Stream 3 follow-up suggestions for a QA item. */
 export async function* followUps(sessionId: string, qaItemId: string): AsyncGenerator<FollowUpEvent> {
   const db = getDb()
@@ -180,8 +185,23 @@ export async function* followUps(sessionId: string, qaItemId: string): AsyncGene
     seeds = [...seeds.slice(n % seeds.length), ...seeds.slice(0, n % seeds.length)]
   }
   const firstSentence = splitSentences(qa.answer_deidentified)[0] ?? qa.answer_deidentified
+  // Round 2 and later (like the fake model): build on the earlier round, never ask its questions again.
+  const earlier = db.earlierSessions(sessionId).flatMap((e) => db.qaOf(e.id).filter((q) => q.answer_deidentified))
+  if (earlier.length > 0) {
+    const last = earlier.at(-1)!
+    const label = db.round(db.session(last.session_id)!.round_id)!.label
+    const asked = new Set(earlier.map((q) => q.question))
+    const connect: SuggestionSeed = {
+      competency: meta?.competency ?? db.setOfSession(sessionId)?.competencies[0]?.name ?? '역량',
+      question: `${label}에서는 “${fragment(splitSentences(last.answer_deidentified!)[0] ?? '')}”라고 하셨는데, 이번에 말씀하신 “${fragment(firstSentence)}”와는 어떻게 이어지나요?`,
+      rationale: `${label} 답변과 이어 보며 일관성과 깊이를 확인합니다. ${label}에서 물은 질문은 반복하지 않습니다.`,
+      grounding: firstSentence,
+      answer: db.nextGenericAnswer(postingKey),
+    }
+    seeds = [connect, ...seeds.filter((x) => !asked.has(x.question))]
+  }
   const batch_id = newId()
-  db.log({ actor_type: 'ai', action: 'followup.generated', target_type: 'interview_session', target_id: sessionId, model: AI_MODEL, prompt_version: FOLLOWUP_PROMPT, details: { qa_item_id: qa.id } })
+  db.log({ actor_type: 'ai', action: 'followup.generated', target_type: 'interview_session', target_id: sessionId, model: AI_MODEL, prompt_version: FOLLOWUP_PROMPT, details: { qa_item_id: qa.id, earlier_round_answers: earlier.length } })
   yield { event: 'batch.start', data: { batch_id, qa_item_id: qa.id, model: AI_MODEL, prompt_version: FOLLOWUP_PROMPT } }
   await wait(550)
   for (const [index, seedItem] of seeds.slice(0, 3).entries()) {
