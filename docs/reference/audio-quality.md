@@ -6,12 +6,12 @@
 
 | 항목 | 상태 |
 | --- | --- |
-| 실시간 면접 음성 | 가상 지원자가 대본을 텍스트로 보내고 fake STT가 받아 적는다(`live/audio.py`). 실제 마이크·WebRTC 입력은 아직 없다. 마이크 입력 작업은 세션 카드로 제안만 되어 있다 |
-| 마이크로 STT 시험 | 관리자 > 모델 설정 > STT 연결 테스트에서 5~10초 녹음은 된다. Chrome·Edge에서 http://localhost:5173 을 열어야 한다(Claude 앱 안 브라우저는 마이크를 막는다) |
-| 말 구간 자르기 | 로컬 Whisper가 faster-whisper에 든 Silero VAD로 자른다. 침묵 500ms(`vad_min_silence_ms`)면 발화 끝, 앞뒤 200ms 여유, 200ms보다 짧은 소리는 버린다(`providers/stt/faster_whisper.py`). faster-whisper 기본값(침묵 2,000ms, 여유 400ms)보다 짧게 끊는다 |
-| 답변 끝 판단 | 실제 음성으로는 정하지 않았다. 지금 답변이 닫히는 때: STT 스트림이 끝남(침묵), 면접관이 다음 질문을 기록함, 세션 종료([api-contract.md](../api-contract.md) 3.1) |
-| 잡음 억제·에코 제거 | 아무것도 하지 않는다 |
-| 녹음 저장, 사후 전사 흐름 | 없음(10·11단계) |
+| 실시간 면접 음성 | 면접실 마이크(브라우저 getUserMedia → AudioWorklet 16kHz PCM16 → WebSocket, 막히면 HTTP)를 받는다(2026-10-28, [audio-input.md](../audio-input.md)). 마이크를 붙이기 전에는 가상 지원자 대본(텍스트)이 흐른다. WebRTC(비대면)는 아직 없다 |
+| 마이크로 STT 시험 | 관리자 > 모델 설정 > STT 연결 테스트에서 5~10초 녹음은 된다. Chrome·Edge에서 http://localhost:5173 을 열어야 한다(Claude 앱 안 브라우저는 마이크를 막는다). 실시간 면접 화면에는 마이크 대신 쓰는 진단용 샘플 음성이 있다 |
+| 말 구간 자르기 | 마이크 경로가 먼저 Silero VAD로 말소리만 남기고(앞 128ms·뒤 300ms 여유, 나머지는 디지털 무음) STT에 넣는다(`audio.vad`). 그 안에서 로컬 Whisper가 다시 침묵 500ms로 발화를 나눈다(`providers/stt/faster_whisper.py`) |
+| 답변 끝 판단 | 관리자 화면에서 고른다(`audio.turn`): 침묵 기준(ms 조정) 또는 Smart Turn v3.2. 실사용 기본은 Smart Turn(판정 시작 1초, 기준 0.8, 최대 3초), 파일이 없으면 침묵 2초. 답이 닫힌 뒤 이어 말하면 같은 답에 붙는다. 다음 질문 기록·세션 종료도 답을 닫는다 |
+| 잡음 억제·에코 제거 | 브라우저 AEC 켬, NS·AGC 끔(마이크 설정에서 바꿈). 서버 잡음 억제는 자리만 있고 꺼져 있다(`audio.denoise`) |
+| 녹음 저장, 사후 전사 흐름 | 동의한 면접은 원본 영역에 WAV로 저장. STT 사후에서 "면접 뒤 녹음 재전사"를 켜면 면접 뒤 다시 전사해 따로 저장(질문별 나누기·채점 반영은 아직) |
 
 ## 2. 입력 형식
 
@@ -158,11 +158,15 @@
 
 ## 11. 아직 하지 않은 것
 
-- 마이크·WebRTC 입력(`AudioSource` 구현, 11단계). 지금은 카드로 제안만 되어 있다.
-- 녹음 저장과 사후 전사 흐름(10·11단계).
-- 답변 끝 침묵 길이 결정, Smart Turn 시험.
-- 브라우저 NS·AGC 켬·끔, 서버 잡음 억제의 CER 비교.
-- 실제 면접 녹음(동의 받은 것)으로 CER·용어 오류·환각률·누화 비율 재기.
+2026-10-28 마이크 입력([audio-input.md](../audio-input.md))으로 한 것: 브라우저 마이크 입력과 녹음 저장, VAD로 말소리만 STT에 넣기, 답변 끝 침묵 길이와 Smart Turn 비교(생각하는 멈춤이 든 한국어 32건, 낭독·TTS)와 기본값 결정, 이 노트북의 말 끝 → 확정 전사 → 답변 닫힘 → 첫 꼬리질문 카드 측정, 면접 뒤 녹음 재전사(저장까지).
+
+남은 것:
+
+- WebRTC 입력(비대면 참가자 트랙), 한 세션에 마이크 두 개, 대면 화자분리.
+- 재전사 결과를 질문별로 나누고 채점에 쓰기.
+- 실제 면접 녹음(동의 받은 것)으로 답변 끝 판정 다시 재기(실제 멈춤 분포, Smart Turn의 한국어 실제 음성 정확도). 이번 비교는 낭독과 TTS에 멈춤을 넣은 것이다.
+- 브라우저 NS·AGC 켬·끔, 서버 잡음 억제(RNNoise·DeepFilterNet)의 CER 비교. 측정 계획은 [audio-input.md](../audio-input.md) 7장.
+- 실제 면접 녹음으로 CER·용어 오류·환각률·누화 비율 재기.
 - 전사에 너그러운 비식별 탐지기를 쓸지 결정.
 
 ## 출처
@@ -191,8 +195,8 @@
 
 - 지금 Chrome의 AEC·NS·AGC 기본값을 밝힌 Chrome 공식 문서(근거는 2021년 W3C 논의), Chrome이 `getUserMedia`에 AEC3를 쓴다는 공식 문서(근거는 WebRTC 소스)
 - Chrome이 `sampleRate` 제약을 실제로 지키는지, 같은 마이크에서 처리 설정이 다른 트랙 두 개를 받을 수 있는지
-- Smart Turn 한국어 평가 세트의 합성·실제 음성 비율과 실제 면접 음성에서의 정확도, v3.2에서 바뀐 점
+- Smart Turn 한국어 평가 세트의 합성·실제 음성 비율과 실제 면접 음성에서의 정확도, v3.2에서 바뀐 점 (v3.2가 최신이고 BSD-2-Clause임은 2026-10-28 Hugging Face에서 확인)
 - LiveKit turn detector의 지연 시간
-- Silero VAD v6 ONNX 파일 크기
+- ~~Silero VAD v6 ONNX 파일 크기~~ 1,245,151바이트(faster-whisper 1.2.1, 2026-10-28 확인)
 - RNNoise·DeepFilterNet 최신 버전
 - Microsoft가 STT 앞단에서 NS·AGC를 끄라고 명시한 문서

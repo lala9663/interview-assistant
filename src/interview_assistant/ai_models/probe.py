@@ -5,7 +5,9 @@ also need the admin's confirmation (api/routes/admin.py). The LLM test sends a
 fixed, made-up prompt through the AI gateway (guard + audit) and checks the structured answer. STT
 transcribes a voice sample, the built-in clip or the admin's own recording, through the role's own
 path: batch `transcribe` on a file, streaming `stream` on 16 kHz PCM chunks. Embedding checks the
-vector dimension, diarization the speaker turns. 서류 읽기 roles read a built-in fictional resume
+vector dimension, diarization the speaker turns. 음성 입력 roles run the voice sample through the
+microphone path offline: the VAD's speech stretches, or where the end-of-answer detector would
+close the answer (with 3 s of silence after the sample). 서류 읽기 roles read a built-in fictional resume
 or the admin's file with the candidate setting (`read_document`) and show how each page was read
 and a de-identified preview; the raw text never leaves the server. Nothing a test sends or
 returns is stored; the audit log keeps who tested what, the model, the outcome and the timings.
@@ -79,6 +81,8 @@ async def run(
             ok, summary, output = await _stt(prepared, provider, audio, expected_text, started)
         elif kind == "embedding":
             ok, summary, output = await _embedding(provider)
+        elif kind in ("vad", "turn", "denoise"):
+            ok, summary, output = await _audio_input(kind, provider, audio)
         else:
             ok, summary, output = await _diarization(provider, audio)
     except Exception as exc:
@@ -214,6 +218,56 @@ async def _stt(
         return False, f"{seconds:.1f}초 음성에서 아무것도 받아 적지 못했습니다.", output
     speed = f", 실시간 대비 {output['realtime_factor']:.2f}배 시간" if seconds else ""
     return True, f"{seconds:.1f}초 음성을 전사했습니다{speed}.", output
+
+
+async def _audio_input(kind: str, provider: Any, audio: Path) -> tuple[bool, str, dict[str, Any]]:
+    import numpy as np
+
+    from interview_assistant.live.microphone import FRAME_MS, speech_flags
+    from interview_assistant.providers.vad.silero import SileroVAD
+
+    pcm = decode_pcm16(audio)
+    seconds = pcm_seconds(pcm)
+    output: dict[str, Any] = {"audio_seconds": round(seconds, 2)}
+    if kind == "denoise":
+        if not getattr(provider, "enabled", False):
+            return True, "잡음 억제를 하지 않습니다 (끔). 브라우저가 보낸 소리가 그대로 VAD와 STT로 갑니다.", output
+        cleaned = provider.process(pcm)
+        return len(cleaned) == len(pcm), f"{seconds:.1f}초 음성을 처리했습니다.", output
+    vad = provider if kind == "vad" else SileroVAD()
+    await vad.warm_up()
+    samples = np.frombuffer(pcm, dtype="<i2").astype(np.float32) / 32768.0
+    if kind == "turn":
+        samples = np.concatenate([samples, np.zeros(3 * 16000, dtype=np.float32)])
+    flags = speech_flags(vad, samples)
+    stretches: list[list[float]] = []
+    for i, speech in enumerate(flags):
+        at = round(i * FRAME_MS / 1000, 2)
+        if speech and (not stretches or i and not flags[i - 1]):
+            stretches.append([at, at])
+        if speech:
+            stretches[-1][1] = round(at + FRAME_MS / 1000, 2)
+    output["speech"] = stretches[:30]
+    speech_s = float(flags.sum()) * FRAME_MS / 1000
+    output["speech_seconds"] = round(speech_s, 2)
+    if not stretches:
+        return False, f"{seconds:.1f}초 음성에서 말소리를 찾지 못했습니다.", output
+    if kind == "vad":
+        return True, f"{seconds:.1f}초 중 말소리 {speech_s:.1f}초, 구간 {len(stretches)}개를 찾았습니다.", output
+    tracker = provider.tracker(FRAME_MS)
+    ends: list[dict[str, Any]] = []
+    for i, speech in enumerate(flags):
+        if await tracker.push(bool(speech), samples[i * 512 : (i + 1) * 512]):
+            ends.append({"at": round((i + 1) * FRAME_MS / 1000, 2), "reason": tracker.reason, "probability": tracker.probability})
+            tracker = provider.tracker(FRAME_MS)
+    output["ends"] = ends
+    last = stretches[-1][1]
+    final = next((e for e in ends if e["at"] >= last), None)
+    early = [e for e in ends if e["at"] < last]
+    if final is None:
+        return False, f"마지막 말소리({last:.1f}초) 뒤 3초 안에 답변 끝으로 판정하지 않았습니다.", output
+    note = f", 그 전에 {len(early)}번 끊음" if early else ""
+    return True, f"마지막 말소리 {last:.1f}초 → {final['at'] - last:.1f}초 뒤 답변 끝 ({final['reason']}){note}.", output
 
 
 async def _embedding(provider: Any) -> tuple[bool, str, dict[str, Any]]:

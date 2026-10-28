@@ -29,7 +29,8 @@ from datetime import datetime, timedelta, timezone
 from typing import Any, Protocol
 
 import anyio
-from fastapi import HTTPException, Request
+from fastapi import HTTPException
+from starlette.requests import HTTPConnection
 from sqlalchemy import select
 
 from interview_assistant.api.deps import RuntimeDep
@@ -178,11 +179,11 @@ def _label(value: str | None) -> str | None:
     return value or None
 
 
-def agent_call(request: Request) -> AgentCall | None:
+def agent_call(request: HTTPConnection) -> AgentCall | None:
     return getattr(request.state, "agent_call", None)
 
 
-def agent_guard(request: Request, runtime: RuntimeDep) -> None:
+def agent_guard(request: HTTPConnection, runtime: RuntimeDep) -> None:
     """Runs before every /api route. The web screen sends neither header and passes untouched.
     A request with `X-Agent-Name` or `Authorization` is an agent call: it needs a valid token of
     an existing interviewer and may only read."""
@@ -225,7 +226,8 @@ def agent_guard(request: Request, runtime: RuntimeDep) -> None:
         raise refuse(401, "unknown_interviewer", "토큰의 면접관을 찾을 수 없습니다.")
     call.interviewer_id = me.id
     endpoint = getattr(request.scope.get("route"), "endpoint", None)
-    if request.method not in READ_METHODS and not getattr(endpoint, "agent_may_call", False):
+    method = request.scope.get("method", "WEBSOCKET")  # a WebSocket (audio) is never a read
+    if method not in READ_METHODS and not getattr(endpoint, "agent_may_call", False):
         raise refuse(
             403,
             "write_refused",

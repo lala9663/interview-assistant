@@ -155,9 +155,15 @@
 | POST | `/api/sessions/{id}/qa-items` | `CreateQARequest` {question, question_source, preset_question_id?, suggestion?{batch_id, suggestion_id, edited, original_question}} | 201 `QAItem` (seq = 마지막+1). in_progress가 아니면 409. 다른 세션의 사전 질문·모르는 제안이면 422, 이미 쓴 제안이면 409 | 6, 7 |
 | PATCH | `/api/qa-items/{id}` | `{answer_text}` | `QAItem` (answer_deidentified, answered_at). 수기 모드·STT 장애 시. in_progress가 아니면 409 | 6 |
 | POST | `/api/sessions/{id}/notes` | `{content}` | 201 `CandidateNote` (author = 로그인 면접관, 내용은 비식별화) | 6 |
-| GET | `/api/sessions/{id}/transcript` | | `{segments: TranscriptSegment[]}` 확정 구간만 | 10, 11 |
+| GET | `/api/sessions/{id}/transcript?source=` | | `{segments: TranscriptSegment[]}` 확정 구간만. `source` live(기본: 면접 중 실시간 전사) 또는 batch(면접 뒤 녹음 재전사, 3.3) | 10, 11 |
 | GET | `/api/sessions/{id}/transcript/stream` | | SSE (3장) | 11 |
 | POST | `/api/sessions/{id}/follow-ups` | `{qa_item_id}` | SSE (3장) | 7 |
+| WS | `/api/sessions/{id}/audio` | 마이크 PCM (3.3) | `ready`·`state`·`error` | 11 |
+| POST | `/api/sessions/{id}/audio/chunks?stream=&seq=&source=` | PCM 바이트 (`application/octet-stream`, 5초 이하) | `{speaking, role, notices}`. WebSocket이 막혔을 때의 대체 경로(3.3). 동의 없으면 403 `NO-CONSENT` | 11 |
+| DELETE | `/api/sessions/{id}/audio/chunks?stream=` | | 204. HTTP로 보내던 마이크를 끈다 | 11 |
+| POST | `/api/sessions/{id}/live/role` | `{role: candidate \| interviewer}` | `{role, qa_item}`. 한 마이크 대면 면접의 질문 중(interviewer) / 답변 듣는 중(candidate). candidate로 돌아올 때 그사이 말로 한 질문이 다음 `QAItem`(`question_source: interviewer`)이 된다. 마이크가 없으면 409 | 11 |
+| GET | `/api/live/audio-samples` | | `AudioSample[]` {name, label, seconds, text, note}: 진단용 샘플 음성(공개 데이터) | 11 |
+| GET | `/api/live/audio-samples/{name}` | | `audio/wav` (16kHz 모노). 묶인 샘플만, 녹음은 내주지 않는다 | 11 |
 
 `SessionDetail.card` (FR-04 지원자 요약 카드) = {candidate{id, pseudonym, consent_recording, consent_at}, profile, screening{fit_score, status, rationale}, previous_sessions[], previous_rounds[]}.
 
@@ -301,9 +307,9 @@
 
 ## 3. 스트리밍: SSE로 정한 이유와 이벤트 형식
 
-실시간 전사와 꼬리질문 둘 다 **SSE (text/event-stream)**로 한다. WebSocket은 쓰지 않는다.
+실시간 전사와 꼬리질문 둘 다 **SSE (text/event-stream)**로 한다. WebSocket은 마이크 음성을 올리는 데만 쓴다(3.3, 막히면 HTTP 청크로 대체).
 
-- 방향이 서버 → 브라우저 한쪽뿐이다. 브라우저 → 서버는 질문 기록, 답변 저장 같은 이산 이벤트라 일반 POST가 맞다. 오디오는 11단계에서 LiveKit(WebRTC)으로 따로 흐르므로 앱 서버에 양방향 소켓이 필요 없다.
+- 방향이 서버 → 브라우저 한쪽뿐이다. 브라우저 → 서버는 질문 기록, 답변 저장 같은 이산 이벤트라 일반 POST가 맞다. 마이크 음성만 연속으로 올라가므로 그 경로만 따로 둔다.
 - 꼬리질문은 요청 1건 = 응답 스트림 1개(LLM 토큰 스트림)라 HTTP 요청-응답 모델과 그대로 맞는다. 요청마다 감사 로그 1건, 요청 단위 인증·타임아웃·취소(AbortController)가 자연스럽다.
 - Cloud Run, IAP, 사내 프록시를 일반 HTTP로 통과한다. WebSocket은 업그레이드·유휴 타임아웃·IAP 설정을 따로 챙겨야 한다.
 - FastAPI `StreamingResponse`와 모델 스트림을 이벤트로 바꾸기만 하면 된다. 끊기면 `GET /transcript`로 확정 구간을 다시 받고 스트림에 재접속한다.
@@ -336,7 +342,10 @@ data: {"qa_item_id":"…","answer_deidentified":"…","answered_at":"2026-10-23T
 - `status`는 접속 직후와 주기적으로(5초) 보낸다. `recording`: recording/paused/stopped/off, `stt`: ok/degraded/down/off. `latency_ms`는 STT 결과를 받은 뒤 비식별화해 내보내기까지 걸린 시간. STT가 죽으면 `stt: down`을 보내고, 프론트는 수기 답변 입력을 연다 (비기능 요구: 녹음은 계속, UI는 수기 모드).
 - 세션이 끝나면 `status`(stopped)를 보내고 스트림을 닫는다. 진행 중이 아닌 세션에 접속하면 `status` 하나로 끝난다.
 - 수기 모드(동의 없음)에서는 프론트가 이 스트림을 열지 않는다.
-- 오디오: 11단계(LiveKit) 전까지는 `live/audio.py`의 `ScriptedCandidate`가 지원자 마이크를 흉내 낸다. 데모 데이터의 대본 답변을 문장 단위 텍스트로 보내고, fake STT가 이를 받아 적는다. 실제 STT provider에는 실제 오디오 소스가 필요하다. 속도는 `IA_DEMO_SPEED`(1 = 프론트 모의 모드와 비슷).
+- 오디오: 브라우저가 마이크를 붙이면(3.3) 그 세션은 마이크를 듣는다. 붙이기 전에는 `live/audio.py`의 `ScriptedCandidate`가 데모 대본을 문장 단위 텍스트로 보내고 fake STT가 받아 적는다(실제 STT는 이 텍스트를 못 읽어 `stt: down`). 속도는 `IA_DEMO_SPEED`(1 = 프론트 모의 모드와 비슷).
+- 마이크가 붙은 세션에서는 `status`에 `mic` {connected, transport(websocket/http), role(candidate/interviewer), speaking(서버 VAD가 말소리를 듣는 중), turn(답변 끝 판정기), notices[](VAD-MISSING·TURN-MISSING·STT-MISSING·REC-FAILED 등), last_end{reason, probability, at_ms}}와 `error` {code, message}가 붙는다. 녹음 중이 아니면 두 필드가 없다.
+- 마이크 답변은 여러 조각일 수 있다. 답변 끝 판정이 답을 닫은 뒤 지원자가 이어 말하면 같은 질문의 답에 이어 붙이고 `qa.answered`를 더 긴 답으로 다시 보낸다. 프론트는 그때마다 꼬리질문을 다시 요청한다.
+- `qa.created` {QAItem}: 질문 중 모드에서 면접관이 말로 한 질문이 다음 질문으로 기록됐다(`POST /live/role`). 그 말은 interviewer 구간으로 이미 왔고, 이 질문에 붙는다.
 - 상태(구독자, 듣는 중인 질문)는 프로세스 메모리에 있다. 워커를 여러 개 띄우려면 공유 버스가 필요하다(남은 과제).
 
 ### 3.2 꼬리질문 스트림 `POST /api/sessions/{id}/follow-ups` `{qa_item_id}`
@@ -378,6 +387,25 @@ data: {"batch_id":"…","discarded":1}
 - 오류는 `event: error` `{"message": "…"}` 후 스트림 종료. 답변이 없는 QA면 바로 error.
 - 클라이언트가 연결을 끊으면(새 요청, 화면 이탈) 서버는 모델 스트림을 닫아 호출을 취소한다.
 - 프론트는 받은 후보를 자동으로 질문으로 만들지 않는다.
+
+### 3.3 마이크 음성 `WS /api/sessions/{id}/audio`
+
+브라우저가 마이크(또는 진단용 샘플 음성)를 AudioWorklet에서 16kHz 모노 16비트 PCM으로 바꿔 100ms 조각으로 보낸다(`frontend/public/audio/pcm16-worklet.js`). 인증은 다른 API와 같다(쿠키·지금 로그인한 면접관). 에이전트 토큰으로는 열 수 없다.
+
+```
+→ {"type":"start","format":"pcm16","sample_rate":16000,"source":"microphone","constraints":{"echoCancellation":true,"noiseSuppression":false,"autoGainControl":false,"sampleRate":48000}}
+← {"type":"ready","stream_id":"…","role":"candidate","notices":[]}
+→ (바이너리) PCM16 LE, 100ms = 3,200바이트
+← {"type":"state","speaking":true,"role":"candidate"}
+← {"type":"error","code":"NOT-LIVE","message":"진행 중인 면접이 아닙니다."}  → 닫힘 4409
+```
+
+- 첫 메시지는 `start`여야 한다(10초 안). 형식이 다르면 `AUDIO-FORMAT`(닫힘 4400). 동의가 없으면 `NO-CONSENT`(4403), 진행 중이 아니면 `NOT-LIVE`(4409), 다른 연결이 이미 보내는 중이면 `MIC-TAKEN`(4409, 10초 동안 조용한 연결은 넘겨받는다). 닫힘 코드 = 4000 + HTTP 상태, 이유 = 코드.
+- 모델이 없어도 거절하지 않는다. 동의가 있으면 녹음은 계속되고, 전사를 못 하는 이유는 `ready.notices`와 전사 스트림 `status`로 온다.
+- `constraints`는 브라우저가 실제로 적용한 값이며 감사 로그(`audio.constraints`)에만 남는다.
+- **HTTP 대체**: WebSocket이 열리지 않거나(프록시·DLP) 열린 뒤 끊기면 `POST …/audio/chunks?stream=<uuid>&seq=<0부터>&source=` 로 같은 PCM을 보낸다. 요청 하나씩 차례로, 밀리면 최대 4초까지 묶는다. 첫 요청은 빈 본문(동의·세션 확인). 같은 `seq`가 다시 오면 무시한다. 헤더 `X-Audio-Format: pcm16;rate=16000`(다르면 415 `AUDIO-FORMAT`). 거절은 `{"detail": {"code", "message"}}`. 끝낼 때 `DELETE …/audio/chunks?stream=`.
+- 서버가 받은 음성: 동의가 있으면 원본 영역의 세션 WAV(`IA_RECORDINGS_DIR/<세션 id>.wav`, `recording_uri`)에 받은 그대로 덧붙인다. 진단용 샘플(`source=sample`)은 녹음하지 않는다. 음성은 메모리와 원본 영역 밖으로 나가지 않는다.
+- 면접 뒤 재전사: 관리자 > 모델 설정의 STT 사후에서 "면접 뒤 녹음 재전사"를 켜면, 면접 종료 뒤 녹음을 그 모델로 다시 전사해 `source = batch` 구간으로 저장한다(`GET …/transcript?source=batch`, 시각은 녹음 안의 위치). 자세한 것은 [audio-input.md](audio-input.md).
 
 ## 4. 모델 결정 (Alembic 0003 ~ 0006)
 
@@ -457,6 +485,8 @@ SQLite 마이그레이션 주의: batch 모드는 테이블을 복사한 뒤 원
 
 구현됨 (2026-10-25): 관리자 > 모델 설정 10개 엔드포인트(합계 45개), DB 저장·이력·되돌리기, 재시작 없는 교체와 세션 고정, 연결 테스트, 모델 다운로드, 로컬 Whisper STT(`faster_whisper`, CPU int8, 한국어). 테스트 `tests/test_model_settings.py`, `test_weights.py`, `test_whisper.py`(모델 파일이 있을 때만). 측정 결과는 [Whisper 측정](whisper-benchmark.md).
 
+구현됨 (2026-10-28): 실시간 면접 마이크 입력. 마이크 WebSocket과 HTTP 청크 대체(3.3), 질문 중 / 답변 듣는 중 전환, 진단용 샘플 음성, 면접 뒤 녹음 재전사(합계 92개, WebSocket 제외). Silero VAD로 말소리만 STT에 넣기, 답변 끝 판정(침묵 기준, Smart Turn v3), 답변이 이어지면 같은 답에 붙이기, 답변 중 미리 임베딩, 원본 영역 WAV 녹음, 오류 코드. 관리자 > 모델 설정에 음성 입력 역할 3개. 테스트 `tests/test_audio_input.py`, 프론트 `features/interview/audio/*.test.ts`. [audio-input.md](audio-input.md).
+
 구현됨 (2026-10-28): 사내 에이전트 플랫폼용 MCP 서버(`interview_assistant/agent/`, 읽기 도구 13개와 제안 도구 3개, stdio·streamable HTTP), 교체 가능한 신원 확인·가드·감사(`api/agent_access.py`), 제안 기록 1개(합계 87개). 테스트 `tests/test_agent.py`. [agent-integration.md](agent-integration.md).
 
 남은 과제:
@@ -464,11 +494,11 @@ SQLite 마이그레이션 주의: batch 모드는 테이블을 복사한 뒤 원
 - **실제 모델 연결 (3단계)**: `anthropic_vertex` LLM provider(구조화 출력, 스트리밍, 토큰 집계, 프롬프트 캐싱). 지금 fake LLM은 규칙으로 그럴듯한 모양만 만든다(`providers/fake_tasks.py`). 연결 뒤 프롬프트별 품질 검증(역량 사전 초안, 프로필 구조화 정확도, 선별 근거, 꼬리질문 적합성, 채점 일치도)이 필요하다. 스트림 provider가 토큰 수를 돌려주게 인터페이스를 넓힐 것.
 - **실제 GCP 호출**: Vertex AI, Speech-to-Text v2(10단계 배치, 11단계 스트리밍), Vertex 임베딩(카탈로그만). GCP 프로젝트가 아직 없다.
 - **검색 품질 (실제 LLM 뒤)**: 질문 은행 예시를 넣은 꼬리질문의 품질, AI 금지 질문 확인의 정확도, 기준점을 넣은 채점의 면접관 점수 일치도(12단계 게이트)는 fake LLM으로는 볼 수 없다. 실제 모델을 붙인 뒤 출처별 채택률(관리자 > 꼬리질문 지표)과 함께 잰다.
-- **답변 도중 질문 은행 후보**: 지금은 답변이 끝난 뒤에만 찾는다. 확정된 전사 구간이 일정 길이 쌓이면 미리 찾는 것은 마이크 입력(11단계)을 붙일 때 같이 정한다.
+- **답변 도중 질문 은행 후보**: 답변을 미리 임베딩해 두는 것까지 했다(답변이 닫히면 검색이 캐시에서 바로 된다, `live/prefetch.py`). 답변 도중 후보를 미리 보여 주는 것은 하지 않았다.
 - **임베딩 속도·메모리**: 이 노트북에서 답변 1건 약 0.9초, 질문 1,000건 재색인 약 2.6분, 서버 메모리 BGE-M3 1.6GB(+Whisper medium 2.5GB). int8 양자화나 GPU로 줄일지 실제 사용량을 보고 정한다([embedding-benchmark.md](embedding-benchmark.md)).
 - **벡터 검색 엔진**: 지금은 메모리 내 전수 검색(수천 건). 수만 건이 되거나 여러 인스턴스가 되면 DB 엔진을 정한 뒤 pgvector 등으로 `VectorIndex`를 바꾼다. 여러 인스턴스면 색인 갱신을 다른 인스턴스에 알리는 방법도 필요하다.
 - **로그인·SSO**: IAP + 사내 SSO, `GET /api/me`를 세션에서. 지금은 `IA_DEV_INTERVIEWER`. 에이전트 호출은 `api/agent_access.py`에 그 자격증명을 확인하는 `AgentIdentity`를 더하고 `IA_AGENT_IDENTITY`로 고른다(바꿀 곳은 [agent-integration.md](agent-integration.md) 7장). 면접관 점수는 본인 것만 쓰게 막기(지금은 패널이면 누구 것이든 가능).
-- **실제 오디오·WebRTC (11단계)**: LiveKit 통화 또는 대면 마이크, 참가자 트랙 → 스트리밍 STT. `live/audio.py`의 `AudioSource`를 16kHz PCM(`PCM16_16K`)을 내는 구현으로 붙이면 관리자 화면에서 고른 실시간 STT(예: `faster_whisper`)가 그대로 쓰인다. 녹음 파일 저장(지금 `recording_uri`는 저장 예정 위치만 가리킨다), 대면 면접 화자분리.
+- **WebRTC (11단계 나머지)**: 대면 면접의 브라우저 마이크는 붙었다(3.3). 비대면 면접의 참가자 트랙(LiveKit), 한 세션에 마이크 두 개(면접관·지원자 따로), 대면 면접 화자분리는 남았다. 남은 것 전체는 [audio-input.md](audio-input.md) 11장.
 - **로컬 Whisper 실시간 속도**: 이 노트북(CPU, 배터리)에서는 Whisper 호출 한 번이 30초 창 고정 비용(medium 약 5초)이라 발화 하나 확정까지 medium 약 10초 걸린다. 부분 전사는 호출 비용이 작을 때만 나온다. 실시간은 small·GPU·Chirp 중에서 다시 정할 것([측정](whisper-benchmark.md)).
 - **모델 설정 다중 인스턴스**: 활성 스냅샷은 프로세스 메모리에 있다. 여러 인스턴스면 변경을 다른 인스턴스에 알릴 방법(DB revision 폴링 또는 Pub/Sub)이 필요하다.
 - **여러 워커**: 전사 허브 상태가 프로세스 메모리에 있다. Cloud Run 여러 인스턴스면 Redis Pub/Sub 같은 공유 버스와 듣기 작업 소유권이 필요하다. AI 채점도 백그라운드 태스크라 작업 큐로 옮길 것.

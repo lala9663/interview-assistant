@@ -54,3 +54,18 @@ providers:
       embedded_images: true
       sensitivity: medium
     # 대안: ocr { impl: tesseract, model: best } / { impl: google_document_ai } / { impl: clova_ocr }(외부)
+  # 음성 입력(마이크, docs/audio-input.md). Silero VAD는 faster-whisper에 들어 있다. Smart Turn 모델 파일(8.7MB)은
+  # 관리자 화면의 "다운로드"로 받는다. 받기 전에는 침묵 2초로 답변 끝을 판정하고 화면에 TURN-MISSING을 띄운다.
+  audio:
+    vad:
+      impl: silero
+      threshold: 0.5
+    turn:
+      impl: smart_turn
+      model: smart-turn-v3.2-cpu
+      pause_ms: 1000
+      threshold: 0.8
+      max_silence_ms: 3000
+    denoise:
+      impl: "off"
+    # 대안: turn { impl: silence, silence_ms: 2000 } / denoise { impl: rnnoise }(구현 전)

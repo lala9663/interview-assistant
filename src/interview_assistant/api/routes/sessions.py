@@ -35,6 +35,7 @@ from interview_assistant.interviews import (
     session_competency_set,
 )
 from interview_assistant.live.hub import close_answer
+from interview_assistant.live.retranscribe import retranscribe
 from interview_assistant.models import (
     ActorType,
     AiScoringStatus,
@@ -169,8 +170,8 @@ def start_session(session_id: str, db: Db, me: Me, runtime: RuntimeDep) -> s.Ses
     found.competency_set_id = pinned.id if pinned else None
     found.ai_config_revision = runtime.models.active.revision
     if found.application.candidate.consent_recording:
-        # Where the recording will live (raw zone). Nothing writes it until step 11 (audio).
-        found.recording_uri = (runtime.recordings_dir / f"{found.id}.webm").resolve().as_uri()
+        # Where the recording lives (raw zone): the microphone audio, written as it arrives.
+        found.recording_uri = (runtime.recordings_dir / f"{found.id}.wav").resolve().as_uri()
     audit(
         db,
         me,
@@ -224,12 +225,44 @@ async def end_session(session_id: str, db: Db, me: Me, runtime: RuntimeDep) -> s
         )
     )
     db.commit()
-    await runtime.hub.end(session_id)
+    timeline = await runtime.hub.end(session_id)
     runtime.spawn(
         score_session(runtime.session_factory, providers.ai, runtime.deid, session_id),
         then=runtime.models.evict,
     )
+    batch = providers.specs.get("stt.batch")
+    if found.recording_uri is not None and batch is not None and batch.options.get("retranscribe"):
+        # 면접 뒤 녹음 재전사: the recording again with the accurate (slow) model
+        runtime.spawn(
+            retranscribe(runtime.session_factory, providers.get("stt.batch"), runtime.deid, session_id, timeline)
+        )
     return views.session_detail(db, found)
+
+
+def record_question(
+    db: Db,
+    runtime: RuntimeDep,
+    found: InterviewSession,
+    question: str,
+    source: QuestionSource,
+    *,
+    preset_id: str | None = None,
+    target: str | None = None,
+) -> QAItem:
+    """The next question of the session, de-identified (typed, picked or asked aloud)."""
+    last = db.scalar(select(func.max(QAItem.seq)).where(QAItem.session_id == found.id)) or 0
+    qa = QAItem(
+        session_id=found.id,
+        seq=last + 1,
+        question=runtime.deid.deidentify(db, question, found.application.candidate),
+        question_source=source,
+        preset_question_id=preset_id,
+        target_competency=target,
+        asked_at=utcnow(),
+    )
+    db.add(qa)
+    db.flush()
+    return qa
 
 
 @router.post("/sessions/{session_id}/qa-items", response_model=s.QAItem, status_code=201)
@@ -276,20 +309,10 @@ async def create_qa(
     db.expire_all()
     close_unanswered(db, found)
 
-    candidate = found.application.candidate
-    last = db.scalar(select(func.max(QAItem.seq)).where(QAItem.session_id == found.id)) or 0
-    now = utcnow()
-    qa = QAItem(
-        session_id=found.id,
-        seq=last + 1,
-        question=runtime.deid.deidentify(db, question, candidate),
-        question_source=body.question_source,
-        preset_question_id=preset.id if preset else None,
-        target_competency=target,
-        asked_at=now,
+    qa = record_question(
+        db, runtime, found, question, body.question_source, preset_id=preset.id if preset else None, target=target
     )
-    db.add(qa)
-    db.flush()
+    now = qa.asked_at
     details: dict[str, object] = {"question_source": body.question_source.value}
     if suggestion is not None and body.suggestion is not None:
         suggestion.used_qa_item_id = qa.id

@@ -384,7 +384,7 @@ class _Seeder:
             scheduled_at=scheduled,
             started_at=started,
             ended_at=ended,
-            recording_uri=(self.settings.recordings_dir / f"{sid}.webm").resolve().as_uri()
+            recording_uri=(self.settings.recordings_dir / f"{sid}.wav").resolve().as_uri()
             if ran
             else None,
             competency_set=approved[-1] if ran and approved else None,

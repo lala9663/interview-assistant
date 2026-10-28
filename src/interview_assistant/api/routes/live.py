@@ -4,9 +4,9 @@ from __future__ import annotations
 
 import json
 from collections.abc import AsyncIterator
-from typing import Any
+from typing import Any, Literal
 
-from fastapi import APIRouter
+from fastapi import APIRouter, Query
 from fastapi.responses import StreamingResponse
 from sqlalchemy import select
 
@@ -34,11 +34,15 @@ def sse(events: AsyncIterator[tuple[str, dict[str, Any]]]) -> StreamingResponse:
 
 
 @router.get("/sessions/{session_id}/transcript", response_model=s.TranscriptHistory)
-def transcript(session_id: str, db: Db) -> s.TranscriptHistory:
+def transcript(
+    session_id: str, db: Db, source: Literal["live", "batch"] = Query("live")
+) -> s.TranscriptHistory:
+    """`live`: what the streaming STT wrote during the interview. `batch`: the recording
+    transcribed again after it (STT 사후, when admin > 모델 설정 turned that on)."""
     get_session(db, session_id)
     rows = db.scalars(
         select(TranscriptSegment)
-        .where(TranscriptSegment.session_id == session_id)
+        .where(TranscriptSegment.session_id == session_id, TranscriptSegment.source == source)
         .order_by(TranscriptSegment.start_ms, TranscriptSegment.created_at)
     ).all()
     return views.transcript(rows)

@@ -288,6 +288,26 @@ BGE_M3: dict[str, WeightSet] = {
 }
 
 
+# Pipecat Smart Turn v3.2 (Daily, BSD-2-Clause), checked 2026-10-28: end-of-turn from the sound
+# (Whisper Tiny encoder + linear head, 8M parameters), the int8 CPU export. Repo commit of
+# 2026-01-07; v3.2 is the newest release there.
+SMART_TURN: dict[str, WeightSet] = {
+    "smart-turn-v3.2-cpu": WeightSet(
+        "smart-turn/v3.2-cpu",
+        "pipecat-ai/smart-turn-v3",
+        "f766f81d3cfdf7737ac64aad813d91bbfd56bf93",
+        (
+            WeightFile(
+                "smart-turn-v3.2-cpu.onnx",
+                8679182,
+                "2bb026316b14a660486a75b1733cd3fbab8c2fd0314dc9af7be49f8cca967e4f",
+            ),
+        ),
+        license="BSD-2-Clause",
+    ),
+}
+
+
 def is_complete(weights: WeightSet, root: Path) -> bool:
     """Every file present with its expected size, and the marker written after verification."""
     folder = weights.path(root)

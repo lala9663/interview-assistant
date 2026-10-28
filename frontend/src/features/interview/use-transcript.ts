@@ -68,6 +68,11 @@ export function useTranscript(sessionId: string, enabled: boolean, onAnswered: (
         )
         onAnswered(e.data)
         break
+      case 'qa.created': // a question asked aloud into the microphone (질문 중 -> 답변 듣는 중)
+        qc.setQueryData<SessionDetail>(qk.session(sessionId), (d) =>
+          d && !d.qa_items.some((q) => q.id === e.data.id) ? { ...d, qa_items: [...d.qa_items, e.data] } : d,
+        )
+        break
     }
   }
 

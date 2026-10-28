@@ -124,7 +124,7 @@ def build_runtime(
         ),
         workers=settings.intake_workers,
     )
-    return Runtime(
+    runtime = Runtime(
         settings=settings,
         models=models,
         session_factory=session_factory,
@@ -132,3 +132,5 @@ def build_runtime(
         hub=hub,
         intake=intake,
     )
+    hub.retrieval = runtime.retrieval  # answers are embedded while the candidate talks
+    return runtime

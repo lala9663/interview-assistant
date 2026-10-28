@@ -2,6 +2,9 @@
 import { api } from './client'
 import type {
   ActivityItem,
+  AudioSample,
+  MicRole,
+  MicRoleResult,
   ApplicationDetail,
   ApplyModelRequest,
   ApplicationRow,
@@ -128,6 +131,8 @@ export const endpoints = {
   answerQA: (qaId: string, answerText: string) => api.patch<QAItem>(`/qa-items/${qaId}`, { answer_text: answerText }),
   createNote: (sessionId: string, content: string) => api.post<CandidateNote>(`/sessions/${sessionId}/notes`, { content }),
   transcript: (sessionId: string, signal?: AbortSignal) => api.get<TranscriptHistory>(`/sessions/${sessionId}/transcript`, signal),
+  setMicRole: (sessionId: string, role: MicRole) => api.post<MicRoleResult>(`/sessions/${sessionId}/live/role`, { role }),
+  audioSamples: () => api.get<AudioSample[]>('/live/audio-samples'),
   carryoverQuestions: (sessionId: string) => api.post<SessionDetail>(`/sessions/${sessionId}/carryover-questions`),
 
   evaluation: (sessionId: string, signal?: AbortSignal) => api.get<Evaluation>(`/sessions/${sessionId}/evaluation`, signal),

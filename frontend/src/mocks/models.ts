@@ -31,6 +31,9 @@ export const ROLE_INFO: Record<ModelRole, { label: string; description: string; 
   'document.pdf': { label: 'PDF 텍스트 추출', description: 'PDF의 텍스트 층 읽기', group: 'documents' },
   'document.hwp': { label: 'HWP·HWPX 읽기', description: '한글 문서 (HWP 5.x, HWPX)', group: 'documents' },
   'document.legacy': { label: '구형 오피스 변환', description: '.doc·.ppt를 .docx·.pptx로 바꿔 읽기', group: 'documents' },
+  'audio.vad': { label: '음성 구간 (VAD)', description: '마이크 음성에서 말소리 구간만 STT에 넣기', group: 'audio' },
+  'audio.turn': { label: '답변 끝 판정', description: '지원자가 답변을 마쳤는지 판단해 꼬리질문 요청', group: 'audio' },
+  'audio.denoise': { label: '서버 잡음 억제', description: 'STT 앞에서 잡음 줄이기 (기본 끔)', group: 'audio' },
 }
 
 export const SAMPLE_TEXT = '커리는 약용 식물과 향신료를 기본으로 하여 고기나 채소를 곁들이는 요리입니다.'
@@ -61,13 +64,17 @@ const choice = (value: string, label: string, note = '', extra: Partial<ModelOpt
 const ko = field('language', '언어', 'string', 'ko-KR', { help: '한국어로 고정합니다.', fixed: true })
 const speed = field('speed', '지연 흉내 속도', 'number', 1, { help: '1이면 데모 속도, 0이면 지연 없이 바로 답합니다.', minimum: 0, maximum: 5 })
 const batchDiarization = field('diarization', '화자 구분', 'boolean', false, { help: '사후 전사에서 화자 라벨을 붙입니다.', roles: ['stt.batch'] })
+const retranscribe = field('retranscribe', '면접 뒤 녹음 재전사', 'boolean', false, {
+  help: '켜면 면접이 끝난 뒤 녹음(동의한 면접만)을 이 모델로 다시 전사해 실시간 전사와 따로 저장합니다. GPU가 없을 때 실시간은 small로 빠르게, 기록은 이 모델(large-v3 등)로 정확하게 나누는 용도입니다.',
+  roles: ['stt.batch'],
+})
 const GCP_NOTE = '회사 밖 Google Cloud로 데이터를 보냅니다. GCP는 쓰지 않기로 해서(2026-10-28) 비교용으로만 남긴 대안입니다.'
 /** The in-house model server of the mock world (config/providers.yaml). */
 export const SERVER_URL = 'http://vllm.internal:8000/v1'
 export const SERVER_MODEL = 'skt/A.X-3.1'
 const OPENAI_HOST = /(^|\.)openai\.com$|\.openai\.azure\.com$/i
 const LIVE_NOTE =
-  '실시간 면접의 음성 입력(마이크·WebRTC)은 다음 단계에서 붙습니다. 그 전까지 진행 중 면접 화면은 가상 지원자 대본(텍스트)을 보내므로, fake가 아닌 STT로 바꾸면 새로 시작하는 면접의 전사가 꺼지고 수기 답변 입력으로 바뀝니다. 지금 진행 중인 면접은 시작할 때의 STT를 계속 씁니다.'
+  '실시간 면접 화면에서 마이크를 켜면 그 음성(16kHz PCM)을 전사합니다. 마이크를 켜기 전에는 가상 지원자 대본(텍스트)이 흐르는데, 이것은 fake STT만 읽으므로 fake가 아닌 STT에서는 마이크를 켜야 전사됩니다. 진행 중인 면접은 시작할 때의 STT를 계속 씁니다. GPU가 없으면 실시간은 small로 두고, 정확한 기록은 STT 사후의 면접 뒤 재전사에 맡길 수 있습니다(docs/audio-input.md).'
 
 export const WHISPER_SIZES: Record<string, number> = {
   small: 486_212_372,
@@ -82,9 +89,12 @@ export const WEIGHT_SIZES: Record<string, Record<string, number>> = {
   paddleocr: { 'ppocrv5-mobile': 32_288_476, 'ppocrv5-server': 115_701_129 },
   tesseract: { best: 27_928_729, fast: 5_790_503 },
   bge_m3: { 'bge-m3': 2_284_631_868 },
+  smart_turn: { 'smart-turn-v3.2-cpu': 8_679_182 },
 }
 export const weightKey = (impl: string, model: string) => `${impl}:${model}`
 const LOCAL_FILES = '서류와 그림은 이 PC 밖으로 나가지 않습니다.'
+const LOCAL_VOICE = '음성은 이 PC(서버) 밖으로 나가지 않습니다.'
+const minSpeech = field('min_speech_ms', '답변 시작으로 볼 최소 말소리 (ms)', 'integer', 250, { help: '이보다 짧은 소리(기침, 짧은 대꾸)만 있었으면 답변이 시작되지 않은 것으로 봅니다.', minimum: 0, maximum: 2000 })
 const NO_LLM_IMAGES = '그림은 OCR로 글자만 읽고 버립니다. LLM에는 그림을 보내지 않습니다.'
 
 const impl = (
@@ -187,7 +197,7 @@ export function mockCatalog(downloaded: ReadonlySet<string>): ModelImpl[] {
     impl('llm', 'anthropic_api', 'Claude API (외부, 모의 예시)', 'Anthropic API를 직접 부르는 예시입니다. 모의 모드에만 있고, 외부 전송 경고 단계를 보여 줍니다.', 'external', '비식별 프롬프트가 회사 밖(Anthropic API)으로 나갑니다.', '상용 (API 과금)', ['llm.primary', 'llm.screening'], [
       field('model', '모델', 'select', 'claude-opus-5-5', { choices: [choice('claude-opus-5-5', 'Claude Opus 5.5'), choice('claude-sonnet-5-5', 'Claude Sonnet 5.5')] }),
     ]),
-    impl('stt', 'fake', 'Fake STT', '가상 지원자 대본(텍스트)을 받아 적습니다. 실제 음성은 알아듣지 않고 길이만 알려 줍니다.', 'local', '외부 호출이 없습니다.', '프로젝트 코드', ['stt.streaming', 'stt.batch'], [ko, speed, batchDiarization], {
+    impl('stt', 'fake', 'Fake STT', '가상 지원자 대본(텍스트)을 받아 적습니다. 실제 음성은 알아듣지 않고 길이만 알려 줍니다.', 'local', '외부 호출이 없습니다.', '프로젝트 코드', ['stt.streaming', 'stt.batch'], [ko, speed, batchDiarization, retranscribe], {
       role_defaults: { 'stt.batch': { diarization: true } },
     }),
     impl('stt', 'faster_whisper', 'Whisper (로컬, faster-whisper)', 'OpenAI Whisper를 이 PC의 CPU에서 돌립니다(int8). 무료, 오프라인, 한국어 고정.', 'local', '음성은 이 PC 밖으로 나가지 않습니다. 모델 파일만 Hugging Face에서 한 번 내려받습니다.', 'MIT (faster-whisper, Whisper 가중치)', ['stt.streaming', 'stt.batch'], [
@@ -200,6 +210,7 @@ export function mockCatalog(downloaded: ReadonlySet<string>): ModelImpl[] {
       field('beam_size', '빔 크기', 'integer', 5, { help: '클수록 조금 더 정확하고 느립니다. 실시간은 1~2.', minimum: 1, maximum: 5 }),
       field('vad_min_silence_ms', '발화 끝 판정 침묵 (ms)', 'integer', 500, { help: '이만큼 조용하면 한 발화가 끝난 것으로 보고 확정 전사를 냅니다.', minimum: 200, maximum: 2000 }),
       field('cpu_threads', 'CPU 스레드', 'integer', 0, { help: '0이면 자동 (코어 수 - 4).', minimum: 0, maximum: 32 }),
+      retranscribe,
     ], {
       role_defaults: { 'stt.streaming': { model: 'medium', beam_size: 1 }, 'stt.batch': { model: 'large-v3', beam_size: 5 } },
       role_notes: { 'stt.streaming': LIVE_NOTE, 'stt.batch': '화자 구분은 하지 않습니다 (화자분리 역할이 따로 맡습니다).' },
@@ -285,6 +296,25 @@ export function mockCatalog(downloaded: ReadonlySet<string>): ModelImpl[] {
     impl('office_converter', 'libreoffice', 'LibreOffice (헤드리스)', '구형 .doc·.ppt를 .docx·.pptx로 바꾼 뒤 같은 방식으로 읽습니다. 매번 임시 프로필로 돌리고 매크로는 실행하지 않습니다.', 'local', LOCAL_FILES, 'MPL-2.0 (LibreOffice, 별도 프로그램으로 실행)', ['document.legacy'], [
       field('timeout', '변환 제한 시간 (초)', 'integer', 120, { minimum: 30, maximum: 600 }),
     ]),
+    impl('vad', 'silero', 'Silero VAD (로컬)', '32ms마다 말소리인지 판단합니다. 말소리와 그 앞뒤 여유만 STT에 넣고 나머지는 무음으로 바꿔, Whisper가 침묵·잡음에서 없는 말을 지어내지 않게 합니다.', 'local', `${LOCAL_VOICE} 모델(1.2MB)은 faster-whisper에 들어 있어 따로 내려받지 않고, 불러올 때 sha256을 확인합니다.`, 'MIT (Silero VAD, faster-whisper)', ['audio.vad'], [
+      field('threshold', '말소리 기준', 'number', 0.5, { help: '이 확률 이상이면 말소리로 봅니다(말하는 동안은 0.15 낮은 값까지 유지).', minimum: 0.1, maximum: 0.95 }),
+      field('speech_pad_ms', '말소리 뒤 여유 (ms)', 'integer', 300, { help: '말소리가 끝난 뒤 이만큼은 STT에 그대로 넣습니다. 앞쪽은 늘 128ms를 넣습니다.', minimum: 0, maximum: 1000 }),
+      minSpeech,
+    ]),
+    impl('turn', 'silence', '침묵 기준', '답변이 시작된 뒤 정한 시간만큼 말이 없으면 답변 끝으로 봅니다. 그보다 길게 생각하느라 멈추면 답변이 나뉩니다(이어 말하면 같은 답변에 붙습니다).', 'local', '설정입니다. 데이터를 보내지 않습니다.', '프로젝트 코드', ['audio.turn'], [
+      field('silence_ms', '답변 끝 침묵 (ms)', 'integer', 2000, { help: '이 노트북 측정(생각하는 멈춤 1~3초가 든 한국어 32건): 1,000ms면 조기 끊김 29회, 2,000ms면 16회, 3,000ms면 4회.', minimum: 500, maximum: 10000 }),
+      minSpeech,
+    ]),
+    impl('turn', 'smart_turn', 'Smart Turn v3 (로컬)', 'Pipecat의 말끝 판정 모델(파라미터 8M)이 억양과 말끝 소리로 문장이 끝났는지 봅니다. 한국어를 포함한 23개 언어.', 'local', `${LOCAL_VOICE} 모델 파일(8.7MB)만 Hugging Face에서 한 번 내려받습니다(sha256 고정).`, 'BSD-2-Clause (Smart Turn v3.2, Daily)', ['audio.turn'], [
+      field('model', '모델', 'select', 'smart-turn-v3.2-cpu', { choices: sized('smart_turn', [choice('smart-turn-v3.2-cpu', 'Smart Turn v3.2 (CPU, int8)', '이 노트북 CPU에서 판정 한 번 약 30ms.', { recommended_for: ['audio.turn'] })]) }),
+      field('pause_ms', '판정 시작 침묵 (ms)', 'integer', 1000, { help: '말이 멈춘 뒤 이만큼 지나면 모델에 묻습니다.', minimum: 100, maximum: 5000 }),
+      field('threshold', '끝 판정 기준', 'number', 0.8, { help: '모델 점수가 이 이상이면 답변 끝입니다.', minimum: 0.1, maximum: 0.99 }),
+      field('max_silence_ms', '최대 침묵 (ms)', 'integer', 3000, { help: '모델이 아직이라고 해도 이만큼 조용하면 답변 끝으로 봅니다.', minimum: 500, maximum: 10000 }),
+      minSpeech,
+    ]),
+    impl('denoise', 'off', '끔 (기본)', '잡음 억제 없이 브라우저가 보낸 소리를 그대로 VAD와 STT에 넣습니다.', 'local', '설정입니다. 데이터를 보내지 않습니다.', '프로젝트 코드', ['audio.denoise']),
+    impl('denoise', 'rnnoise', 'RNNoise', 'Xiph의 RNN 잡음 억제(48kHz). 구현 전입니다.', 'local', LOCAL_VOICE, 'BSD-3-Clause', ['audio.denoise']),
+    impl('denoise', 'deepfilternet', 'DeepFilterNet', '딥러닝 잡음 억제(48kHz). 구현 전입니다.', 'local', LOCAL_VOICE, 'MIT 또는 Apache-2.0', ['audio.denoise']),
   ]
 }
 
@@ -294,7 +324,7 @@ const ok = (key: string, label: string, detail: string): ModelRequirement => ({ 
 
 /** Mock machine: GCP credentials present (mock world), faster-whisper installed, weights as downloaded, every environment variable set. */
 export function requirementsFor(i: ModelImpl, options: Record<string, ModelOptionValue>, downloaded: ReadonlySet<string>): ModelRequirement[] {
-  const notYet = ['google_document_ai', 'clova_ocr', 'hwplib']
+  const notYet = ['google_document_ai', 'clova_ocr', 'hwplib', 'rnnoise', 'deepfilternet']
   if (notYet.includes(i.impl)) {
     const reqs = [missing('implemented', '구현', '아직 구현되지 않았습니다.', '이 provider의 구현 단계(구현 순서 문서)를 마친 뒤 쓸 수 있습니다.')]
     if (i.impl === 'clova_ocr')
@@ -424,12 +454,15 @@ const INITIAL: Record<ModelRole, ModelSpec> = {
   'document.pdf': { impl: 'pdfplumber', options: { min_text_chars: 30 } },
   'document.hwp': { impl: 'syhwp', options: {} },
   'document.legacy': { impl: 'libreoffice', options: { timeout: 120 } },
+  'audio.vad': { impl: 'silero', options: { threshold: 0.5, speech_pad_ms: 300, min_speech_ms: 250 } },
+  'audio.turn': { impl: 'smart_turn', options: { model: 'smart-turn-v3.2-cpu', pause_ms: 1000, threshold: 0.8, max_silence_ms: 3000, min_speech_ms: 250 } },
+  'audio.denoise': { impl: 'off', options: {} },
 }
 
 export function createModelState(now: Date, newId: () => string): ModelState {
   const at = new Date(now.getTime() - 3 * 24 * 3600 * 1000).toISOString()
   // the PoC OCR and embedding are set up
-  const downloaded = new Set<string>([weightKey('paddleocr', 'ppocrv5-mobile'), weightKey('bge_m3', 'bge-m3')])
+  const downloaded = new Set<string>([weightKey('paddleocr', 'ppocrv5-mobile'), weightKey('bge_m3', 'bge-m3'), weightKey('smart_turn', 'smart-turn-v3.2-cpu')])
   const catalog = mockCatalog(downloaded)
   const history = MODEL_ROLES.map((role, i) => ({
     id: newId(),
@@ -474,6 +507,9 @@ export function modelName(spec: ModelSpec, role = ''): string {
   if (spec.impl === 'pdfplumber') return 'pdfplumber 0.11.10'
   if (spec.impl === 'syhwp') return 'syhwp + OWPML'
   if (spec.impl === 'libreoffice') return 'LibreOffice (headless)'
+  if (spec.impl === 'silero') return 'silero-vad-v6'
+  if (spec.impl === 'silence') return `silence-${String(spec.options.silence_ms ?? 2000)}ms`
+  if (spec.impl === 'off') return 'off'
   if (spec.impl === 'fake' && role === 'document.ocr') return 'fake-ocr'
   if (spec.impl === 'fake') return String(spec.options.model ?? 'fake')
   return String(spec.options.model ?? spec.impl)
@@ -557,9 +593,25 @@ function readingTest(role: string, spec: ModelSpec, document: File | null, model
   return { ...base, ok: true, latency_ms: 3400, summary: 'PDF 2쪽을 읽었습니다 (OCR 1쪽, 그림 1개).', output }
 }
 
+/** 음성 입력 roles: the sample's speech stretches (VAD) or where the answer would close (답변 끝 판정). */
+function audioInputTest(role: string, spec: ModelSpec, audio: File | null, model: string): ModelTestResult {
+  const base = { ok: true, model, error: null, audio: audio ? ('upload' as const) : ('sample' as const), latency_ms: 180 }
+  if (role === 'audio.denoise') return { ...base, audio: null, summary: '잡음 억제를 하지 않습니다 (끔). 브라우저가 보낸 소리가 그대로 VAD와 STT로 갑니다.', output: {} }
+  const speech = [[2.34, 8.45]]
+  if (role === 'audio.vad') return { ...base, summary: '11.5초 중 말소리 6.1초, 구간 1개를 찾았습니다.', output: { audio_seconds: 11.46, speech_seconds: 6.11, speech } }
+  const smart = spec.impl === 'smart_turn'
+  const after = smart ? Number(spec.options.pause_ms ?? 1000) / 1000 : Number(spec.options.silence_ms ?? 2000) / 1000
+  return {
+    ...base,
+    summary: `마지막 말소리 8.4초 → ${after.toFixed(1)}초 뒤 답변 끝 (${smart ? 'model' : 'silence'}).`,
+    output: { audio_seconds: 11.46, speech_seconds: 6.11, speech, ends: [{ at: 8.45 + after, reason: smart ? 'model' : 'silence', probability: smart ? 0.97 : null }] },
+  }
+}
+
 export function testResult(role: string, spec: ModelSpec, audio: File | null, document: File | null = null): ModelTestResult {
   const model = modelName(spec, role)
   if (role.startsWith('document.')) return readingTest(role, spec, document, model)
+  if (role.startsWith('audio.')) return audioInputTest(role, spec, audio, model)
   const base = { ok: true, model, error: null, audio: null as ModelTestResult['audio'] }
   if (role.startsWith('llm.')) {
     const output: Record<string, unknown> = {

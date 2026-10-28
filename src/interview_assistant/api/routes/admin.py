@@ -295,7 +295,7 @@ async def test_model(
     kind = prepared.role.kind
     with tempfile.TemporaryDirectory(prefix="ia-model-test-") as tmp:
         path, expected, source = SAMPLE, SAMPLE_TEXT, "sample"
-        if kind in ("stt", "diarization"):
+        if kind in ("stt", "diarization", "vad", "turn"):
             path, expected, source = await _test_audio(audio, Path(tmp))
         try:
             provider = await runtime.models.provider_for(prepared)
@@ -311,7 +311,7 @@ async def test_model(
                 )
         else:
             result = await probe.run(prepared, provider, db, audio=path, expected_text=expected)
-    audio_source = source if kind in ("stt", "diarization") else None
+    audio_source = source if kind in ("stt", "diarization", "vad", "turn") else None
     audit(
         db,
         admin,

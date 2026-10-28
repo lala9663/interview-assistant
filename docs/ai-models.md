@@ -99,7 +99,7 @@ OpenAI Whisper를 이 PC의 CPU에서 돌린다(faster-whisper, CTranslate2 int8
 
 측정 요약(이 노트북, GPU 없음): 정확도는 medium 이상이 충분하고 small은 한국어에서 눈에 띄게 틀린다. Whisper는 호출마다 30초 창을 통째로 인코딩해 짧은 발화도 같은 비용이 들어, 이 CPU로는 실시간 전사가 발화 끝 뒤 수 초~십여 초 늦다. 화면의 권장(실시간 medium, 사후 large-v3)은 정확도 기준이다.
 
-지금 실시간 면접 화면의 음성은 가상 지원자 대본(텍스트)이라 fake STT만 받아 적는다. STT 실시간을 Whisper로 바꾸면 새로 시작하는 면접은 수기 답변 입력으로 바뀐다(감사 로그 `transcript.unsupported_audio`). 마이크·WebRTC 입력(`live/audio.AudioSource`가 16kHz PCM을 내는 구현)이 붙으면 같은 설정이 그대로 쓰인다.
+실시간 면접 화면에서 마이크(또는 진단용 샘플 음성)를 켜면 STT 실시간 설정이 그 음성을 전사한다. 마이크를 켜기 전에는 가상 지원자 대본(텍스트)이 흘러 fake STT만 받아 적는다(Whisper면 감사 로그 `transcript.unsupported_audio`, 수기 답변). GPU가 없으면 STT 실시간은 small, STT 사후는 large-v3로 두고 "면접 뒤 녹음 재전사"를 켜 기록을 정확하게 남길 수 있다([audio-input.md](audio-input.md) 8장).
 
 측정 다시 하기 (정답 전사가 있는 WAV 목록 JSON):
 
@@ -117,6 +117,14 @@ BAAI의 다국어 임베딩 모델 BGE-M3(MIT)를 이 PC의 CPU에서 돌린다.
 4. 연결 테스트, 사유, 적용. 적용하면 "임베딩 색인" 칸에 새 색인 진행률이 보이고, 끝날 때까지 이전 색인(이전 모델)으로 검색한다. 실패하면 이전 색인이 남고 "다시 만들기"로 다시 시도한다.
 
 메모리는 서버 프로세스에 약 1.6GB가 더해진다(Whisper medium과 함께 2.5GB). ONNX Runtime은 Intel OpenMP를 싣지 않아 Whisper(CTranslate2)와 한 프로세스에서 돌아도 DLL이 충돌하지 않는다. Vertex AI 임베딩은 카탈로그에만 있다(구현 전).
+
+## 음성 입력 (VAD, 답변 끝 판정, 잡음 억제)
+
+실시간 면접 마이크 경로의 설정이다([audio-input.md](audio-input.md)). 음성은 서버 밖으로 나가지 않는다.
+
+- **음성 구간 (VAD)**: Silero VAD. faster-whisper 패키지 안의 모델 파일을 쓰고 불러올 때 sha256을 확인한다(내려받을 것 없음, `uv sync --extra whisper`). 옵션: 말소리 기준(0.5), 말소리 뒤 여유(300ms), 답변 시작으로 볼 최소 말소리(250ms). 연결 테스트는 내장 샘플(또는 녹음·파일)에서 찾은 말소리 구간을 보여 준다.
+- **답변 끝 판정**: 침묵 기준(ms 조정) 또는 Smart Turn v3.2. Smart Turn은 모델 카드의 "다운로드 9MB"로 받는다(Hugging Face `pipecat-ai/smart-turn-v3` 커밋 고정, sha256 검증, `weights/smart-turn/v3.2-cpu/`). 옵션: 판정 시작 침묵(1,000ms), 끝 판정 기준(0.8), 최대 침묵(3,000ms). 연결 테스트는 샘플 뒤 3초 무음을 붙여 마지막 말소리 몇 초 뒤에 답변 끝으로 보는지 보여 준다. 실사용 기본(`config/providers.yaml`)은 Smart Turn이고, 파일이 없으면 침묵 2초로 판정한다.
+- **서버 잡음 억제**: "끔"만 쓸 수 있다. RNNoise·DeepFilterNet은 구현 전(측정 계획은 [audio-input.md](audio-input.md) 7장).
 
 ## 서류 읽기
 

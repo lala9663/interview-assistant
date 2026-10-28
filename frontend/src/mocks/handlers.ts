@@ -713,6 +713,14 @@ export const handlers = [
     return HttpResponse.json(note, { status: 201 })
   }),
 
+  // The microphone needs the real backend (VAD, STT, the WebSocket): the mock API says so with a code.
+  http.post(`${API}/sessions/:id/audio/chunks`, () =>
+    HttpResponse.json({ detail: { code: 'MOCK-API', message: '모의 API 모드에서는 마이크를 쓸 수 없습니다. 백엔드 연결 모드(npm run dev:api)에서 쓰세요.' } }, { status: 409 }),
+  ),
+  http.delete(`${API}/sessions/:id/audio/chunks`, () => new HttpResponse(null, { status: 204 })),
+  http.post(`${API}/sessions/:id/live/role`, () => conflict('마이크가 연결되어 있지 않습니다.')),
+  http.get(`${API}/live/audio-samples`, () => HttpResponse.json([])),
+
   http.get(`${API}/sessions/:id/transcript`, async ({ params }) => {
     await latency()
     const db = getDb()

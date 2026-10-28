@@ -722,7 +722,7 @@ class ModelRoleState(BaseModel):
     label: str
     description: str
     kind: str
-    group: Literal["ai", "documents"]  # heading on the screen: AI 모델 / 서류 읽기
+    group: Literal["ai", "documents", "audio"]  # heading on the screen: AI 모델 / 서류 읽기 / 음성 입력
     spec: ModelSpec
     impl_label: str
     model: str  # the model name results and the audit log carry
@@ -970,6 +970,34 @@ class CreateQARequest(BaseModel):
 
 class UpdateQARequest(BaseModel):
     answer_text: str
+
+
+# --- microphone (docs/api-contract.md 3.3) ---------------------------------------------------
+
+
+class MicRoleRequest(BaseModel):
+    # candidate: 답변 듣는 중, interviewer: 질문 중 (one microphone, face to face)
+    role: Literal["candidate", "interviewer"]
+
+
+class MicRoleResult(BaseModel):
+    role: Literal["candidate", "interviewer"]
+    # The question asked aloud while the role was interviewer, recorded as the next question.
+    qa_item: QAItem | None = None
+
+
+class AudioChunkResult(BaseModel):
+    speaking: bool
+    role: Literal["candidate", "interviewer"]
+    notices: list[str]
+
+
+class AudioSample(BaseModel):
+    name: str
+    label: str
+    seconds: float
+    text: str
+    note: str
 
 
 class CreateNoteRequest(BaseModel):

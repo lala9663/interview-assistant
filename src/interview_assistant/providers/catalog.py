@@ -22,6 +22,7 @@ from interview_assistant.providers.programs import JAVA, LIBREOFFICE, TESSERACT,
 from interview_assistant.providers.weights import (
     BGE_M3,
     PADDLEOCR,
+    SMART_TURN,
     TESSDATA,
     WHISPER,
     WeightSet,
@@ -47,7 +48,7 @@ class Role:
     kind: str  # registry kind: llm, stt, embedding, diarization, ocr, pdf_reader ...
     label: str
     description: str
-    group: str = "ai"  # "ai" (AI 모델) or "documents" (서류 읽기): a heading on the screen
+    group: str = "ai"  # "ai" (AI 모델), "documents" (서류 읽기) or "audio" (음성 입력): a heading
 
 
 ROLES: tuple[Role, ...] = (
@@ -62,6 +63,9 @@ ROLES: tuple[Role, ...] = (
     Role("document.pdf", "pdf_reader", "PDF 텍스트 추출", "PDF의 텍스트 층 읽기", "documents"),
     Role("document.hwp", "hwp_reader", "HWP·HWPX 읽기", "한글 문서 (HWP 5.x, HWPX)", "documents"),
     Role("document.legacy", "office_converter", "구형 오피스 변환", ".doc·.ppt를 .docx·.pptx로 바꿔 읽기", "documents"),
+    Role("audio.vad", "vad", "음성 구간 (VAD)", "마이크 음성에서 말소리 구간만 STT에 넣기", "audio"),
+    Role("audio.turn", "turn", "답변 끝 판정", "지원자가 답변을 마쳤는지 판단해 꼬리질문 요청", "audio"),
+    Role("audio.denoise", "denoise", "서버 잡음 억제", "STT 앞에서 잡음 줄이기 (기본 끔)", "audio"),
 )
 ROLE_BY_KEY: dict[str, Role] = {r.key: r for r in ROLES}
 
@@ -156,15 +160,26 @@ _BATCH_DIARIZATION = OptionField(
     "사후 전사에서 화자 라벨을 붙입니다.",
     roles=("stt.batch",),
 )
+_RETRANSCRIBE = OptionField(
+    "retranscribe",
+    "면접 뒤 녹음 재전사",
+    "boolean",
+    False,
+    "켜면 면접이 끝난 뒤 녹음(동의한 면접만)을 이 모델로 다시 전사해 실시간 전사와 따로 저장합니다. GPU가 없을 때 "
+    "실시간은 small로 빠르게, 기록은 이 모델(large-v3 등)로 정확하게 나누는 용도입니다. 이 노트북 CPU에서 "
+    "large-v3는 녹음 길이의 1.2배쯤 걸립니다.",
+    roles=("stt.batch",),
+)
 _GCP_PACKAGES = (("anthropic", "uv sync --extra gcp"),)
 _GCP_NOTE = (
     "회사 밖 Google Cloud로 데이터를 보냅니다. GCP는 쓰지 않기로 해서(2026-10-28) 비교용으로만 남긴 "
     "대안입니다."
 )
 _LIVE_AUDIO_NOTE = (
-    "실시간 면접의 음성 입력(마이크·WebRTC)은 다음 단계에서 붙습니다. 그 전까지 진행 중 면접 "
-    "화면은 가상 지원자 대본(텍스트)을 보내므로, fake가 아닌 STT로 바꾸면 새로 시작하는 면접의 "
-    "전사가 꺼지고 수기 답변 입력으로 바뀝니다. 지금 진행 중인 면접은 시작할 때의 STT를 계속 씁니다."
+    "실시간 면접 화면에서 마이크를 켜면 그 음성(16kHz PCM)을 전사합니다. 마이크를 켜기 전에는 가상 "
+    "지원자 대본(텍스트)이 흐르는데, 이것은 fake STT만 읽으므로 fake가 아닌 STT에서는 마이크를 켜야 "
+    "전사됩니다. 진행 중인 면접은 시작할 때의 STT를 계속 씁니다. GPU가 없으면 실시간은 small로 두고, "
+    "정확한 기록은 STT 사후의 면접 뒤 재전사에 맡길 수 있습니다(docs/audio-input.md)."
 )
 
 _WHISPER_MODELS = (
@@ -227,6 +242,183 @@ def _retrieval_options(sparse: float, duplicate: float, minimum: float) -> tuple
             "답변과의 검색 점수가 이보다 낮은 질문 은행 질문은 제안하지 않습니다.",
             minimum=0,
             maximum=2,
+        ),
+    )
+
+
+_LOCAL_VOICE = "음성은 이 PC(서버) 밖으로 나가지 않습니다."
+
+
+def _check_smart_turn(values: dict[str, Any]) -> dict[str, Any]:
+    if values["max_silence_ms"] < values["pause_ms"]:
+        raise SpecError("max_silence_ms", "최대 침묵은 판정 시작 침묵보다 길어야 합니다.")
+    return values
+
+
+def _audio_impls() -> tuple[ImplInfo, ...]:
+    """음성 입력: VAD, end-of-answer detection, noise suppression (measured in docs/audio-input.md)."""
+    min_speech = OptionField(
+        "min_speech_ms",
+        "답변 시작으로 볼 최소 말소리 (ms)",
+        "integer",
+        250,
+        "이보다 짧은 소리(기침, 짧은 대꾸)만 있었으면 답변이 시작되지 않은 것으로 봅니다.",
+        0,
+        2000,
+    )
+    return (
+        ImplInfo(
+            "vad",
+            "silero",
+            "Silero VAD (로컬)",
+            "32ms마다 말소리인지 판단합니다. 말소리와 그 앞뒤 여유만 STT에 넣고 나머지는 무음으로 바꿔, "
+            "Whisper가 침묵·잡음에서 없는 말을 지어내지 않게 합니다.",
+            DataLocation.local,
+            f"{_LOCAL_VOICE} 모델(1.2MB)은 faster-whisper에 들어 있어 따로 내려받지 않고, 불러올 때 sha256을 확인합니다.",
+            "MIT (Silero VAD, faster-whisper)",
+            ("audio.vad",),
+            options=(
+                OptionField(
+                    "threshold",
+                    "말소리 기준",
+                    "number",
+                    0.5,
+                    "이 확률 이상이면 말소리로 봅니다(말하는 동안은 0.15 낮은 값까지 유지). 잡음이 말로 잡히면 "
+                    "올리고, 작은 목소리가 빠지면 내립니다.",
+                    minimum=0.1,
+                    maximum=0.95,
+                ),
+                OptionField(
+                    "speech_pad_ms",
+                    "말소리 뒤 여유 (ms)",
+                    "integer",
+                    300,
+                    "말소리가 끝난 뒤 이만큼은 STT에 그대로 넣습니다(말끝이 잘리지 않게). 앞쪽은 늘 128ms를 넣습니다.",
+                    0,
+                    1000,
+                ),
+                min_speech,
+            ),
+            packages=(("faster_whisper", "uv sync --extra whisper"), ("onnxruntime", "uv sync --extra whisper")),
+        ),
+        ImplInfo(
+            "turn",
+            "silence",
+            "침묵 기준",
+            "답변이 시작된 뒤 정한 시간만큼 말이 없으면 답변 끝으로 봅니다. 단순하고 예측하기 쉽지만, 그보다 "
+            "길게 생각하느라 멈추면 답변이 나뉩니다(이어 말하면 같은 답변에 붙습니다).",
+            DataLocation.local,
+            "설정입니다. 데이터를 보내지 않습니다.",
+            "프로젝트 코드",
+            ("audio.turn",),
+            options=(
+                OptionField(
+                    "silence_ms",
+                    "답변 끝 침묵 (ms)",
+                    "integer",
+                    2000,
+                    "이 노트북 측정(생각하는 멈춤 1~3초가 든 한국어 32건): 1,000ms면 조기 끊김 29회, 2,000ms면 "
+                    "16회, 3,000ms면 4회. 길수록 첫 꼬리질문이 그만큼 늦게 뜹니다.",
+                    500,
+                    10000,
+                ),
+                min_speech,
+            ),
+        ),
+        ImplInfo(
+            "turn",
+            "smart_turn",
+            "Smart Turn v3 (로컬)",
+            "Pipecat의 말끝 판정 모델(파라미터 8M)이 억양과 말끝 소리로 문장이 끝났는지 봅니다. 한국어를 "
+            "포함한 23개 언어. 말이 멈춘 지 '판정 시작'이 되면 한 번 판정해 끝났으면 바로 닫고, 아니면 "
+            "'최대 침묵'까지 기다립니다.",
+            DataLocation.local,
+            f"{_LOCAL_VOICE} 모델 파일(8.7MB)만 Hugging Face에서 한 번 내려받습니다(sha256 고정).",
+            "BSD-2-Clause (Smart Turn v3.2, Daily)",
+            ("audio.turn",),
+            options=(
+                OptionField(
+                    "model",
+                    "모델",
+                    "select",
+                    "smart-turn-v3.2-cpu",
+                    choices=(
+                        Choice(
+                            "smart-turn-v3.2-cpu",
+                            "Smart Turn v3.2 (CPU, int8)",
+                            "이 노트북 CPU에서 판정 한 번 약 30ms.",
+                            SMART_TURN["smart-turn-v3.2-cpu"].size_bytes,
+                            ("audio.turn",),
+                        ),
+                    ),
+                ),
+                OptionField(
+                    "pause_ms",
+                    "판정 시작 침묵 (ms)",
+                    "integer",
+                    1000,
+                    "말이 멈춘 뒤 이만큼 지나면 모델에 묻습니다. 측정에서 200ms(Pipecat 기본)는 생각하며 멈춘 문장 "
+                    "중간도 끝으로 자주 봐서(조기 끊김 27회) 1,000ms를 기본으로 했습니다(19회, 같은 1초의 침묵 "
+                    "기준은 29회).",
+                    100,
+                    5000,
+                ),
+                OptionField(
+                    "threshold",
+                    "끝 판정 기준",
+                    "number",
+                    0.8,
+                    "모델 점수가 이 이상이면 답변 끝입니다. Pipecat 기본은 0.5이고, 측정에서 0.8이 조기 끊김을 조금 줄였습니다.",
+                    minimum=0.1,
+                    maximum=0.99,
+                ),
+                OptionField(
+                    "max_silence_ms",
+                    "최대 침묵 (ms)",
+                    "integer",
+                    3000,
+                    "모델이 아직이라고 해도 이만큼 조용하면 답변 끝으로 봅니다.",
+                    500,
+                    10000,
+                ),
+                min_speech,
+            ),
+            packages=(("onnxruntime", "uv sync --extra whisper"), ("faster_whisper", "uv sync --extra whisper")),
+            weights=SMART_TURN,
+            check=_check_smart_turn,
+        ),
+        ImplInfo(
+            "denoise",
+            "off",
+            "끔 (기본)",
+            "잡음 억제 없이 브라우저가 보낸 소리를 그대로 VAD와 STT에 넣습니다. 잡음 억제의 변형이 STT 오류를 "
+            "늘린다는 연구가 많아 기본은 끔입니다.",
+            DataLocation.local,
+            "설정입니다. 데이터를 보내지 않습니다.",
+            "프로젝트 코드",
+            ("audio.denoise",),
+        ),
+        ImplInfo(
+            "denoise",
+            "rnnoise",
+            "RNNoise",
+            "Xiph의 RNN 잡음 억제(48kHz). 구현 전입니다. 파이썬에서 쓰려면 C 라이브러리를 빌드해 붙여야 해서, "
+            "실제 면접 녹음으로 CER을 비교한 뒤 정합니다(docs/audio-input.md).",
+            DataLocation.local,
+            _LOCAL_VOICE,
+            "BSD-3-Clause",
+            ("audio.denoise",),
+        ),
+        ImplInfo(
+            "denoise",
+            "deepfilternet",
+            "DeepFilterNet",
+            "딥러닝 잡음 억제(48kHz). 구현 전입니다. 파이썬 패키지가 PyTorch를 요구해 무겁습니다. 실제 면접 "
+            "녹음으로 CER을 비교한 뒤 정합니다(docs/audio-input.md).",
+            DataLocation.local,
+            _LOCAL_VOICE,
+            "MIT 또는 Apache-2.0",
+            ("audio.denoise",),
         ),
     )
 
@@ -660,7 +852,7 @@ CATALOG: tuple[ImplInfo, ...] = (
         "외부 호출이 없습니다.",
         "프로젝트 코드",
         ("stt.streaming", "stt.batch"),
-        options=(_KO, _SPEED, _BATCH_DIARIZATION),
+        options=(_KO, _SPEED, _BATCH_DIARIZATION, _RETRANSCRIBE),
         role_defaults={"stt.batch": {"diarization": True}},
     ),
     ImplInfo(
@@ -706,6 +898,7 @@ CATALOG: tuple[ImplInfo, ...] = (
             OptionField(
                 "cpu_threads", "CPU 스레드", "integer", 0, "0이면 자동 (코어 수 - 4).", 0, 32
             ),
+            _RETRANSCRIBE,
         ),
         packages=(("faster_whisper", "uv sync --extra whisper"),),
         weights=WHISPER,
@@ -858,6 +1051,7 @@ CATALOG: tuple[ImplInfo, ...] = (
         gcp_credentials=True,
     ),
     *_document_impls(),
+    *_audio_impls(),
 )
 
 # Implementations registered only at run time (tests) are looked up here as well.

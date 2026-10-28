@@ -1,7 +1,9 @@
 """Where the candidate's audio comes from while a question is being answered.
 
-Step 11 plugs in the remote participant's WebRTC track (LiveKit) or the room microphone. Until then
-`ScriptedCandidate` simulates the candidate for demos and tests.
+`live.microphone.MicrophoneSource` is the browser's microphone (or its sample player) sent over a
+WebSocket; it ends a part of the answer when the end-of-answer detector says so, and `more` waits
+for the candidate to go on. `ScriptedCandidate` simulates the candidate for demos and tests while
+no microphone is attached. A remote participant's WebRTC track (LiveKit) would be another source.
 
 A source declares the format it yields (`format`): real sources 16 kHz mono 16-bit PCM, which any
 STT provider reads; the simulated candidate plain text, which only FakeSTT reads. The hub checks
@@ -25,6 +27,7 @@ class Turn:
     session_id: str
     posting_id: str
     question: str
+    speaker: str = "candidate"  # "interviewer" while a question is being asked aloud
 
 
 class AudioSource(ABC):
@@ -33,6 +36,11 @@ class AudioSource(ABC):
     @abstractmethod
     def open(self, turn: Turn) -> AsyncIterator[bytes]:
         """Audio of the candidate answering `turn`; ends when they stop talking."""
+
+    async def more(self, turn: Turn) -> bool:
+        """After `open` ended: wait until the candidate talks again (True: the next `open` is the
+        same answer going on) or say there is no more (False). Default: an answer is one part."""
+        return False
 
 
 class ScriptedCandidate(AudioSource):

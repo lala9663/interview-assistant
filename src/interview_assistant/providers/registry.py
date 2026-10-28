@@ -48,6 +48,17 @@ _IMPLS: dict[str, dict[str, str]] = {
     },
     "office_converter": {"libreoffice": "interview_assistant.documents.legacy:LibreOfficeConverter"},
     "reading": {"standard": "interview_assistant.documents.reading:ReadingPolicyProvider"},
+    # 음성 입력 (live/microphone.py puts them together for each microphone)
+    "vad": {"silero": "interview_assistant.providers.vad.silero:SileroVAD"},
+    "turn": {
+        "silence": "interview_assistant.providers.turn.silence:SilenceTurn",
+        "smart_turn": "interview_assistant.providers.turn.smart_turn:SmartTurn",
+    },
+    "denoise": {
+        "off": "interview_assistant.providers.denoise:NoDenoise",
+        "rnnoise": "interview_assistant.providers.denoise.rnnoise:RNNoise",
+        "deepfilternet": "interview_assistant.providers.denoise.deepfilternet:DeepFilterNet",
+    },
 }
 
 

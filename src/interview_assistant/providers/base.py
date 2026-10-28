@@ -152,6 +152,61 @@ class DiarizationProvider(Provider, ABC):
     async def diarize(self, audio_uri: str) -> list[SpeakerTurn]: ...
 
 
+class VoiceStream(ABC):
+    """One audio stream's voice activity state (an LSTM's memory, the last frame's tail)."""
+
+    @abstractmethod
+    def probabilities(self, frames: Any) -> Any:
+        """Speech probability (0..1) of each frame: float32 array (n, frame_samples) in, (n,) out.
+        Frames must be consecutive: the state carries over from one call to the next."""
+
+
+class VADProvider(Provider, ABC):
+    """Voice activity detection on 16 kHz PCM, frame by frame (32 ms at 512 samples). A frame is
+    speech from `threshold` up; once speech started, it stays speech down to `threshold` - 0.15
+    (hysteresis). `speech_pad_ms` of audio around speech goes to STT with it, `min_speech_ms`
+    of speech starts an answer (shorter noises do not)."""
+
+    frame_samples: int = 512
+    threshold: float = 0.5
+    speech_pad_ms: int = 300
+    min_speech_ms: int = 250
+
+    @abstractmethod
+    def stream(self) -> VoiceStream: ...
+
+
+class TurnTracker(ABC):
+    """End-of-answer state for one answer part, fed every VAD frame. `reason` tells what ended it
+    ("silence", "model", "max_silence") and `probability` the model's last score, if any."""
+
+    reason: str | None = None
+    probability: float | None = None
+
+    @abstractmethod
+    async def push(self, speech: bool, frame: Any) -> bool:
+        """One frame: whether the VAD heard speech in it, and its samples (float32). True once the
+        candidate finished answering."""
+
+
+class TurnProvider(Provider, ABC):
+    """Decides when the candidate finished answering (답변 끝 판정): after enough silence, or when
+    a model hears that the sentence is complete."""
+
+    @abstractmethod
+    def tracker(self, frame_ms: int) -> TurnTracker: ...
+
+
+class DenoiseProvider(Provider, ABC):
+    """Noise suppression in front of STT (16 kHz PCM16 in, same length out). Off by default:
+    suppression artifacts can raise STT errors (docs/reference/audio-quality.md 7장)."""
+
+    enabled: bool = False
+
+    @abstractmethod
+    def process(self, pcm: bytes) -> bytes: ...
+
+
 @dataclass(frozen=True)
 class OcrLine:
     text: str

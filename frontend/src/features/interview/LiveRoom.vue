@@ -17,6 +17,7 @@ import { useFollowUps, type Suggestion } from './follow-ups'
 import LiveHeader from './LiveHeader.vue'
 import ManualAnswerBox from './ManualAnswerBox.vue'
 import ManualLog from './ManualLog.vue'
+import MicPanel from './MicPanel.vue'
 import PresetQuestions from './PresetQuestions.vue'
 import QuestionComposer from './QuestionComposer.vue'
 import RecordTabs from './RecordTabs.vue'
@@ -69,7 +70,8 @@ watch(
 )
 
 const answeringId = computed(() => (latest.value && !latest.value.answer_deidentified ? latest.value.id : null))
-const sttDown = computed(() => !manual && transcript.value.connection === 'error')
+// The stream failed, or the server cannot transcribe (no VAD, no STT model ...): answers are typed.
+const sttDown = computed(() => !manual && (transcript.value.connection === 'error' || transcript.value.status?.stt === 'down'))
 const listening = computed(() => !manual && !sttDown.value && answeringId.value !== null)
 
 const setDetail = (fn: (d: SessionDetail) => SessionDetail) =>
@@ -188,6 +190,7 @@ const retryFollowUps = () => {
       </aside>
 
       <section class="flex h-[65vh] min-h-0 flex-col md:h-auto" aria-label="트랜스크립트">
+        <MicPanel :session-id="sessionId" :manual="manual" :status="transcript.status" @question="appendQA" />
         <ConnectionBanner v-if="!manual" :connection="transcript.connection" @reconnect="reconnect" />
         <ManualLog v-if="manual" :qa-items="qaItems" />
         <TranscriptView v-else :segments="transcript.segments" :partial="transcript.partial" :qa-items="qaItems" :listening="listening" />

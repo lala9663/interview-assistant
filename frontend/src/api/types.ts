@@ -657,6 +657,48 @@ export interface StreamStatus {
   recording: RecordingState
   stt: SttState
   latency_ms: number | null
+  /** why transcription is down: a short code to copy down by hand (docs/audio-input.md 6장) */
+  error?: AudioErrorBody | null
+  /** the session's microphone, once one was attached (null: the simulated candidate) */
+  mic?: MicStatus | null
+}
+
+/** Whose speech the microphone carries: 답변 듣는 중 (candidate) or 질문 중 (interviewer). */
+export type MicRole = 'candidate' | 'interviewer'
+
+export interface AudioErrorBody {
+  code: string
+  message: string
+}
+
+export interface MicStatus {
+  connected: boolean
+  transport: 'websocket' | 'http' | null
+  role: MicRole
+  /** the server's VAD hears speech now */
+  speaking: boolean
+  /** the end-of-answer detector in use (silence-2000ms, smart-turn-v3.2-cpu) */
+  turn: string | null
+  /** codes of what runs degraded: VAD-MISSING, TURN-MISSING, STT-MISSING, REC-FAILED ... */
+  notices: string[]
+  /** how the last answer part ended */
+  last_end: { reason: string | null; probability: number | null; at_ms: number } | null
+}
+
+/** POST /api/sessions/{id}/live/role */
+export interface MicRoleResult {
+  role: MicRole
+  /** the question asked aloud while the role was interviewer, recorded as the next question */
+  qa_item: QAItem | null
+}
+
+/** GET /api/live/audio-samples: bundled audio the browser can play instead of a microphone. */
+export interface AudioSample {
+  name: string
+  label: string
+  seconds: number
+  text: string
+  note: string
 }
 
 export type TranscriptEvent =
@@ -664,6 +706,7 @@ export type TranscriptEvent =
   | { event: 'segment.partial'; data: TranscriptSegment }
   | { event: 'segment.final'; data: TranscriptSegment }
   | { event: 'qa.answered'; data: { qa_item_id: string; answer_deidentified: string; answered_at: string } }
+  | { event: 'qa.created'; data: QAItem }
 
 /** GET /api/sessions/{id}/transcript: final segments so far (history on (re)connect). */
 export interface TranscriptHistory {
@@ -890,7 +933,7 @@ export type DataLocation = (typeof DATA_LOCATIONS)[number]
 /** Sending data there needs the admin's confirmation (and a reason to apply or roll back). */
 export const leavesCompany = (location: DataLocation | undefined) => location === 'gcp' || location === 'external'
 
-/** The AI roles, then the 서류 읽기 roles, in display order. */
+/** The AI roles, then the 서류 읽기 roles, then the 음성 입력 roles, in display order. */
 export const MODEL_ROLES = [
   'llm.primary',
   'llm.screening',
@@ -903,13 +946,28 @@ export const MODEL_ROLES = [
   'document.pdf',
   'document.hwp',
   'document.legacy',
+  'audio.vad',
+  'audio.turn',
+  'audio.denoise',
 ] as const
 export type ModelRole = (typeof MODEL_ROLES)[number]
-/** Heading the role is shown under: AI 모델 or 서류 읽기. */
-export type ModelGroup = 'ai' | 'documents'
+/** Heading the role is shown under: AI 모델, 서류 읽기 or 음성 입력. */
+export type ModelGroup = 'ai' | 'documents' | 'audio'
 export const isDocumentRole = (role: string) => role.startsWith('document.')
 
-export type ModelKind = 'llm' | 'stt' | 'embedding' | 'diarization' | 'reading' | 'ocr' | 'pdf_reader' | 'hwp_reader' | 'office_converter'
+export type ModelKind =
+  | 'llm'
+  | 'stt'
+  | 'embedding'
+  | 'diarization'
+  | 'reading'
+  | 'ocr'
+  | 'pdf_reader'
+  | 'hwp_reader'
+  | 'office_converter'
+  | 'vad'
+  | 'turn'
+  | 'denoise'
 /** The provider kind each role picks from (providers/catalog.py ROLES). */
 export const MODEL_ROLE_KIND: Record<ModelRole, ModelKind> = {
   'llm.primary': 'llm',
@@ -923,6 +981,9 @@ export const MODEL_ROLE_KIND: Record<ModelRole, ModelKind> = {
   'document.pdf': 'pdf_reader',
   'document.hwp': 'hwp_reader',
   'document.legacy': 'office_converter',
+  'audio.vad': 'vad',
+  'audio.turn': 'turn',
+  'audio.denoise': 'denoise',
 }
 export type ModelChangeKind = 'initial' | 'apply' | 'rollback'
 export type ModelOptionType = 'string' | 'text' | 'integer' | 'number' | 'boolean' | 'select'

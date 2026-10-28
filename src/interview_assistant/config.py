@@ -37,18 +37,33 @@ class DocumentsConfig(BaseModel):
     reading: ProviderSpec = Field(default_factory=_spec("standard"))
 
 
+class AudioConfig(BaseModel):
+    """Microphone input (admin > 모델 설정 > 음성 입력). A YAML without this section gets these
+    defaults (docs/audio-input.md): Silero VAD (bundled with faster-whisper), Smart Turn judging
+    after 1 s of silence (silence of 2 s while its model file is not downloaded), no server-side
+    noise suppression."""
+
+    vad: ProviderSpec = Field(default_factory=_spec("silero"))
+    turn: ProviderSpec = Field(
+        default_factory=_spec("smart_turn", pause_ms=1000, threshold=0.8, max_silence_ms=3000)
+    )
+    denoise: ProviderSpec = Field(default_factory=_spec("off"))
+
+
 class ProvidersConfig(BaseModel):
     llm: dict[str, ProviderSpec]  # roles: primary, screening
     stt: dict[str, ProviderSpec]  # roles: streaming, batch
     embedding: ProviderSpec
     diarization: ProviderSpec
     documents: DocumentsConfig = Field(default_factory=DocumentsConfig)
+    audio: AudioConfig = Field(default_factory=AudioConfig)
 
     def by_role(self) -> dict[str, ProviderSpec]:
         """Flat role keys as the admin screen and the settings table name them: "llm.primary"."""
         roles = {f"llm.{k}": v for k, v in self.llm.items()}
         roles |= {f"stt.{k}": v for k, v in self.stt.items()}
         roles |= {f"document.{k}": getattr(self.documents, k) for k in DocumentsConfig.model_fields}
+        roles |= {f"audio.{k}": getattr(self.audio, k) for k in AudioConfig.model_fields}
         return roles | {"embedding": self.embedding, "diarization": self.diarization}
 
 

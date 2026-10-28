@@ -33,7 +33,7 @@ export function withObjectParticle(word: string): string {
 }
 
 /** Roles that take a voice sample in the connection test. */
-export const takesAudio = (role: string) => role.startsWith('stt.') || role === 'diarization'
+export const takesAudio = (role: string) => role.startsWith('stt.') || role === 'diarization' || role === 'audio.vad' || role === 'audio.turn'
 
 /** 서류 읽기 roles: tested by reading a document (built-in fictional resume or a file). */
 export const takesDocument = (role: string) => role.startsWith('document.')

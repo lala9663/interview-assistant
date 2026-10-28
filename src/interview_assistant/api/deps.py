@@ -1,23 +1,25 @@
-"""Request dependencies: the runtime, a database session, the signed-in interviewer, audit."""
+"""Request dependencies: the runtime, a database session, the signed-in interviewer, audit. They
+take an `HTTPConnection`, so WebSocket routes (the microphone audio) resolve them the same way."""
 
 from __future__ import annotations
 
 from collections.abc import Iterator
 from typing import Annotated, Any
 
-from fastapi import Depends, HTTPException, Request
+from fastapi import Depends, HTTPException
 from sqlalchemy import select
 from sqlalchemy.orm import Session
+from starlette.requests import HTTPConnection
 
 from interview_assistant.models import ActorType, AuditLog, Interviewer
 from interview_assistant.runtime import Runtime
 
 
-def get_runtime(request: Request) -> Runtime:
+def get_runtime(request: HTTPConnection) -> Runtime:
     return request.app.state.runtime
 
 
-def get_db(request: Request) -> Iterator[Session]:
+def get_db(request: HTTPConnection) -> Iterator[Session]:
     with get_runtime(request).session_factory() as db:
         yield db
 
@@ -26,7 +28,7 @@ RuntimeDep = Annotated[Runtime, Depends(get_runtime)]
 Db = Annotated[Session, Depends(get_db)]
 
 
-def current_interviewer(request: Request, db: Db, runtime: RuntimeDep) -> Interviewer:
+def current_interviewer(request: HTTPConnection, db: Db, runtime: RuntimeDep) -> Interviewer:
     """Login (IAP + SSO) is Phase 1. Until then IA_DEV_INTERVIEWER (employee number) is the
     signed-in interviewer, or else the first interviewer created. An agent call is the
     interviewer its token names (api/agent_access.py checked it before the route ran)."""

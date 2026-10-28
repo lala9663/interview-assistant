@@ -219,6 +219,9 @@ def test_first_start_seeds_the_settings_from_the_yaml_once(
             "document.pdf": "pdfplumber",
             "document.hwp": "syhwp",
             "document.legacy": "libreoffice",
+            "audio.vad": "silero",
+            "audio.turn": "silence",
+            "audio.denoise": "off",
         }
         history = api.get("/api/admin/models/history").json()
         assert [h["kind"] for h in history] == ["initial"] * INITIAL

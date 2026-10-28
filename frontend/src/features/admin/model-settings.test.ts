@@ -19,7 +19,7 @@ const card = async (role: string) => {
 const next = (user: ReturnType<typeof userEvent.setup>) => user.click(screen.getByRole('button', { name: /다음/ }))
 
 describe('관리자 > 모델 설정', { timeout: 20_000 }, () => {
-  it('shows the AI roles and the 서류 읽기 roles with provider, model, status and where their data goes', async () => {
+  it('shows the AI roles, the 서류 읽기 roles and the 음성 입력 roles with provider, model, status and where their data goes', async () => {
     await renderPage()
     await screen.findAllByTestId('role-card')
     const ai = within(screen.getByTestId('group-ai')).getAllByTestId('role-card')
@@ -27,6 +27,9 @@ describe('관리자 > 모델 설정', { timeout: 20_000 }, () => {
     const docs = within(screen.getByTestId('group-documents')).getAllByTestId('role-card')
     expect(docs.map((c) => c.dataset.role)).toEqual(['document.reading', 'document.ocr', 'document.pdf', 'document.hwp', 'document.legacy'])
     expect(screen.getByRole('heading', { name: '서류 읽기' })).toBeInTheDocument()
+    const audio = within(screen.getByTestId('group-audio')).getAllByTestId('role-card')
+    expect(audio.map((c) => c.dataset.role)).toEqual(['audio.vad', 'audio.turn', 'audio.denoise'])
+    expect(within(await card('audio.turn')).getByText('Smart Turn v3 (로컬)')).toBeInTheDocument()
     const ocr = await card('document.ocr')
     expect(within(ocr).getByText('PaddleOCR (로컬, PP-OCRv5 한국어)')).toBeInTheDocument()
     expect(within(ocr).getByTestId('data-location')).toHaveTextContent('이 PC')
@@ -36,7 +39,7 @@ describe('관리자 > 모델 설정', { timeout: 20_000 }, () => {
     expect(within(primary).getByTestId('data-location')).toHaveTextContent('설정한 사내 서버')
     expect(within(primary).getByText('사용 가능')).toBeInTheDocument()
     expect(within(await card('stt.batch')).getByTestId('data-location')).toHaveTextContent('외부 클라우드 (Google)')
-    expect(await screen.findAllByTestId('history-row')).toHaveLength(11)
+    expect(await screen.findAllByTestId('history-row')).toHaveLength(14) // one initial row per role
   })
 
   it('switches the batch STT to local Whisper: download, check, test, reason, apply, history, rollback', async () => {
@@ -81,7 +84,7 @@ describe('관리자 > 모델 설정', { timeout: 20_000 }, () => {
     await waitFor(async () => expect(within(await card('stt.batch')).getByTestId('role-model')).toHaveTextContent('faster-whisper-small'))
     expect(within(await card('stt.batch')).getByTestId('data-location')).toHaveTextContent('이 PC')
     const rows = await screen.findAllByTestId('history-row')
-    await waitFor(() => expect(screen.getAllByTestId('history-row')).toHaveLength(12))
+    await waitFor(() => expect(screen.getAllByTestId('history-row')).toHaveLength(15))
     const latest = screen.getAllByTestId('history-row')[0]!
     expect(latest).toHaveTextContent('김서연')
     expect(latest).toHaveTextContent('사후 전사를 로컬 Whisper로')

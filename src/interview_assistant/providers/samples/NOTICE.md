@@ -13,6 +13,15 @@ licensed under CC BY 4.0 (https://creativecommons.org/licenses/by/4.0/).
 
 Used for the STT connection test on the admin screen (admin > 모델 설정) and in tests.
 
+`answer-pauses.wav`: a made-up answer with thinking pauses, 16.6 s, built by joining two utterances
+of the same FLEURS ko_kr test split, rows 1709 and 1910 (16 kHz mono 16-bit): 0.6 s of room tone,
+row 1709 with 1.5 s of room tone put into its pause after "이라크 정책에", 1.9 s of room tone, row
+1910, 0.6 s of room tone. The room tone is the quietest audio of row 1709, repeated. Otherwise
+unchanged. Used as the diagnostic microphone input of the live interview (docs/audio-input.md).
+
+Transcript: 보고서는 행정부의 현재 이라크 정책에 대해 거의 모든 측면에서 매우 비판적이며 즉각적인 방향
+변경을 촉구합니다. 파리 사람들은 자기중심적이고, 무례하고, 오만하다는 평판이 있습니다.
+
 # Sample documents
 
 `documents/`: fictional resumes from the leak-check fixtures (tests/fixtures/resumes, made by

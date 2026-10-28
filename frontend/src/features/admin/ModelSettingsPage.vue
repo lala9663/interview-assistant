@@ -32,6 +32,12 @@ const GROUPS: { key: ModelGroup; title: string; description: string }[] = [
     description:
       '지원 서류를 텍스트 층으로 읽을지 OCR로 읽을지, 어떤 도구로 읽을지 정합니다. 처리 중인 서류는 시작할 때의 설정으로 끝나고, 지원서마다 읽은 설정이 남습니다. 그림은 LLM에 보내지 않습니다.',
   },
+  {
+    key: 'audio',
+    title: '음성 입력',
+    description:
+      '실시간 면접 마이크 음성에서 말소리 구간만 STT에 넣고(VAD), 지원자가 답변을 마쳤는지 판단합니다. 음성은 서버 밖으로 나가지 않습니다. 진행 중인 면접은 시작할 때의 설정을 씁니다.',
+  },
 ]
 
 const editing = ref<ModelRoleState | null>(null)

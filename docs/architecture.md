@@ -24,7 +24,7 @@ src/interview_assistant/
   agent/                # MCP 서버 (agent-integration.md): settings(IA_MCP_*), api(질문한 사람의 토큰으로 REST 호출), tools(읽기 13·제안 3), shape(KST·라벨·링크·연락처 모양 가림), server(stdio·streamable HTTP)
   api/                  # REST·SSE API (api-contract.md). agent_access = 에이전트 토큰·읽기 전용 가드·호출 감사, routes/ 기능별 라우터(admin = 모델 설정, intake = 채용 사이트 수신·연동 현황, 관리자만), schemas.py 응답 스키마, views.py ORM → 응답
   ai/                   # AI 작업: gateway(가드 → provider → 감사 로그), guard, prompts, competency(차수별 초안, 비슷한 공고의 확정 사전 참고), screening, followups(질문 은행 후보 먼저 + AI 스트리밍, 같은 질문 거르기, 이전 차수 Q&A 참고), scoring(평점 기준점), checkpoints(다음 차수 확인할 점), presets(차수 사전 질문 초안·이어 질문), question_rules(금지 질문 규칙)
-  live/                 # 실시간 전사: hub(STT → 비식별화 → SSE), audio(오디오 소스, 지금은 대본 읽는 가상 지원자)
+  live/                 # 실시간 전사: hub(STT → 비식별화 → SSE, 답변 조각 이어 붙이기, 질문 중/답변 듣는 중), audio(오디오 소스, 대본 읽는 가상 지원자), microphone(마이크: VAD로 말소리만, 답변 끝 판정), recording(원본 영역 WAV), prefetch(답변 중 미리 임베딩), retranscribe(면접 뒤 녹음 재전사), codes(오류 코드)
   demo/                 # 데모 데이터(프론트 모의 데이터와 같은 가상 데이터)와 시드, 가상 지원자 대본
   deid/                 # 비식별화 (업무정의서 9장, deidentification.md)
   documents/            # 서류 읽기, 원본 영역 전용 (document-reading.md): reading(쪽별 텍스트·OCR 선택, DocumentReader), quality(깨짐 판정), images(증명사진 판정), ocrfix(비슷한 글자), render(PDF 쪽 그림), 형식별 추출기 pdf·word·powerpoint·webpage·hwp·hwpx·image, legacy(LibreOffice 변환)
@@ -125,7 +125,8 @@ uploads/, recordings/, reports/   # 원본 영역 (git 제외)
 
 `live/hub.py`: 지원자 오디오 → 세션이 고정한 스트리밍 STT → 비식별화 → SSE(부분·확정 전사, 답변 닫힘). 확정 구간만 저장하고 원문은 원본 영역(`QAItem.answer_text`)에만 둔다.
 
-- 실제 오디오(마이크·WebRTC, 11단계) 전까지는 `live/audio.py`의 가상 지원자가 데모 대본을 텍스트로 보내고 fake STT가 받아 적는다. 속도는 `speed`(providers.fake.yaml)와 `IA_DEMO_SPEED`.
+- 마이크: 브라우저가 16kHz PCM16을 WebSocket(막히면 HTTP 청크)으로 보내면 `live/microphone.py`가 녹음(동의 시) → 잡음 억제(끔) → Silero VAD → 말소리만 STT로 넣고, 답변 끝 판정(침묵·Smart Turn)이 답의 조각을 끝낸다. 이어 말하면 같은 답에 붙는다. 자세한 것은 [audio-input.md](audio-input.md).
+- 마이크를 붙이기 전에는 `live/audio.py`의 가상 지원자가 데모 대본을 텍스트로 보내고 fake STT가 받아 적는다. 속도는 `speed`(providers.fake.yaml)와 `IA_DEMO_SPEED`.
 - 오디오 소스는 내보내는 형식을 밝힌다. 실제 음성은 16kHz 모노 16비트 PCM이고, STT provider가 그 형식을 못 읽으면(예: Whisper에 가상 지원자 텍스트) 그 면접은 수기 답변 입력으로 바뀐다.
 - 상태는 프로세스 메모리에 있다. 서버를 여러 대 띄우려면 공유 버스가 필요하다.
 

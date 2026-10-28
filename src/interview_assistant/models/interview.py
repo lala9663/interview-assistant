@@ -377,6 +377,9 @@ class TranscriptSegment(IdMixin, TimestampMixin, Base):
     end_ms: Mapped[int] = mapped_column(Integer, nullable=False)
     # The STT model that recognised a candidate segment (null for typed interviewer questions).
     model: Mapped[str | None] = mapped_column(String(100))
+    # "live": the streaming STT during the interview; "batch": the recording transcribed again
+    # after it (STT 사후, live/retranscribe.py), times measured in the recording.
+    source: Mapped[str] = mapped_column(String(10), nullable=False, default="live", server_default="live")
 
     session: Mapped[InterviewSession] = relationship(back_populates="transcript")
 
