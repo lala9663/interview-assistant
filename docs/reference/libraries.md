@@ -1,13 +1,13 @@
 # 라이브러리·모델·클라우드 서비스
 
-2026-10-27 · 이 프로젝트가 쓰거나 검토한 것 전부. 고른 이유는 [model-selection.md](../model-selection.md), 측정은 `*-benchmark.md`, 사용법은 [ai-models.md](../ai-models.md).
+2026-10-27 · 이 프로젝트가 쓰거나 검토한 것 전부(2026-10-28 GCP 전제 철회 반영). 고른 이유는 [model-selection.md](../model-selection.md), 측정은 `*-benchmark.md`, 사용법은 [ai-models.md](../ai-models.md).
 
 읽는 법:
 
 - **라이선스**: 패키지는 설치된 메타데이터(`importlib.metadata`, `node_modules/*/package.json`)로, 설치 안 된 것은 PyPI로 확인했다. 모델은 코드와 가중치 라이선스를 따로 적는다.
 - **비용**: 무료 / 유료(과금 단위, 가격은 모두 2026-10-27 확인). 1·2장은 모두 무료라 비용 칸을 뺐다.
 - **상업**: 회사 내부 서비스에 써도 되는가. MIT·BSD·Apache·ISC는 고지 의무만 지키면 된다. MPL은 그 파일을 고쳐 배포할 때만 고친 파일을 공개한다. AGPL·비상업(NC)은 안 된다. GPL은 7장.
-- **데이터**: 로컬 = 이 PC나 회사 서버 안에서만 돈다. 사내 GCP = 이 PoC를 위해 직접 만들 GCP 프로젝트. 외부 = 회사 밖 API. 설정한 사내 서버 = 관리자가 주소를 적은 사내 모델 서버(오픈소스 LLM). 관리자 화면의 데이터 위치 배지와 같다.
+- **데이터**: 로컬 = 이 PC나 회사 서버 안에서만 돈다. 설정한 사내 서버 = 관리자가 주소를 적은 사내 모델 서버(오픈소스 LLM). 외부 클라우드 (Google) = Google Cloud 서비스, 회사 밖이다. 외부 = 회사 밖 API. 관리자 화면의 데이터 위치 배지와 같다. 2026-10-21에는 Google 서비스를 "사내 GCP"(이 PoC를 위해 직접 만들 GCP 프로젝트)로 불렀으나, 2026-10-28 GCP를 쓰지 않기로 하며 "외부 클라우드 (Google)"로 바꿨다.
 - **상태**: 사용 중 / 후보(카탈로그나 설정 파일에 있고 구현 전) / 검토만 / 쓰지 않음(사유).
 
 ## 1. 백엔드 (파이썬)
@@ -24,8 +24,8 @@
 | PyYAML | 6.0.2 | 설정 파일 | MIT | 사용 중 |
 | python-multipart | 0.0.32 | 업로드·사이트 첨부 multipart | Apache-2.0 | 사용 중 |
 | NumPy | 2.3.5 | 메모리 벡터 검색 | BSD-3-Clause | 사용 중 |
-| anthropic (`gcp` extra) | 설치 안 됨 (PyPI 최신 2.3.0) | Vertex AI의 Claude 호출 | Apache-2.0 (PyPI) | 후보 (3단계) |
-| google-cloud-speech (`gcp` extra) | 설치 안 됨 (PyPI 최신 2.41.0) | Speech-to-Text v2 | Apache-2.0 (PyPI) | 후보 (10·11단계) |
+| anthropic (`gcp` extra) | 설치 안 됨 (PyPI 최신 2.3.0) | Vertex AI의 Claude 호출 | Apache-2.0 (PyPI) | 쓰지 않음 (2026-10-28 GCP 철회. 외부 클라우드 승인 시 대안) |
+| google-cloud-speech (`gcp` extra) | 설치 안 됨 (PyPI 최신 2.41.0) | Speech-to-Text v2 | Apache-2.0 (PyPI) | 외부 클라우드 대안 (승인 시, 10·11단계) |
 | pytest, pytest-asyncio | 9.1.1, 1.4.0 | 테스트 (dev) | MIT, Apache-2.0 | 사용 중 |
 | httpx, httpx2 | 0.28.1, 2.16.0 | 테스트 클라이언트 (dev) | BSD-3-Clause | 사용 중 |
 | reportlab, Pillow | 5.0.1, 13.0.0 | 가상 이력서 만들기 (dev), 그림 처리 | BSD, MIT-CMU | 사용 중 |
@@ -67,7 +67,7 @@
 | PP-OCRv5 mobile 검출 + 한국어 인식 모델 | OCR 가중치 (32MB) | Apache-2.0 (Hugging Face 모델 카드) | 무료 | 로컬 | 사용 중 |
 | Tesseract 5.4 + tessdata best·fast | 로컬 OCR 엔진 | Apache-2.0 | 무료 | 로컬 | 비교용. 한국어 오류가 많다(글자 오류율 평균 29~31%, [ocr-benchmark.md](../ocr-benchmark.md)) |
 | hwplib (Java) | HWP 읽기 대안 | Apache-2.0 | 무료 | 로컬 | 후보. Java 런타임이 필요하다 |
-| Google Document AI (Enterprise Document OCR) | 클라우드 OCR | 상용 | 1,000쪽당 $1.50 (6장) | 사내 GCP (리전 us·eu) | 후보 (카탈로그만) |
+| Google Document AI (Enterprise Document OCR) | 클라우드 OCR | 상용 | 1,000쪽당 $1.50 (6장) | 외부 클라우드 (Google, 리전 us·eu) | 외부 클라우드 대안 (카탈로그만, 승인 시) |
 | NAVER CLOVA OCR | 클라우드 OCR | 상용 | 호출당 3원 (6장) | 외부 (서류 그림이 회사 밖으로) | 후보 (카탈로그만) |
 | pyhwp | HWP 읽기 | AGPL-3.0 | 무료 | 로컬 | 쓰지 않음. AGPL은 네트워크로 서비스하면 소스 공개 의무가 생긴다 |
 | PyMuPDF | PDF 읽기·렌더 | AGPL-3.0 또는 Artifex 상용 | 상용 라이선스는 유료 | 로컬 | 쓰지 않음. 같은 이유 |
@@ -81,22 +81,22 @@ OCR 엔진 비교(정확도·속도·메모리)는 [ocr-benchmark.md](../ocr-ben
 | 이름 | 용도 | 라이선스 | 비용 (100만 토큰당 입력 / 출력, global 엔드포인트) | 데이터 | 상태 |
 | --- | --- | --- | --- | --- | --- |
 | 오픈소스 모델 서버 (`open_model_server`: vLLM·Ollama·SGLang의 OpenAI 형식 API, httpx2로 호출) | LLM 주 모델·선별 | 연결 코드는 프로젝트 코드와 httpx2(BSD-3-Clause), 모델은 모델마다 다름([llm.md](llm.md)) | 무료 (사내 GPU 비용) | 설정한 사내 서버 | 구현, `providers.yaml` 기본값 (2026-10-28, 예시 `skt/A.X-3.1`). 실제 사내 서버 연결 전 |
-| Claude Opus 5.5 (Vertex AI) | LLM 주 모델: 채점·역량 사전·꼬리질문 | 상용 | $4.00 / $20.00 | 사내 GCP | 쓰지 않음 (2026-10-28 사용자: GCP·OpenAI 서비스 안 씀) |
-| Claude Sonnet 5.5 (Vertex AI) | 속도·성능 균형 | 상용 | $2.00 / $10.00 | 사내 GCP | 쓰지 않음 (2026-10-28 사용자: GCP·OpenAI 서비스 안 씀) |
-| Claude Haiku 5.5 (Vertex AI) | 서류 선별 (대량) | 상용 | 입력 10만 토큰까지 $0.10 / $0.50, 넘으면 $0.50 / $2.50 | 사내 GCP | 쓰지 않음 (2026-10-28 사용자: GCP·OpenAI 서비스 안 씀) |
-| Claude Fable 5.1 (Vertex AI) | 가장 높은 성능 | 상용 | $10.00 / $50.00 | 사내 GCP | 쓰지 않음 (2026-10-28 사용자: GCP·OpenAI 서비스 안 씀) |
+| Claude Opus 5.5 (Vertex AI) | LLM 주 모델: 채점·역량 사전·꼬리질문 | 상용 | $4.00 / $20.00 | 외부 클라우드 (Google) | 쓰지 않음 (2026-10-28 사용자: GCP·OpenAI 서비스 안 씀) |
+| Claude Sonnet 5.5 (Vertex AI) | 속도·성능 균형 | 상용 | $2.00 / $10.00 | 외부 클라우드 (Google) | 쓰지 않음 (2026-10-28 사용자: GCP·OpenAI 서비스 안 씀) |
+| Claude Haiku 5.5 (Vertex AI) | 서류 선별 (대량) | 상용 | 입력 10만 토큰까지 $0.10 / $0.50, 넘으면 $0.50 / $2.50 | 외부 클라우드 (Google) | 쓰지 않음 (2026-10-28 사용자: GCP·OpenAI 서비스 안 씀) |
+| Claude Fable 5.1 (Vertex AI) | 가장 높은 성능 | 상용 | $10.00 / $50.00 | 외부 클라우드 (Google) | 쓰지 않음 (2026-10-28 사용자: GCP·OpenAI 서비스 안 씀) |
 | Gemini (Vertex AI), 사내 LLM(`samsung_gauss`) | LLM 대안 | | 확인 안 함 | | 조사 안 함. 사내 LLM이 OpenAI 형식 API를 주면 `open_model_server`로 붙는다 |
 | Fake LLM | 흐름·화면 확인 | 프로젝트 코드 | 무료 | 로컬 | 사용 중 (`providers.fake.yaml`) |
 | BGE-M3 (BAAI/bge-m3, 공식 ONNX) | 임베딩: 밀집 1024차원 + 희소 | MIT | 무료 | 로컬 | 사용 중 (2026-10-27 결정) |
 | ONNX Runtime 1.31, tokenizers 0.23 | BGE-M3 실행 | MIT, Apache-2.0 | 무료 | 로컬 | 사용 중 |
 | FlagEmbedding + torch | BGE-M3 공식 파이썬 라이브러리 | MIT (+ torch BSD, transformers Apache-2.0) | 무료 | 로컬 | 쓰지 않음 (8장) |
-| Vertex AI gemini-embedding-001 | 임베딩 대안 (최대 3072차원, 2048토큰, 한국어 지원) | 상용 | "1,000개"당 $0.00015, 배치 $0.00012. 단위(글자·토큰)는 확인 필요 | 사내 GCP, 서울 리전 있음 | 후보 (카탈로그만) |
-| Vertex AI text-multilingual-embedding-002 | 임베딩 대안 (768차원, 한국어 지원) | 상용 | "1,000개"당 $0.000025 | 사내 GCP, 리전 확인 필요 | 후보 (카탈로그만) |
+| Vertex AI gemini-embedding-001 | 임베딩 대안 (최대 3072차원, 2048토큰, 한국어 지원) | 상용 | "1,000개"당 $0.00015, 배치 $0.00012. 단위(글자·토큰)는 확인 필요 | 외부 클라우드 (Google), 서울 리전 있음 | 외부 클라우드 대안 (카탈로그만) |
+| Vertex AI text-multilingual-embedding-002 | 임베딩 대안 (768차원, 한국어 지원) | 상용 | "1,000개"당 $0.000025 | 외부 클라우드 (Google), 리전 확인 필요 | 외부 클라우드 대안 (카탈로그만) |
 | Fake 임베딩 | 흐름 확인 | 프로젝트 코드 | 무료 | 로컬 | 사용 중 (`providers.fake.yaml`) |
 
 - **Vertex AI의 Claude 5.x는 global 엔드포인트와 us·eu 멀티 리전에서만 된다.** 지역 엔드포인트는 Sonnet 4.6 이전 모델만 받고, 서울(asia-northeast3)에는 Claude가 없다. us·eu 멀티 리전은 global보다 10% 비싸다(Opus 5.5 $4.40 / $22.00). 가격 페이지에는 europe-west1·asia-southeast1 탭에 Haiku 5.5가 보여 문서와 엇갈린다(확인 필요).
 - **학습**: Google은 사전 허락이나 지시 없이 고객 데이터를 모델 학습·미세조정에 쓰지 않는다고 적고, 이것이 Vertex AI의 모든 관리형 모델에 적용된다고 한다. Anthropic 문서는 데이터 처리를 Google Cloud가 맡는다고만 적는다.
-- **임베딩 비교**: BGE-M3는 회사 밖으로 나가는 것이 없고 희소(단어 일치) 점수를 같이 내서 약어가 겹치는 답변의 1위 적중이 87.5% → 100%로 올랐다([embedding-benchmark.md](../embedding-benchmark.md)). Vertex 임베딩은 서버 메모리(+1.6GB)가 들지 않는 대신 비식별 답변이 GCP로 가고, 희소(단어 일치) 출력이 있는지는 확인하지 못했다. 모델을 바꾸면 백그라운드로 재색인한다.
+- **임베딩 비교**: BGE-M3는 회사 밖으로 나가는 것이 없고 희소(단어 일치) 점수를 같이 내서 약어가 겹치는 답변의 1위 적중이 87.5% → 100%로 올랐다([embedding-benchmark.md](../embedding-benchmark.md)). Vertex 임베딩은 서버 메모리(+1.6GB)가 들지 않는 대신 비식별 답변이 회사 밖(Google)으로 가고, 희소(단어 일치) 출력이 있는지는 확인하지 못했다. 모델을 바꾸면 백그라운드로 재색인한다.
 - OpenAI text-embedding-3-large는 100만 토큰당 $0.13이다(참고, 카탈로그에 없음).
 
 ## 5. 음성
@@ -109,7 +109,7 @@ STT 서비스별 비교는 [stt.md](stt.md), 화자분리 모델은 [diarization
 | Whisper small·medium·large-v3·large-v3-turbo | STT 가중치 | MIT | 무료 | 가능 | 로컬 | 사용 중. 실시간 medium, 사후 large-v3 권장 |
 | PyAV 19.0.1 (+ 함께 오는 FFmpeg 9.0.2) | 오디오 파일을 16kHz PCM으로 풀기. faster-whisper의 의존성 | BSD-3-Clause / FFmpeg는 7장 | 무료 | 확인 필요 (7장) | 로컬 | 사용 중 |
 | Silero VAD (faster-whisper에 포함, v6 ONNX) | 말 구간 찾기 | MIT | 무료 | 가능 | 로컬 | 사용 중 |
-| Google Speech-to-Text v2 (Chirp 3) | 실시간·사후 STT, 배치 화자분리 | 상용 | 유료, [stt.md](stt.md) | 계약 | 사내 GCP (리전 us·eu) | 후보 (`google_stt_v2`, PoC 기본값, 구현 전) |
+| Google Speech-to-Text v2 (Chirp 3) | 실시간·사후 STT, 배치 화자분리 | 상용 | 유료, [stt.md](stt.md) | 계약 | 외부 클라우드 (Google, 리전 us·eu) | 외부 클라우드 대안 (`google_stt_v2`, 구현 전. `providers.yaml`의 STT·화자분리 기본값으로 아직 남아 있음) |
 | NAVER CLOVA Speech | 실시간·사후 STT | 상용 | 유료 | 계약 | 외부 (한국) | 검토만 (`providers.yaml` 대안 주석) |
 | Azure AI Speech, AWS Transcribe, 리턴제로, OpenAI 전사 API | STT | 상용 | 유료 | 계약 | 외부 | 검토만 |
 | pyannote.audio + speaker-diarization-community-1 | 로컬 화자분리 | MIT / CC-BY-4.0 (Hugging Face 약관 동의 후 받음) | 무료 | 가능 (출처 표시) | 로컬 | 후보 (`providers.yaml` 대안 주석) |
@@ -139,7 +139,7 @@ STT 서비스별 비교는 [stt.md](stt.md), 화자분리 모델은 [diarization
 | CLOVA Speech, Azure, AWS, 리턴제로, OpenAI, Deepgram, ElevenLabs | **음성 원본** | 서비스마다 다름 | 서비스마다 다름 (AWS는 기본 허용) | [stt.md](stt.md) 2장 |
 | pyannoteAI | **음성 원본** | EU | 확인 필요 | 시간당 €0.096~0.198, [diarization.md](diarization.md) 4장 |
 
-- "사내 GCP"는 이 PoC를 위해 직접 만들 GCP 프로젝트다. 회사가 승인한 클라우드인지는 아직 정하지 않았다([model-selection.md](../model-selection.md) 7장). 승인 전에는 Google 서비스도 회사 밖으로 보는 것이 안전하다.
+- Google 서비스는 회사 밖(외부 클라우드)이다. 2026-10-21에는 "사내 GCP"(이 PoC를 위해 직접 만들 GCP 프로젝트)로 보고 PoC 기본값으로 삼았으나, 2026-10-28 GCP를 쓰지 않기로 했다([model-selection.md](../model-selection.md) 7장). 관리자 화면도 Google 계열을 회사 밖으로 보고 전송 확인을 받는다. 쓰려면 보안 승인이 먼저다.
 - 음성과 서류 그림은 비식별화 전 원본이라 이름·얼굴·목소리가 그대로 나간다. 텍스트(LLM·임베딩)는 비식별화와 가드를 거친 뒤에만 나간다.
 
 ## 7. 라이선스 주의

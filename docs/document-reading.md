@@ -79,7 +79,7 @@ OCR도 얼굴 인식도 없이 그림의 모양과 색 분포로 본다. 증명�
 | --- | --- | --- | --- |
 | PaddleOCR 3.7 + PP-OCRv5 (mobile 검출 + 한국어 인식) | 이 PC, CPU | Apache-2.0 | 권장. 모델 32MB(server 116MB) |
 | Tesseract 5.4 + kor+eng (tessdata best·fast) | 이 PC | Apache-2.0 | 비교용. 빠르고 가볍지만 한국어 오류가 많다 |
-| Google Document AI | 사내 GCP | 상용 | 카탈로그만, 구현 전·자격증명 없음 |
+| Google Document AI | 외부 클라우드 (Google) | 상용 | 카탈로그만, 구현 전·자격증명 없음. 서류 그림이 회사 밖으로 나가 승인 시 대안 |
 | Naver CLOVA OCR | 외부 | 상용 | 카탈로그만, 구현 전·자격증명 없음. 서류 그림이 회사 밖으로 나간다 |
 
 모델 파일은 관리자가 화면에서 "다운로드"를 누를 때만 받는다(크기 표시, 커밋·파일 고정, sha256 검증, 이어받기). `weights/`는 git에서 빠져 있다. OCR 결과에는 엔진 이름·버전·신뢰도가 남는다.

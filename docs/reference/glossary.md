@@ -37,7 +37,7 @@
 | AI 게이트웨이 | gateway | 모든 LLM 호출이 지나는 길: 가드 → provider → 감사 로그 | `ai/gateway.py` |
 | 감사 로그 | audit log | 모든 AI 호출과 주요 행동 기록. 모델, 프롬프트 버전, 토큰 수는 남기고 프롬프트·응답 본문은 남기지 않는다 | `audit_logs`, `models/audit.py` |
 | 컬럼 암호화 | field encryption | 신원·역매핑 등 민감 컬럼을 Fernet으로 암호화 | `crypto.py`, `IA_ENCRYPTION_KEY` |
-| 데이터 위치 배지 | data location | 관리자 화면에서 provider마다 보이는 배지: 이 PC / 사내 GCP / 외부. "외부"는 경고 확인과 사유가 있어야 적용된다 | `providers/catalog.py`의 `DataLocation` |
+| 데이터 위치 배지 | data location | 관리자 화면에서 provider마다 보이는 배지: 이 PC / 설정한 사내 서버 / 외부 클라우드 (Google) / 외부. 회사 밖으로 나가는 "외부 클라우드 (Google)"와 "외부"는 경고 확인과 사유가 있어야 적용된다. 2026-10-28 전에는 Google 계열을 "사내 GCP"로 불렀다 | `providers/catalog.py`의 `DataLocation` |
 | 녹음 동의, 수기 모드 | consent, manual mode | 녹음은 동의가 있을 때만 한다. 동의가 없거나 STT가 죽으면 면접관이 답변을 손으로 적는다 | [api-contract.md](../api-contract.md) 3.1 |
 
 ## AI·검색

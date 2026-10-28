@@ -48,12 +48,12 @@ DER(화자분리 오류율) = (놓친 말 + 말이 아닌데 말로 본 것 + �
 | --- | --- | --- | --- | --- |
 | pyannoteAI precision-2 | 파일 단위. 공개 표에서 가장 낮다(AMI SDM 15.6, DIHARD3 14.7) | 확인 필요 | 외부(pyannoteAI 서버, EU). 온프레미스는 Enterprise 계약 | 시간당 €0.112(Developer)·€0.096(Starter), 월 €19·€99 요금제 안에서 차감 |
 | pyannoteAI Live-1 | 스트리밍, 지연 300ms | 확인 필요 | 외부 | 시간당 €0.198(Developer)·€0.170(Starter) |
-| Google Speech-to-Text v2 Chirp 3 | GA. 파일 전사(BatchRecognize)에서. 동기 Recognize는 문서가 엇갈려 확인 필요. **스트리밍은 안 됨** | 화자분리 언어 목록에 한국어 있음 | 사내 GCP, 리전 us·eu | [stt.md](stt.md) |
+| Google Speech-to-Text v2 Chirp 3 | GA. 파일 전사(BatchRecognize)에서. 동기 Recognize는 문서가 엇갈려 확인 필요. **스트리밍은 안 됨** | 화자분리 언어 목록에 한국어 있음 | 외부 클라우드 (Google), 리전 us·eu | [stt.md](stt.md) |
 | Azure AI Speech | 실시간 화자분리 GA(2024-05, `ConversationTranscriber`, Guest-1·Guest-2 …). 배치는 모노, 최대 35명 | 한국어 STT는 지원. 한국어 실시간 화자분리는 확인 필요 | 외부(Azure). 온프레미스 컨테이너 v5.1.0부터 실시간 화자분리(Redis 필요) | [stt.md](stt.md) |
 | AWS Transcribe | 배치·스트리밍 모두, 최대 30명(스트리밍 한도는 확인 필요) | 한국어 배치·스트리밍 지원 | 외부(AWS) | [stt.md](stt.md) |
 | NAVER CLOVA Speech | 파일(장문) 인식에서만. **실시간 스트리밍은 안 됨** | 기본 언어 | 외부(네이버 클라우드, 한국) | [stt.md](stt.md) |
 
-클라우드는 녹음 원본을 그 서비스로 보낸다. 사내 GCP 밖이면 "음성 원본은 승인된 원본 영역 밖으로 보내지 않는다" 원칙에 걸려 보안 승인이 먼저다.
+클라우드는 녹음 원본을 그 서비스로 보낸다. Google을 포함해 모두 회사 밖이라 "음성 원본은 승인된 원본 영역 밖으로 보내지 않는다" 원칙에 걸려 보안 승인이 먼저다.
 
 ## 5. 목소리로 사람을 알아보기 (쓰지 않음)
 
@@ -73,7 +73,7 @@ DER(화자분리 오류율) = (놓친 말 + 말이 아닌데 말로 본 것 + �
 방 마이크 하나일 때 모델 후보:
 
 1. **pyannote community-1 (로컬, CPU)**: 상업 사용 가능, 회사 밖으로 나가는 것이 없다. 이 노트북 CPU에서 1시간 녹음에 얼마나 걸리는지 먼저 잰다. `config/providers.yaml`에 대안으로 적혀 있다.
-2. **Chirp 3 배치 화자분리 (사내 GCP)**: STT 사후를 Chirp로 하면 같은 호출에서 받는다. 지금 화자분리 역할의 기본값(`google_stt_v2`, 구현 전)이다.
+2. **Chirp 3 배치 화자분리 (외부 클라우드 Google, 승인 시 대안)**: STT 사후를 Chirp로 하면 같은 호출에서 받는다. 음성 원본이 회사 밖으로 나간다. `providers.yaml`의 화자분리 기본값(`google_stt_v2`, 구현 전)으로 아직 남아 있다.
 3. **Nemotron-3-Diarization 또는 Streaming Sortformer (GPU 서버가 생기면)**: 실시간 화자분리가 꼭 필요할 때만. 한국어 성능을 먼저 잰다.
 
 쓰지 않는 것: 비상업 가중치(Sortformer v1, DiariZen), 목소리 등록, 회사 밖 화자분리 API(승인 전).

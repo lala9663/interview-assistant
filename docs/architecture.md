@@ -4,7 +4,7 @@
 
 ```
 config/
-  providers.yaml        # PoC 기본값 (GCP). 처음 기동할 때만 읽고, 그 뒤로는 DB의 모델 설정이 이긴다
+  providers.yaml        # 처음 기동 기본값 (실행 위치 미정, 사내·로컬 우선). 처음 기동할 때만 읽고, 그 뒤로는 DB의 모델 설정이 이긴다
   providers.fake.yaml   # 자격증명 없이 로컬 실행·테스트용
   deid.yaml             # 비식별화: 토큰 형식, 사전 경로, 탐지기 목록, 예외 목록
   deid/                 # 학교·회사 사전 초안 (공개 기관명)

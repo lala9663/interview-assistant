@@ -27,7 +27,7 @@ OCR 모델 파일(PaddleOCR PP-OCRv5, Tesseract 한국어 데이터)과 임베�
 | 변수 | 설명 |
 | --- | --- |
 | `IA_ENCRYPTION_KEY` | 지원자 신원과 비식별 역매핑을 암호화하는 Fernet 키. 없으면 업로드·답변·메모처럼 비식별화가 필요한 쓰기가 503으로 거부된다. 잃어버리면 저장된 신원을 되돌릴 수 없다. 커밋하지 않는다 |
-| `IA_PROVIDERS_FILE` | 처음 기동할 때 역할별 provider 기본값. GCP 자격증명이 없으면 `config/providers.fake.yaml`(모든 AI가 fake로 돈다). 그 뒤로는 관리자 화면의 설정(DB)이 이긴다 |
+| `IA_PROVIDERS_FILE` | 처음 기동할 때 역할별 provider 기본값. 실제 모델(사내 모델 서버, 내려받은 로컬 모델 파일)이 준비되지 않았으면 `config/providers.fake.yaml`(모든 AI가 fake로 돈다). 그 뒤로는 관리자 화면의 설정(DB)이 이긴다 |
 | `IA_DATABASE_URL` | 기본 `sqlite+pysqlite:///./dev.db` |
 | `IA_DEV_INTERVIEWER` | 로그인 전까지 로그인한 면접관의 사번. 시드의 김서연 = `E24017`(관리자) |
 | `IA_UPLOADS_DIR`, `IA_RECORDINGS_DIR` | 원본 영역(업로드 서류, 녹음). git 제외, 서빙하지 않는다 |

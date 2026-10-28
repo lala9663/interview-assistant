@@ -16,7 +16,7 @@
 | 시각 | 응답은 UTC, 밀리초, `Z` (`2026-10-23T05:30:00.000Z`, JavaScript `toISOString`과 같은 모양). 요청의 시각은 오프셋이 있어야 한다(없으면 422). 화면은 항상 KST로 표시한다 |
 | enum | 모델 값과 동일: `PostingStatus` draft/open/closed, `ScreeningStatus` passed/hold/rejected, `SessionMode` onsite/remote, `SessionStatus` scheduled/in_progress/completed/cancelled, `InterviewerRole` lead/panel, `QuestionSource` preset/ai_suggested/interviewer, `EvaluatorType` ai/interviewer, `AvailabilitySource` manual/calendar, `ActorType` user/system/ai |
 | 오류 | FastAPI 기본 형식 `{"detail": "메시지"}`. 검증 오류는 422 `{"detail": [{"loc": ["body", "field"], "msg": "...", "type": "..."}]}` (Pydantic 기본 메시지도 한국어로 바꿔 보낸다). 없는 자원 404, 상태 충돌(예: 확정본 수정, 진행 중이 아닌 세션에 질문 기록) 409, AI 응답을 쓸 수 없거나 가드가 호출을 막으면 502, 암호화 키가 없어 비식별화를 못 하면 503. 프론트는 `detail` 문자열을 그대로 토스트에 보여 주므로 한국어로 쓴다 |
-| 인증 | Phase 1은 IAP + 사내 SSO 예정(남은 과제). 지금은 `IA_DEV_INTERVIEWER`(사번)의 면접관, 없으면 가장 먼저 등록된 면접관이 로그인한 사람이다. 에이전트 호출(`Authorization: Bearer` 또는 `X-Agent-Name` 헤더가 있는 요청)은 자격증명이 가리키는 면접관이다. 확인 방식은 `IA_AGENT_IDENTITY`로 고르는 `AgentIdentity`(`api/agent_access.py`)이고, 지금은 `IA_AGENT_TOKEN_SECRET`으로 서명한 개발용 토큰(`dev_token`, `scripts/agent_token.py`)뿐이다. 없거나 틀리거나 만료면 401, 설정이 없으면 503. 이때는 `IA_DEV_INTERVIEWER`로 돌아가지 않는다. 쓰기 요청의 행위자는 서버가 정한다 (본문으로 받지 않음). 예외: `/api/intake/site/*`는 사람이 아니라 채용 사이트가 부르므로 로그인 대신 공유 키 HMAC 서명과 시각으로 확인한다([site-intake-spec.md](site-intake-spec.md) 4장) |
+| 인증 | Phase 1은 사내 SSO 예정(남은 과제, 앞단 인증 방식은 실행 위치에 따라). 지금은 `IA_DEV_INTERVIEWER`(사번)의 면접관, 없으면 가장 먼저 등록된 면접관이 로그인한 사람이다. 에이전트 호출(`Authorization: Bearer` 또는 `X-Agent-Name` 헤더가 있는 요청)은 자격증명이 가리키는 면접관이다. 확인 방식은 `IA_AGENT_IDENTITY`로 고르는 `AgentIdentity`(`api/agent_access.py`)이고, 지금은 `IA_AGENT_TOKEN_SECRET`으로 서명한 개발용 토큰(`dev_token`, `scripts/agent_token.py`)뿐이다. 없거나 틀리거나 만료면 401, 설정이 없으면 503. 이때는 `IA_DEV_INTERVIEWER`로 돌아가지 않는다. 쓰기 요청의 행위자는 서버가 정한다 (본문으로 받지 않음). 예외: `/api/intake/site/*`는 사람이 아니라 채용 사이트가 부르므로 로그인 대신 공유 키 HMAC 서명과 시각으로 확인한다([site-intake-spec.md](site-intake-spec.md) 4장) |
 | 권한 | `/api/admin/*`(모델 설정, 연동 현황)는 관리자(`Interviewer.is_admin`)만, 아니면 403 `관리자만 쓸 수 있습니다.` SSO가 붙으면 그룹 클레임으로 이 플래그를 채우고 API는 그대로 둔다. 시드의 김서연(E24017)이 관리자, 0004 이전 DB는 `scripts/grant_admin.py <사번>`. 에이전트 호출은 GET과 `agent_may_call` 표시가 붙은 POST 셋(`/api/schedule/suggestions`, `/api/question-bank/check`, `/api/agent/proposals`)만 된다. 그 밖의 쓰기는 403 `에이전트는 조회와 제안만 할 수 있습니다. 바꾸는 일은 웹 화면에서 사람이 확인해 반영합니다.` |
 | 감사 로그 | 모든 쓰기 요청과 AI 호출은 `AuditLog`를 남긴다. AI 호출은 성공·실패·가드 거부 모두 한 줄씩(모델, 프롬프트 버전, 토큰 수). 프롬프트와 응답 본문은 남기지 않는다. 프론트는 `GET /api/activity`로 그중 사람이 볼 항목만 읽는다(`api/views.py`의 `FEED_ACTIONS`). 에이전트 호출은 읽기까지 호출마다 한 줄: `agent.request`(통과) 또는 `agent.refused`(가드가 거절, 사유 코드) {agent, tool, client, method, path, status}. 질의 문자열·본문은 남기지 않는다. 응답을 보내기 전에 쓰고, 못 쓰면 503으로 답한다 |
 
@@ -275,8 +275,8 @@
 
 - **저장**: 활성 설정은 `ai_model_settings`(역할별 spec), 이력은 `ai_model_changes`(전역 revision, 누가·언제·이전·새 값·사유). 처음 기동할 때 YAML 값을 `initial`로 넣고, 그 뒤 YAML은 DB에 없는 역할의 기본값으로만 쓴다. spec에 자격증명은 없다.
 - **교체**: 역할 하나를 바꾸면 revision이 올라가고 6개 역할 전체의 새 스냅샷(`ProviderSet`, 자체 AI 게이트웨이)이 활성이 된다. 참조 하나를 바꾸는 원자적 교체라 이미 시작한 요청·백그라운드 작업은 들고 있던 스냅샷으로 끝난다. 세션은 `InterviewSession.ai_config_revision`으로 시작 때의 스냅샷을 다시 찾는다(재시작 뒤에는 이력으로 재구성). 같은 spec의 provider 인스턴스는 스냅샷끼리 공유해 Whisper 가중치를 한 번만 올리고, 활성·진행 중 세션 어디에도 안 쓰이는 인스턴스는 내린다.
-- **요구 조건**: 네트워크 없이 본다. 구현 여부, 패키지 설치(`uv sync --extra whisper` 등), 환경변수·자격증명 파일이 있는지(값은 읽지도 보내지도 않음), 모델 파일을 받았는지. 미충족이면 테스트·적용 모두 409이고 화면에 이유와 해결 방법이 나온다. Google·Vertex 계열은 "구현 전", "자격증명 없음"으로 보인다. 옵션이 환경변수 이름을 가리키면(오픈소스 모델 서버의 API 키) 그 변수가 있는지도 본다.
-- **보안**: API 키·자격증명은 화면에서 받지 않는다(서버 환경변수·Secret Manager). `data_location`은 `local`(이 PC), `server`(관리자가 주소를 적은 사내 모델 서버), `gcp`(외부 클라우드 Google, 쓰지 않는 대안), `external`(회사 밖 API). 데이터가 회사 밖으로 나가는 provider(`gcp`, `external`, 응답의 `external: true`)는 테스트에 `confirm_external`, 적용·되돌리기에 `confirm_external`과 사유가 있어야 한다. provider가 무엇이든 LLM 입력은 같은 비식별화·가드를 거친다(`tests/test_api_privacy.py`가 런타임 교체 뒤에도 검사). 테스트용 음성은 임시 폴더에 두었다가 테스트가 끝나면 지운다.
+- **요구 조건**: 네트워크 없이 본다. 구현 여부, 패키지 설치(`uv sync --extra whisper` 등), 환경변수·자격증명 파일이 있는지(값은 읽지도 보내지도 않음), 모델 파일을 받았는지. 미충족이면 테스트·적용 모두 409이고 화면에 이유와 해결 방법이 나온다. Google·Vertex 계열(외부 클라우드, 쓰지 않는 대안)은 "구현 전", "자격증명 없음"으로 보인다. 옵션이 환경변수 이름을 가리키면(오픈소스 모델 서버의 API 키) 그 변수가 있는지도 본다.
+- **보안**: API 키·자격증명은 화면에서 받지 않는다(서버 환경변수, 또는 실행 위치의 비밀 저장소). `data_location`은 `local`(이 PC), `server`(관리자가 주소를 적은 사내 모델 서버), `gcp`(외부 클라우드 Google, 쓰지 않는 대안), `external`(회사 밖 API). 데이터가 회사 밖으로 나가는 provider(`gcp`, `external`, 응답의 `external: true`)는 테스트에 `confirm_external`, 적용·되돌리기에 `confirm_external`과 사유가 있어야 한다. provider가 무엇이든 LLM 입력은 같은 비식별화·가드를 거친다(`tests/test_api_privacy.py`가 런타임 교체 뒤에도 검사). 테스트용 음성은 임시 폴더에 두었다가 테스트가 끝나면 지운다.
 - **감사 로그**: `model.tested`(결과·지연·CER·형식·읽기 시간 같은 수치만, 전사·응답·서류 본문 없음, 서류 테스트는 sample/upload), `model.applied`, `model.reverted`, `model.download_started`, `model.download_cancelled`. LLM 연결 테스트 호출 자체도 게이트웨이가 `model.connection_test`(actor ai)로 남긴다. 실시간 전사는 답변마다 `transcript.listened`(쓴 STT 모델).
 - **연결 테스트**: LLM은 지원자 데이터가 없는 고정 프롬프트(`connection-test-v0.2`)로 구조화 출력(JSON)과 간단한 지시 수행을 보고, 꼬리질문처럼 짧은 스트리밍을 한 번 받는다. `output`에 응답 시간(`generate_ms`), 스트리밍 첫 토큰 시간(`first_token_ms`), 서버가 알려 준 모델 이름(`server_model`), 서버가 가진 모델 목록(`server_models`, 오픈소스 모델 서버만)이 있다. 오픈소스 모델 서버의 실패는 `output.failure`로 나뉜다: `address`(주소 오류), `auth`(인증 실패), `model`(모델 없음), `timeout`(시간 초과), `server`, `output`(응답 형식). 키 값은 응답·감사 로그 어디에도 없다. STT는 내장 한국어 샘플(FLEURS ko_kr, CC BY 4.0, 정답과 비교해 CER) 또는 관리자가 올린 녹음을 역할의 실제 경로로 전사한다(사후 = `transcribe`, 실시간 = 16kHz PCM 조각을 `stream`). 임베딩은 벡터 차원, 화자분리는 구간 수. 서류 읽기는 역할별 내장 가상 이력서(`providers/samples/documents/`, OCR 샘플은 정답과 비교해 CER) 또는 올린 파일을, 테스트하는 설정과 나머지 서류 읽기 역할의 활성 설정으로 읽는다. `output`은 쪽마다 방법·이유·도구·신뢰도·시간(`pages`), 그림마다 판단(`images`: OCR, 증명사진 버림, 작음, 끔), 도구 버전, 비식별화한 미리보기(2,000자, 전화·이메일 모양은 한 번 더 가림)다. 원문은 응답에도 감사 로그에도 없다. 읽기 방식 "텍스트만" 테스트는 스캔한 쪽을 보류로 보여 주고 ok다(적용할 수 있다).
 - **임베딩 (BGE-M3)**: `bge_m3`(로컬 CPU, ONNX Runtime)는 밀집 1024차원과 희소(단어 일치) 가중치를 낸다. 모델 파일(약 2.29GB, BAAI/bge-m3 커밋 `5617a9f`의 ONNX와 희소 헤드)은 관리자가 "다운로드"를 누를 때만 받는다. 옵션의 `sparse_weight`(단어 일치 가중치), `duplicate_threshold`(같은 질문으로 볼 유사도), `min_score`(질문 은행 제안 최소 점수)는 모델의 점수 척도에 맞춘 검색 설정이고, 바꿔도 벡터를 다시 만들지 않는다(같은 가중치를 쓰는 인스턴스끼리 로드된 모델을 공유해 다시 올리지도 않는다). 연결 테스트는 고정 문장 세 개로 차원, 희소 출력, 비슷한 문장이 무관한 문장보다 가까운지를 본다(`output.similar`, `unrelated`, `sparse`, `lexical`).
@@ -311,7 +311,7 @@
 
 - 방향이 서버 → 브라우저 한쪽뿐이다. 브라우저 → 서버는 질문 기록, 답변 저장 같은 이산 이벤트라 일반 POST가 맞다. 마이크 음성만 연속으로 올라가므로 그 경로만 따로 둔다.
 - 꼬리질문은 요청 1건 = 응답 스트림 1개(LLM 토큰 스트림)라 HTTP 요청-응답 모델과 그대로 맞는다. 요청마다 감사 로그 1건, 요청 단위 인증·타임아웃·취소(AbortController)가 자연스럽다.
-- Cloud Run, IAP, 사내 프록시를 일반 HTTP로 통과한다. WebSocket은 업그레이드·유휴 타임아웃·IAP 설정을 따로 챙겨야 한다.
+- 사내 프록시·로드밸런서·앞단 인증을 일반 HTTP로 통과한다. WebSocket은 업그레이드·유휴 타임아웃·앞단 인증 설정을 따로 챙겨야 한다.
 - FastAPI `StreamingResponse`와 모델 스트림을 이벤트로 바꾸기만 하면 된다. 끊기면 `GET /transcript`로 확정 구간을 다시 받고 스트림에 재접속한다.
 - 프론트는 EventSource 대신 fetch + ReadableStream 파서(`api/sse.ts`)를 쓴다. POST 본문과 인증 헤더를 실을 수 있고, 모의 API(MSW)와 테스트(jsdom)에서도 같은 코드가 돈다.
 
@@ -491,23 +491,24 @@ SQLite 마이그레이션 주의: batch 모드는 테이블을 복사한 뒤 원
 
 남은 과제:
 
-- **실제 모델 연결 (3단계)**: `anthropic_vertex` LLM provider(구조화 출력, 스트리밍, 토큰 집계, 프롬프트 캐싱). 지금 fake LLM은 규칙으로 그럴듯한 모양만 만든다(`providers/fake_tasks.py`). 연결 뒤 프롬프트별 품질 검증(역량 사전 초안, 프로필 구조화 정확도, 선별 근거, 꼬리질문 적합성, 채점 일치도)이 필요하다. 스트림 provider가 토큰 수를 돌려주게 인터페이스를 넓힐 것.
-- **실제 GCP 호출**: Vertex AI, Speech-to-Text v2(10단계 배치, 11단계 스트리밍), Vertex 임베딩(카탈로그만). GCP 프로젝트가 아직 없다.
+- **실제 모델 연결 (3단계)**: 사내 LLM(플랫폼 제공) 또는 사내 설치 모델. OpenAI 호환 provider `open_model_server`는 가짜 모델 서버로만 검증했고, 사내 서버·모델을 정해 실제 호출로 확인한다([reference/llm.md](reference/llm.md) 4장). 지금 fake LLM은 규칙으로 그럴듯한 모양만 만든다(`providers/fake_tasks.py`). 연결 뒤 프롬프트별 품질 검증(역량 사전 초안, 프로필 구조화 정확도, 선별 근거, 꼬리질문 적합성, 채점 일치도)이 필요하다. 스트림 provider가 토큰 수를 돌려주게 인터페이스를 넓힐 것.
+- **실행 위치**: 미정(사내 서버, 사내 클라우드, 에이전트 플랫폼 안). 정해지면 앞단 인증, 비밀 저장, 여러 인스턴스 방식이 따라 정해진다. 2026-10-21에 PoC를 GCP에서 하기로 정했으나 2026-10-28 철회했다.
+- **외부 클라우드 provider (승인 시 대안)**: Vertex AI의 Claude·Gemini, Speech-to-Text v2, Vertex 임베딩, Document AI는 카탈로그만 있고 구현하지 않는다. `config/providers.yaml`의 STT·화자분리 기본값은 아직 `google_stt_v2`(구현 전)다.
 - **검색 품질 (실제 LLM 뒤)**: 질문 은행 예시를 넣은 꼬리질문의 품질, AI 금지 질문 확인의 정확도, 기준점을 넣은 채점의 면접관 점수 일치도(12단계 게이트)는 fake LLM으로는 볼 수 없다. 실제 모델을 붙인 뒤 출처별 채택률(관리자 > 꼬리질문 지표)과 함께 잰다.
 - **답변 도중 질문 은행 후보**: 답변을 미리 임베딩해 두는 것까지 했다(답변이 닫히면 검색이 캐시에서 바로 된다, `live/prefetch.py`). 답변 도중 후보를 미리 보여 주는 것은 하지 않았다.
 - **임베딩 속도·메모리**: 이 노트북에서 답변 1건 약 0.9초, 질문 1,000건 재색인 약 2.6분, 서버 메모리 BGE-M3 1.6GB(+Whisper medium 2.5GB). int8 양자화나 GPU로 줄일지 실제 사용량을 보고 정한다([embedding-benchmark.md](embedding-benchmark.md)).
 - **벡터 검색 엔진**: 지금은 메모리 내 전수 검색(수천 건). 수만 건이 되거나 여러 인스턴스가 되면 DB 엔진을 정한 뒤 pgvector 등으로 `VectorIndex`를 바꾼다. 여러 인스턴스면 색인 갱신을 다른 인스턴스에 알리는 방법도 필요하다.
-- **로그인·SSO**: IAP + 사내 SSO, `GET /api/me`를 세션에서. 지금은 `IA_DEV_INTERVIEWER`. 에이전트 호출은 `api/agent_access.py`에 그 자격증명을 확인하는 `AgentIdentity`를 더하고 `IA_AGENT_IDENTITY`로 고른다(바꿀 곳은 [agent-integration.md](agent-integration.md) 7장). 면접관 점수는 본인 것만 쓰게 막기(지금은 패널이면 누구 것이든 가능).
+- **로그인·SSO**: 사내 SSO(앞단 인증은 실행 위치에 따라), `GET /api/me`를 세션에서. 지금은 `IA_DEV_INTERVIEWER`. 에이전트 호출은 `api/agent_access.py`에 그 자격증명을 확인하는 `AgentIdentity`를 더하고 `IA_AGENT_IDENTITY`로 고른다(바꿀 곳은 [agent-integration.md](agent-integration.md) 7장). 면접관 점수는 본인 것만 쓰게 막기(지금은 패널이면 누구 것이든 가능).
 - **WebRTC (11단계 나머지)**: 대면 면접의 브라우저 마이크는 붙었다(3.3). 비대면 면접의 참가자 트랙(LiveKit), 한 세션에 마이크 두 개(면접관·지원자 따로), 대면 면접 화자분리는 남았다. 남은 것 전체는 [audio-input.md](audio-input.md) 11장.
-- **로컬 Whisper 실시간 속도**: 이 노트북(CPU, 배터리)에서는 Whisper 호출 한 번이 30초 창 고정 비용(medium 약 5초)이라 발화 하나 확정까지 medium 약 10초 걸린다. 부분 전사는 호출 비용이 작을 때만 나온다. 실시간은 small·GPU·Chirp 중에서 다시 정할 것([측정](whisper-benchmark.md)).
-- **모델 설정 다중 인스턴스**: 활성 스냅샷은 프로세스 메모리에 있다. 여러 인스턴스면 변경을 다른 인스턴스에 알릴 방법(DB revision 폴링 또는 Pub/Sub)이 필요하다.
-- **여러 워커**: 전사 허브 상태가 프로세스 메모리에 있다. Cloud Run 여러 인스턴스면 Redis Pub/Sub 같은 공유 버스와 듣기 작업 소유권이 필요하다. AI 채점도 백그라운드 태스크라 작업 큐로 옮길 것.
-- **채용 사이트 실제 연결**: 지금은 가짜 채용 사이트로만 검증했다. 사내망 ↔ GCP 네트워크 경로(사이트 → 이 서버 수신 경로는 IAP 로그인 밖이어야 한다), 채용 시스템 부서의 개발 일정, 정보보호·법무 승인, 지원자 동의 문구가 먼저다. 확인 목록은 [site-intake-spec.md](site-intake-spec.md) 11장.
+- **로컬 Whisper 실시간 속도**: 이 노트북(CPU, 배터리)에서는 Whisper 호출 한 번이 30초 창 고정 비용(medium 약 5초)이라 발화 하나 확정까지 medium 약 10초 걸린다. 부분 전사는 호출 비용이 작을 때만 나온다. 실시간은 small·GPU 중에서 다시 정할 것, 외부 클라우드 스트리밍 STT(Chirp 등)는 승인 시 대안([측정](whisper-benchmark.md)).
+- **모델 설정 다중 인스턴스**: 활성 스냅샷은 프로세스 메모리에 있다. 여러 인스턴스면 변경을 다른 인스턴스에 알릴 방법(DB revision 폴링 또는 메시지 버스)이 필요하다.
+- **여러 워커**: 전사 허브 상태가 프로세스 메모리에 있다. 여러 인스턴스로 돌리면 Redis Pub/Sub 같은 공유 버스와 듣기 작업 소유권이 필요하다. AI 채점도 백그라운드 태스크라 작업 큐로 옮길 것.
+- **채용 사이트 실제 연결**: 지금은 가짜 채용 사이트로만 검증했다. 사내 네트워크 경로(이 시스템의 실행 위치가 미정. 사이트 → 이 서버 수신 경로는 면접관 로그인 밖이어야 한다), 채용 시스템 부서의 개발 일정, 정보보호·법무 승인, 지원자 동의 문구가 먼저다. 확인 목록은 [site-intake-spec.md](site-intake-spec.md) 11장.
 - **놓친 이벤트 대조(reconcile)**: 사이트 쪽 조회 API가 있다고 가정한 흐름만 명세에 적었다(site-intake-spec.md 9장). 구현 안 함.
 - **압축 파일 일괄 가져오기**: 연동 승인이 늦어질 때의 대안. 같은 `process_application`에 통로 하나를 더하면 된다(ZIP 안 파일 + 목록 CSV → `ApplicationInput`). 구현 안 함.
-- **수신 큐 여러 인스턴스**: 지금은 프로세스 하나의 워커. 여러 인스턴스면 행 선점(PostgreSQL `FOR UPDATE SKIP LOCKED`)이나 Cloud Tasks·Pub/Sub. 수신 요청 속도 제한도 없다.
+- **수신 큐 여러 인스턴스**: 지금은 프로세스 하나의 워커. 여러 인스턴스면 행 선점(PostgreSQL `FOR UPDATE SKIP LOCKED`)이나 작업 큐. 수신 요청 속도 제한도 없다.
 - **보존 기간**: 실패 이벤트 원문, 첨부 원본, 철회된 지원서의 원본을 언제 지울지(정보보호와 결정).
-- **서류 읽기**: 실제 한글 프로그램으로 저장한 HWP·HWPX로 다시 확인(지금 HWP 5.0 픽스처는 코드로 만든 것), Google Document AI·Naver CLOVA OCR 구현(카탈로그만), HEIC·TIFF, 이 노트북 CPU에서 PaddleOCR server 검출은 쪽당 30초 이상이라 실사용 불가. 남은 한계는 [document-reading.md](document-reading.md) "알려진 한계".
+- **서류 읽기**: 실제 한글 프로그램으로 저장한 HWP·HWPX로 다시 확인(지금 HWP 5.0 픽스처는 코드로 만든 것), 외부 클라우드 OCR(Google Document AI·Naver CLOVA OCR)은 카탈로그만, 승인 시 대안, HEIC·TIFF, 이 노트북 CPU에서 PaddleOCR server 검출은 쪽당 30초 이상이라 실사용 불가. 남은 한계는 [document-reading.md](document-reading.md) "알려진 한계".
 - **업로드 보완**: 업로드로 들어온 지원서는 지원자 번호가 없어 매번 새 지원자다(사이트 연동은 번호로 같은 사람을 찾는다). 바이러스 검사, 원본 파일 보존 기간·삭제.
 - **최종 결과의 채용 사이트 반영**: 이 시스템의 최종 합격 후보는 처리용 사본의 결론이다. 공식 결과는 채용 담당자가 사이트에 직접 기록한다. 사이트로 결과를 보내는 연동(한 방향 → 양방향)은 정보보호·채용 시스템 부서와 정할 일이고 만들지 않았다. 사이트에서 최종 결과를 다시 받아 대조하는 흐름도 없다.
 - **세션 취소·일정 변경 API**: 지금은 철회 이벤트만 세션을 취소한다. 결정을 바꾸려면 다음 차수 세션을 먼저 취소해야 하는데 화면이 없다.
