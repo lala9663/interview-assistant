@@ -1,10 +1,11 @@
 """What the admin screen can choose from: the AI roles, and per registered implementation where its
 data goes, which roles it can serve, its models and options, and what this machine still lacks.
 
-Requirement checks never touch the network or read secrets: they look for installed packages,
-whether an environment variable or a credentials file exists (never its value), and whether model
-weights are on disk. Credentials are never entered on the screen; they come from the server's
-environment or Secret Manager, and an option may only name the environment variable.
+Requirement checks never touch the network or show secrets: they look for installed packages,
+whether an environment variable (one an option names also in .env) or a credentials file exists
+(never its value), and whether model weights are on disk. Credentials are never entered on the
+screen; they come from the server's environment, .env or Secret Manager, and an option may only
+name the environment variable.
 """
 
 from __future__ import annotations
@@ -17,6 +18,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Literal
 
+from interview_assistant.config import env_value
 from interview_assistant.providers import registry
 from interview_assistant.providers.programs import JAVA, LIBREOFFICE, TESSERACT, Program
 from interview_assistant.providers.weights import (
@@ -763,6 +765,97 @@ def _server_env(options: Mapping[str, Any]) -> list[str]:
     return [n for n in (*names, *header_env_names(str(options.get("headers") or ""))) if n]
 
 
+_FIRST_TOKEN = "꼬리질문은 첫 토큰 2초가 목표입니다."
+_CLAUDE_OPTIONS = (
+    OptionField(
+        "model",
+        "모델",
+        "select",
+        "claude-opus-5-5",
+        f"{_FIRST_TOKEN} 실제 시간은 연결 테스트의 '스트리밍 첫 토큰'으로 확인합니다.",
+        choices=(
+            Choice(
+                "claude-opus-5-5",
+                "Claude Opus 5.5",
+                "가장 정확합니다. 채점·역량 사전 초안 품질을 볼 때. 생각(thinking)을 끌 수 없어 꼬리질문 첫 "
+                "토큰 2초에는 effort low로도 빠듯할 수 있습니다.",
+                recommended_for=("llm.primary",),
+            ),
+            Choice(
+                "claude-sonnet-5-5",
+                "Claude Sonnet 5.5",
+                "속도와 성능의 균형. 꼬리질문 2초 목표와 채점 품질 사이의 절충.",
+            ),
+            Choice(
+                "claude-haiku-5-5",
+                "Claude Haiku 5.5",
+                "가장 작고 빠르며 쌉니다. 꼬리질문 첫 토큰 2초에 가장 유리하고, 선별용 권장(대량·저비용).",
+                recommended_for=("llm.screening",),
+            ),
+        ),
+    ),
+    OptionField(
+        "effort",
+        "effort (생각의 양)",
+        "select",
+        "low",
+        f"생각을 얼마나 할지. 높을수록 깊게 생각하고 첫 토큰과 응답이 늦어집니다. {_FIRST_TOKEN}",
+        choices=(
+            Choice(
+                "low",
+                "low",
+                "생각을 짧게 해 첫 토큰이 가장 빠릅니다. 꼬리질문 2초 목표에 맞추려면 low.",
+                recommended_for=("llm.primary", "llm.screening"),
+            ),
+            Choice("medium", "medium", "채점·역량 사전 초안 품질을 더 볼 때. 꼬리질문 첫 토큰은 늦어집니다."),
+            Choice("high", "high", "가장 깊게 생각합니다. 실시간 꼬리질문에는 느립니다."),
+        ),
+    ),
+    OptionField(
+        "max_tokens",
+        "최대 출력 토큰",
+        "integer",
+        16000,
+        "생각과 답을 합친 상한. 요청마다 앱이 정한 답 길이에 생각할 여유 4,096토큰을 더하되 이 값을 넘지 "
+        "않습니다. 상한일 뿐 쓴 만큼만 과금됩니다.",
+        minimum=1024,
+        maximum=64000,
+    ),
+    OptionField(
+        "timeout",
+        "타임아웃 (초)",
+        "number",
+        60,
+        "요청 하나를 기다리는 최대 시간(일시 오류의 자동 재시도 포함). 스트리밍은 토큰 사이 간격에 적용합니다.",
+        minimum=5,
+        maximum=600,
+    ),
+    OptionField(
+        "api_key_env",
+        "API 키 환경변수 이름",
+        "string",
+        "ANTHROPIC_API_KEY",
+        "키가 든 환경변수의 이름. 키 값은 서버 환경변수나 .env에만 두고 여기에는 이름만 적습니다. "
+        ".env에 넣은 키는 서버를 다시 띄우지 않아도 다음 호출부터 읽습니다.",
+    ),
+)
+
+
+def _check_claude_options(values: dict[str, Any]) -> dict[str, Any]:
+    from interview_assistant.providers.llm.open_model_server import check_env_name
+
+    try:
+        values["api_key_env"] = check_env_name(str(values.get("api_key_env") or ""))
+    except ValueError as exc:
+        raise SpecError("api_key_env", str(exc)) from exc
+    return values
+
+
+def _claude_env(options: Mapping[str, Any]) -> list[str]:
+    name = str(options.get("api_key_env") or "").strip()
+    return [name] if name else []
+
+
 CATALOG: tuple[ImplInfo, ...] = (
     ImplInfo(
         "llm",
@@ -841,6 +934,24 @@ CATALOG: tuple[ImplInfo, ...] = (
         packages=_GCP_PACKAGES,
         env=("GOOGLE_CLOUD_PROJECT",),
         gcp_credentials=True,
+        role_defaults={"llm.screening": {"model": "claude-haiku-5-5"}},
+    ),
+    ImplInfo(
+        "llm",
+        "anthropic_api",
+        "Claude API (외부, 개발 테스트용)",
+        "Anthropic의 Claude API를 공식 Python SDK로 직접 부릅니다. 외부 개발 환경에서 시드(가상) 데이터로 "
+        "꼬리질문·채점·역량 사전 초안을 실제 LLM으로 테스트하는 용도이며, 사내 반입 대상이 아닙니다. 사내 "
+        "목표는 오픈소스 모델 서버입니다.",
+        DataLocation.external,
+        "비식별 텍스트가 회사 밖(Anthropic, api.anthropic.com)으로 나갑니다. 가상 데이터로만 씁니다. 프롬프트와 "
+        "응답은 저장하지 않고, 감사 로그에는 모델·토큰 수·오류 종류만 남습니다.",
+        "상용 (Anthropic API 과금)",
+        ("llm.primary", "llm.screening"),
+        options=_CLAUDE_OPTIONS,
+        packages=(("anthropic", "uv sync --extra claude"),),
+        check=_check_claude_options,
+        option_env=_claude_env,
         role_defaults={"llm.screening": {"model": "claude-haiku-5-5"}},
     ),
     ImplInfo(
@@ -1150,15 +1261,20 @@ def requirements(
         )
     named = info.option_env(options) if info.option_env else []
     for name in dict.fromkeys([*info.env, *named]):
-        ok = bool(os.environ.get(name))
+        # A variable an option names is read by the app itself, which also looks in .env.
+        in_env = bool(os.environ.get(name))
+        in_file = not in_env and name in named and bool(env_value(name))
+        ok = in_env or in_file
         found.append(
             Requirement(
                 f"env:{name}",
                 f"환경변수 {name}",
                 ok,
-                "설정되어 있습니다." if ok else "설정되어 있지 않습니다.",
+                "설정되어 있습니다." if in_env else ".env에 있습니다." if in_file else "설정되어 있지 않습니다.",
                 None
                 if ok
+                else "서버 환경변수나 .env에 넣습니다. 화면에서는 입력받지 않습니다."
+                if name in named
                 else "서버를 띄우는 환경(또는 Secret Manager)에 설정합니다. 화면에서는 입력받지 않습니다.",
             )
         )

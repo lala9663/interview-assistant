@@ -7,8 +7,8 @@ server the admin enters. Only de-identified text reaches a provider (the AI gate
 first); prompts and answers are not logged.
 
 Secrets are never options. The API key, when the server wants one, is read from the environment
-variable whose *name* is an option; a header value takes one as `${NAME}`. Values are read at each
-call, sent only as headers and scrubbed from any error text.
+variable whose *name* is an option (the server's environment, else .env); a header value takes one
+as `${NAME}`. Values are read at each call, sent only as headers and scrubbed from any error text.
 
 Structured output: the JSON Schema goes into the system prompt (the model sees the field
 descriptions) and, by default, also as `response_format` json_schema, which vLLM, SGLang and Ollama
@@ -28,7 +28,6 @@ from __future__ import annotations
 
 import asyncio
 import json
-import os
 import re
 from collections.abc import AsyncIterator, Iterable, Mapping
 from typing import Any
@@ -36,6 +35,7 @@ from urllib.parse import urlsplit
 
 import httpx2
 
+from interview_assistant.config import env_value
 from interview_assistant.providers.base import LLMProvider, LLMResult
 
 # OpenAI's services, also through Azure: company policy keeps data away from them.
@@ -399,9 +399,9 @@ class OpenModelServerLLM(LLMProvider):
         secrets: list[str] = []
 
         def env(name: str, what: str) -> str:
-            value = os.environ.get(name, "")
+            value = env_value(name)
             if not value:
-                raise AuthFailed(f"{what}의 환경변수 {name}이(가) 서버 환경에 없습니다.")
+                raise AuthFailed(f"{what}의 환경변수 {name}이(가) 서버 환경과 .env에 없습니다.")
             secrets.append(value)
             return value
 

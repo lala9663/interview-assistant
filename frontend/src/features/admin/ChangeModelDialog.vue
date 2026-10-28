@@ -223,7 +223,7 @@ const optionSummary = computed(() =>
           <RequirementList :requirements="check.data.requirements" />
           <p v-if="check.data.same_as_active" class="text-[13px] text-muted-foreground">지금 쓰는 설정과 같습니다. 바꿀 것이 없습니다.</p>
           <p v-else-if="!check.data.ready" class="text-[13px] text-danger">요구 조건을 모두 충족해야 테스트하고 적용할 수 있습니다.</p>
-          <p class="text-xs text-muted-foreground">API 키·자격증명은 화면에서 받지 않습니다. 서버 환경변수나 Secret Manager로 넣고, 여기에는 있음/없음만 보입니다.</p>
+          <p class="text-xs text-muted-foreground">API 키·자격증명은 화면에서 받지 않습니다. 서버 환경변수, .env나 Secret Manager로 넣고, 여기에는 있음/없음만 보입니다.</p>
         </template>
       </div>
 

@@ -18,6 +18,7 @@ _IMPLS: dict[str, dict[str, str]] = {
         "fake": "interview_assistant.providers.fake:FakeLLM",
         "open_model_server": "interview_assistant.providers.llm.open_model_server:OpenModelServerLLM",
         "anthropic_vertex": "interview_assistant.providers.llm.anthropic_vertex:AnthropicVertexLLM",
+        "anthropic_api": "interview_assistant.providers.llm.anthropic_api:AnthropicLLM",
     },
     "stt": {
         "fake": "interview_assistant.providers.fake:FakeSTT",

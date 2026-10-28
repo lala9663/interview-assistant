@@ -81,6 +81,7 @@ OCR 엔진 비교(정확도·속도·메모리)는 [ocr-benchmark.md](../ocr-ben
 | 이름 | 용도 | 라이선스 | 비용 (100만 토큰당 입력 / 출력, global 엔드포인트) | 데이터 | 상태 |
 | --- | --- | --- | --- | --- | --- |
 | 오픈소스 모델 서버 (`open_model_server`: vLLM·Ollama·SGLang의 OpenAI 형식 API, httpx2로 호출) | LLM 주 모델·선별 | 연결 코드는 프로젝트 코드와 httpx2(BSD-3-Clause), 모델은 모델마다 다름([llm.md](llm.md)) | 무료 (사내 GPU 비용) | 설정한 사내 서버 | 구현, `providers.yaml` 기본값 (2026-10-28, 예시 `skt/A.X-3.1`). 실제 사내 서버 연결 전 |
+| Claude API (`anthropic_api`: Opus 5.5·Sonnet 5.5·Haiku 5.5, 공식 Python SDK `anthropic` 1.13.0으로 직접 호출) | 외부 개발 환경 테스트: 시드 데이터로 꼬리질문·채점·역량 사전 초안 | SDK MIT, 모델 상용 | Opus 5.5 $4.00 / $20.00, Sonnet 5.5 $2.00 / $10.00, Haiku 5.5 $0.10 / $0.50 (Anthropic API 가격) | 외부 (Anthropic) | 구현 (2026-10-28). 외부 개발 환경 테스트용, 사내 반입 대상 아님 ([ai-models.md](../ai-models.md) "Claude API") |
 | Claude Opus 5.5 (Vertex AI) | LLM 주 모델: 채점·역량 사전·꼬리질문 | 상용 | $4.00 / $20.00 | 외부 클라우드 (Google) | 쓰지 않음 (2026-10-28 사용자: GCP·OpenAI 서비스 안 씀) |
 | Claude Sonnet 5.5 (Vertex AI) | 속도·성능 균형 | 상용 | $2.00 / $10.00 | 외부 클라우드 (Google) | 쓰지 않음 (2026-10-28 사용자: GCP·OpenAI 서비스 안 씀) |
 | Claude Haiku 5.5 (Vertex AI) | 서류 선별 (대량) | 상용 | 입력 10만 토큰까지 $0.10 / $0.50, 넘으면 $0.50 / $2.50 | 외부 클라우드 (Google) | 쓰지 않음 (2026-10-28 사용자: GCP·OpenAI 서비스 안 씀) |

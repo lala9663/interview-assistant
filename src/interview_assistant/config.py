@@ -2,12 +2,29 @@
 
 from __future__ import annotations
 
+import os
 from pathlib import Path
 from typing import Any, Literal
 
 import yaml
+from dotenv import dotenv_values
 from pydantic import BaseModel, ConfigDict, Field, SecretStr
 from pydantic_settings import BaseSettings, SettingsConfigDict
+
+# The file Settings reads; also where a provider option's API key variable may be (env_value).
+ENV_FILE = Path(".env")
+
+
+def env_value(name: str) -> str:
+    """The value of an environment variable a provider option names (an API key): the server's
+    environment first, then the .env file. Read at each call, so a key put into .env works
+    without restarting the server; never stored. Empty when it is in neither."""
+    value = os.environ.get(name)
+    if value:
+        return value
+    if not ENV_FILE.is_file():
+        return ""
+    return dotenv_values(ENV_FILE).get(name) or ""
 
 
 class ProviderSpec(BaseModel):

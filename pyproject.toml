@@ -31,6 +31,11 @@ gcp = [
     "anthropic[vertex]",
     "google-cloud-speech>=2.27",
 ]
+# Claude API called directly (Anthropic Python SDK, MIT): for tests with made-up data on the external
+# development laptop only, not for in-house import (providers/llm/anthropic_api.py).
+claude = [
+    "anthropic>=1.13",
+]
 # Local STT on CPU (faster-whisper, MIT). Weights are downloaded from the admin screen.
 whisper = [
     "faster-whisper>=1.2.1",
@@ -65,8 +70,9 @@ dev = [
 ]
 
 [tool.uv]
-# Two-week rule for new dependencies: sse-starlette 3.6.0 (mcp's dependency) came out 2026-10-25.
-exclude-newer-package = { sse-starlette = "2026-10-14T00:00:00Z" }
+# Two-week rule for new dependencies: sse-starlette 3.6.0 (mcp's dependency) came out 2026-10-25,
+# anthropic 1.17.0 on 2026-10-20 (1.13.0 is used).
+exclude-newer-package = { sse-starlette = "2026-10-14T00:00:00Z", anthropic = "2026-10-14T00:00:00Z" }
 
 [build-system]
 requires = ["hatchling"]

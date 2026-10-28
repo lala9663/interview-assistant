@@ -263,6 +263,7 @@ AI 꼬리질문은 질문 은행 예시를 프롬프트에 넣으려고 답변 �
 - [x] 데이터 위치 "설정한 사내 서버" 추가. Google 계열은 "외부 클라우드 (Google)"로 바꾸고 회사 밖 전송 확인을 받음(테스트·적용·되돌리기). `config/providers.yaml`의 기본 LLM을 이 provider로(예시 vLLM 주소, `skt/A.X-3.1`), Vertex의 Claude는 쓰지 않는 대안 주석으로
 - [x] 테스트(네트워크 없음, 가짜 모델 서버 ASGI·MockTransport): 생성, 스트리밍, 원인별 오류, 시간 초과, 가드가 먼저 거름, 감사 로그(모델·토큰·오류 종류, 본문 없음), OpenAI 주소 거부, 관리자 화면 적용 뒤 역량 사전 초안까지. 백엔드 545개 통과, 프론트 `npm run check` 56개 통과
 - [x] 한국어 오픈 웨이트 모델 비교 [reference/llm.md](reference/llm.md): 크기, 라이선스(상업 조건), 출처 국가·회사, GPU 메모리, 한국어 근거, 도구 호출, 컨텍스트, 작업별 권장. EXAONE 4.x는 비상업 라이선스라 제외
+- [x] 외부 개발 환경 테스트용 provider `anthropic_api`("Claude API (외부, 개발 테스트용)", 공식 Python SDK, 데이터 위치 "외부", 키는 `.env`의 `ANTHROPIC_API_KEY`, 2026-10-28): 시드 데이터로 꼬리질문·채점·역량 사전 초안을 실제 LLM으로 확인하는 용도, 사내 반입 대상 아님 ([AI 모델 설정](ai-models.md) "Claude API")
 - [ ] 실제 모델로 확인(실제 모델 미확인): 사내 서버(또는 이 노트북 Ollama)에서 꼬리질문 첫 토큰, JSON 성공률, 채점 흩어짐 ([reference/llm.md](reference/llm.md) 4장)
 - [ ] 사내 GPU 서버와 모델 결정, 정책·법무 확인(gpt-oss와 "OpenAI 불가", 중국 회사 모델, Kanana SI 조항, EXAONE 비상업)
 - [ ] 꼬리질문과 채점이 같은 역할(LLM 주 모델)이라 첫 토큰과 품질이 부딪히면 꼬리질문 역할을 따로 둔다

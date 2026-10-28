@@ -11,13 +11,17 @@ export const DATA_LOCATION: Record<DataLocation, { label: string; hint: string; 
   external: { label: '외부', hint: '회사 밖 API로 데이터를 보냅니다. 경고 확인과 사유가 있어야 적용됩니다.', variant: 'warning', icon: GlobeIcon },
 }
 
-/** 연결 테스트 failures the model server tells apart (`output.failure`). */
+/** 연결 테스트 failures the model server or the Claude API tells apart (`output.failure`). */
 export const FAILURE_LABEL: Record<string, string> = {
   address: '주소 오류',
+  connection: '연결 실패',
   auth: '인증 실패',
   model: '모델 없음',
+  rate_limit: '요청 한도 초과',
   timeout: '시간 초과',
+  request: '요청 오류',
   server: '서버 오류',
+  refusal: '응답 거부',
   output: '응답 형식 오류',
 }
 

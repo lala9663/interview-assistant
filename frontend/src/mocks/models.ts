@@ -2,7 +2,8 @@
  * Mock 관리자 > 모델 설정: the catalog (mirrors `providers/catalog.py`), the active spec per role, the change
  * history, simulated weight downloads and connection tests. The mock world runs `config/providers.yaml`
  * (the LLM on an in-house vLLM server, Chirp STT on Google Cloud) as if both were reachable, so the screen
- * shows every data location; `anthropic_api` exists only here, to show the external-transfer warning.
+ * shows every data location; `anthropic_api` (the Claude API, external development tests only) shows the
+ * external-transfer warning.
  */
 import type {
   DataLocation,
@@ -194,9 +195,44 @@ export function mockCatalog(downloaded: ReadonlySet<string>): ModelImpl[] {
       }),
       field('region', '리전', 'string', 'global', { help: 'Vertex AI 엔드포인트 리전 (global 권장).' }),
     ], { role_defaults: { 'llm.screening': { model: 'claude-haiku-5-5' } } }),
-    impl('llm', 'anthropic_api', 'Claude API (외부, 모의 예시)', 'Anthropic API를 직접 부르는 예시입니다. 모의 모드에만 있고, 외부 전송 경고 단계를 보여 줍니다.', 'external', '비식별 프롬프트가 회사 밖(Anthropic API)으로 나갑니다.', '상용 (API 과금)', ['llm.primary', 'llm.screening'], [
-      field('model', '모델', 'select', 'claude-opus-5-5', { choices: [choice('claude-opus-5-5', 'Claude Opus 5.5'), choice('claude-sonnet-5-5', 'Claude Sonnet 5.5')] }),
-    ]),
+    impl(
+      'llm',
+      'anthropic_api',
+      'Claude API (외부, 개발 테스트용)',
+      'Anthropic의 Claude API를 공식 Python SDK로 직접 부릅니다. 외부 개발 환경에서 시드(가상) 데이터로 꼬리질문·채점·역량 사전 초안을 실제 LLM으로 테스트하는 용도이며, 사내 반입 대상이 아닙니다. 사내 목표는 오픈소스 모델 서버입니다.',
+      'external',
+      '비식별 텍스트가 회사 밖(Anthropic, api.anthropic.com)으로 나갑니다. 가상 데이터로만 씁니다. 프롬프트와 응답은 저장하지 않고, 감사 로그에는 모델·토큰 수·오류 종류만 남습니다.',
+      '상용 (Anthropic API 과금)',
+      ['llm.primary', 'llm.screening'],
+      [
+        field('model', '모델', 'select', 'claude-opus-5-5', {
+          help: "꼬리질문은 첫 토큰 2초가 목표입니다. 실제 시간은 연결 테스트의 '스트리밍 첫 토큰'으로 확인합니다.",
+          choices: [
+            choice('claude-opus-5-5', 'Claude Opus 5.5', '가장 정확합니다. 채점·역량 사전 초안 품질을 볼 때. 생각(thinking)을 끌 수 없어 꼬리질문 첫 토큰 2초에는 effort low로도 빠듯할 수 있습니다.', { recommended_for: ['llm.primary'] }),
+            choice('claude-sonnet-5-5', 'Claude Sonnet 5.5', '속도와 성능의 균형. 꼬리질문 2초 목표와 채점 품질 사이의 절충.'),
+            choice('claude-haiku-5-5', 'Claude Haiku 5.5', '가장 작고 빠르며 쌉니다. 꼬리질문 첫 토큰 2초에 가장 유리하고, 선별용 권장(대량·저비용).', { recommended_for: ['llm.screening'] }),
+          ],
+        }),
+        field('effort', 'effort (생각의 양)', 'select', 'low', {
+          help: '생각을 얼마나 할지. 높을수록 깊게 생각하고 첫 토큰과 응답이 늦어집니다. 꼬리질문은 첫 토큰 2초가 목표입니다.',
+          choices: [
+            choice('low', 'low', '생각을 짧게 해 첫 토큰이 가장 빠릅니다. 꼬리질문 2초 목표에 맞추려면 low.', { recommended_for: ['llm.primary', 'llm.screening'] }),
+            choice('medium', 'medium', '채점·역량 사전 초안 품질을 더 볼 때. 꼬리질문 첫 토큰은 늦어집니다.'),
+            choice('high', 'high', '가장 깊게 생각합니다. 실시간 꼬리질문에는 느립니다.'),
+          ],
+        }),
+        field('max_tokens', '최대 출력 토큰', 'integer', 16000, {
+          help: '생각과 답을 합친 상한. 요청마다 앱이 정한 답 길이에 생각할 여유 4,096토큰을 더하되 이 값을 넘지 않습니다. 상한일 뿐 쓴 만큼만 과금됩니다.',
+          minimum: 1024,
+          maximum: 64000,
+        }),
+        field('timeout', '타임아웃 (초)', 'number', 60, { help: '요청 하나를 기다리는 최대 시간(일시 오류의 자동 재시도 포함). 스트리밍은 토큰 사이 간격에 적용합니다.', minimum: 5, maximum: 600 }),
+        field('api_key_env', 'API 키 환경변수 이름', 'string', 'ANTHROPIC_API_KEY', {
+          help: '키가 든 환경변수의 이름. 키 값은 서버 환경변수나 .env에만 두고 여기에는 이름만 적습니다. .env에 넣은 키는 서버를 다시 띄우지 않아도 다음 호출부터 읽습니다.',
+        }),
+      ],
+      { role_defaults: { 'llm.screening': { model: 'claude-haiku-5-5' } } },
+    ),
     impl('stt', 'fake', 'Fake STT', '가상 지원자 대본(텍스트)을 받아 적습니다. 실제 음성은 알아듣지 않고 길이만 알려 줍니다.', 'local', '외부 호출이 없습니다.', '프로젝트 코드', ['stt.streaming', 'stt.batch'], [ko, speed, batchDiarization, retranscribe], {
       role_defaults: { 'stt.batch': { diarization: true } },
     }),
@@ -366,7 +402,11 @@ export function requirementsFor(i: ModelImpl, options: Record<string, ModelOptio
   if (i.data_location === 'gcp') {
     reqs.push(ok('env:GOOGLE_CLOUD_PROJECT', '환경변수 GOOGLE_CLOUD_PROJECT', '설정되어 있습니다.'), ok('gcp_credentials', 'GCP 자격증명', '서비스 계정 키 파일이 있습니다.'))
   }
-  if (i.impl === 'anthropic_api') reqs.push(ok('env:ANTHROPIC_API_KEY', '환경변수 ANTHROPIC_API_KEY', '설정되어 있습니다.'))
+  if (i.impl === 'anthropic_api') {
+    reqs.push(ok('package:anthropic', '패키지 anthropic', '설치되어 있습니다.'))
+    const env = String(options.api_key_env ?? '').trim()
+    if (env) reqs.push(ok(`env:${env}`, `환경변수 ${env}`, '.env에 있습니다.'))
+  }
   if (i.impl === 'open_model_server') {
     reqs.push(ok('package:httpx2', '패키지 httpx2', '설치되어 있습니다.'))
     const env = String(options.api_key_env ?? '').trim()
