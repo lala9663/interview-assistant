@@ -7,6 +7,7 @@ import { toast } from 'vue-sonner'
 import { endpoints } from '@/api/endpoints'
 import { useApplyModel } from '@/api/queries'
 import type { ModelImpl, ModelOptionValue, ModelRoleState, ModelTestResult } from '@/api/types'
+import { leavesCompany } from '@/api/types'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Checkbox } from '@/components/ui/checkbox'
@@ -49,7 +50,7 @@ const testResult = ref<ModelTestResult | null>(null)
 const role = computed(() => props.state?.role ?? 'llm.primary')
 const impls = computed(() => props.catalog.filter((i) => i.roles.includes(role.value)))
 const impl = computed(() => impls.value.find((i) => i.impl === implKey.value) ?? null)
-const external = computed(() => impl.value?.data_location === 'external')
+const external = computed(() => leavesCompany(impl.value?.data_location))
 const steps = computed<Step[]>(() => ['provider', 'options', 'check', ...(external.value ? (['external'] as Step[]) : []), 'test', 'apply'])
 const index = computed(() => steps.value.indexOf(step.value))
 
@@ -238,7 +239,7 @@ const optionSummary = computed(() =>
               외부로 보냅니다(내장 샘플은 가상 인물). 보안 담당 확인이 필요하면 적용하지 마세요.
             </p>
             <p v-else class="text-muted-foreground">
-              LLM 입력은 바꾼 뒤에도 비식별화를 거치지만, 비식별 텍스트(또는 음성)가 이 PC와 사내 GCP 밖으로 나갑니다. 연결 테스트도 외부로
+              LLM 입력은 바꾼 뒤에도 비식별화를 거치지만, 비식별 텍스트(또는 음성)가 회사 밖으로 나갑니다. 연결 테스트도 외부로
               요청을 보냅니다. 보안 담당 확인이 필요하면 적용하지 마세요.
             </p>
           </div>

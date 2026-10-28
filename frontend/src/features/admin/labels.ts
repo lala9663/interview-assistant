@@ -1,4 +1,4 @@
-import { CloudIcon, GlobeIcon, MonitorIcon } from '@lucide/vue'
+import { CloudIcon, GlobeIcon, MonitorIcon, ServerIcon } from '@lucide/vue'
 import type { Component } from 'vue'
 
 import type { DataLocation, ModelChangeKind, ModelImpl, ModelOptionField, ModelOptionValue, ModelRole, ModelSpec } from '@/api/types'
@@ -6,8 +6,19 @@ import { MODEL_ROLE_KIND } from '@/api/types'
 
 export const DATA_LOCATION: Record<DataLocation, { label: string; hint: string; variant: 'success' | 'brand' | 'warning'; icon: Component }> = {
   local: { label: '이 PC', hint: '데이터가 이 서버 밖으로 나가지 않습니다.', variant: 'success', icon: MonitorIcon },
-  gcp: { label: '사내 GCP', hint: '사내 GCP 프로젝트 안에서 처리합니다.', variant: 'brand', icon: CloudIcon },
+  server: { label: '설정한 사내 서버', hint: '관리자가 적은 사내 모델 서버 주소로 비식별 텍스트를 보냅니다.', variant: 'brand', icon: ServerIcon },
+  gcp: { label: '외부 클라우드 (Google)', hint: '회사 밖 Google Cloud로 데이터를 보냅니다. 경고 확인과 사유가 있어야 적용됩니다.', variant: 'warning', icon: CloudIcon },
   external: { label: '외부', hint: '회사 밖 API로 데이터를 보냅니다. 경고 확인과 사유가 있어야 적용됩니다.', variant: 'warning', icon: GlobeIcon },
+}
+
+/** 연결 테스트 failures the model server tells apart (`output.failure`). */
+export const FAILURE_LABEL: Record<string, string> = {
+  address: '주소 오류',
+  auth: '인증 실패',
+  model: '모델 없음',
+  timeout: '시간 초과',
+  server: '서버 오류',
+  output: '응답 형식 오류',
 }
 
 export const CHANGE_KIND_LABEL: Record<ModelChangeKind, string> = { initial: '처음 설정', apply: '변경', rollback: '되돌림' }

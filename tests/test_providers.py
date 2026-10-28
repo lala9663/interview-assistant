@@ -9,7 +9,7 @@ from interview_assistant.providers import registry
 
 ROOT = Path(__file__).resolve().parents[1]
 FAKE = ROOT / "config" / "providers.fake.yaml"
-GCP = ROOT / "config" / "providers.yaml"
+DEFAULT = ROOT / "config" / "providers.yaml"
 
 
 def test_fake_config_loads():
@@ -19,8 +19,8 @@ def test_fake_config_loads():
     assert cfg.embedding.options == {"dimensions": 256}
 
 
-def test_gcp_config_only_names_registered_impls():
-    cfg = load_providers(GCP)
+def test_default_config_only_names_registered_impls():
+    cfg = load_providers(DEFAULT)
     pairs = [
         *(("llm", s) for s in cfg.llm.values()),
         *(("stt", s) for s in cfg.stt.values()),
@@ -36,10 +36,17 @@ def test_unknown_impl_raises():
         registry.resolve("llm", ProviderSpec(impl="nope"))
 
 
+def test_default_llm_is_an_in_house_model_server():
+    cfg = load_providers(DEFAULT)
+    for spec in cfg.llm.values():
+        assert spec.impl == "open_model_server"
+        llm = registry.resolve("llm", spec)  # builds without calling the server
+        assert "openai.com" not in llm.base_url and llm.model
+
+
 def test_registered_but_unimplemented_impl_raises_clear_error():
-    cfg = load_providers(GCP)
     with pytest.raises(registry.UnknownProviderError, match="not implemented"):
-        registry.resolve("llm", cfg.llm["primary"])
+        registry.resolve("llm", ProviderSpec(impl="anthropic_vertex", model="claude-opus-5-5"))
 
 
 async def test_fake_llm_generate_and_stream():

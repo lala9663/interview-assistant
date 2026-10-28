@@ -4,6 +4,7 @@ import { describe, expect, it } from 'vitest'
 
 import CommandPalette from '@/components/layout/CommandPalette.vue'
 import { getDb } from '@/mocks/db'
+import { SERVER_MODEL } from '@/mocks/models'
 import { renderRoute } from '@/test/render'
 
 import ModelSettingsPage from './ModelSettingsPage.vue'
@@ -30,10 +31,11 @@ describe('관리자 > 모델 설정', { timeout: 20_000 }, () => {
     expect(within(ocr).getByText('PaddleOCR (로컬, PP-OCRv5 한국어)')).toBeInTheDocument()
     expect(within(ocr).getByTestId('data-location')).toHaveTextContent('이 PC')
     const primary = await card('llm.primary')
-    expect(within(primary).getByText('Claude (Vertex AI)')).toBeInTheDocument()
-    expect(within(primary).getByTestId('role-model')).toHaveTextContent('claude-opus-5-5')
-    expect(within(primary).getByTestId('data-location')).toHaveTextContent('사내 GCP')
+    expect(within(primary).getByText('오픈소스 모델 서버 (vLLM·Ollama 등)')).toBeInTheDocument()
+    expect(within(primary).getByTestId('role-model')).toHaveTextContent(SERVER_MODEL)
+    expect(within(primary).getByTestId('data-location')).toHaveTextContent('설정한 사내 서버')
     expect(within(primary).getByText('사용 가능')).toBeInTheDocument()
+    expect(within(await card('stt.batch')).getByTestId('data-location')).toHaveTextContent('외부 클라우드 (Google)')
     expect(await screen.findAllByTestId('history-row')).toHaveLength(11)
   })
 
@@ -87,12 +89,53 @@ describe('관리자 > 모델 설정', { timeout: 20_000 }, () => {
     expect(rows.length).toBeGreaterThan(0)
     expect(getDb().models.active['stt.batch'].options.initial_prompt).toBe('CMP, 식각, 수율')
 
-    // rollback
+    // rollback: back to Google Cloud, outside the company, so the transfer is confirmed first
     await user.click(within(latest).getByRole('button', { name: /되돌리기/ }))
     await user.type(screen.getByLabelText('사유'), '원래대로')
+    expect(screen.getByText('회사 밖 API로 데이터를 보내는 설정으로 돌아갑니다.')).toBeInTheDocument()
+    expect(screen.getByTestId('confirm-revert')).toBeDisabled()
+    await user.click(screen.getByRole('checkbox'))
     await user.click(screen.getByTestId('confirm-revert'))
     await waitFor(async () => expect(within(await card('stt.batch')).getByTestId('role-model')).toHaveTextContent('chirp_3'))
     await waitFor(() => expect(screen.getAllByTestId('history-row')[0]).toHaveTextContent('되돌림'))
+  })
+
+  it('points the main LLM at another in-house model server: OpenAI addresses refused, timings and the served models shown', async () => {
+    const user = userEvent.setup()
+    await renderPage()
+    await user.click(within(await card('llm.primary')).getByRole('button', { name: 'LLM 주 모델 변경' }))
+    expect(within(await screen.findByTestId('impl-open_model_server')).getByTestId('data-location')).toHaveTextContent('설정한 사내 서버')
+    expect(screen.getByRole('list', { name: '단계' })).not.toHaveTextContent('외부 전송')
+    await next(user)
+    // 2. options: the current server is filled in; an OpenAI address is refused on the check
+    const url = screen.getByLabelText('서버 주소')
+    expect(url).toHaveValue('http://vllm.internal:8000/v1')
+    await user.clear(url)
+    await user.type(url, 'https://api.openai.com/v1')
+    await next(user)
+    expect(await screen.findByText(/OpenAI 서비스 주소는 쓸 수 없습니다/)).toBeInTheDocument()
+    await user.click(screen.getByRole('button', { name: /이전/ }))
+    await user.clear(screen.getByLabelText('서버 주소'))
+    await user.type(screen.getByLabelText('서버 주소'), 'http://ollama.internal:11434/v1/')
+    await user.clear(screen.getByLabelText('모델 이름'))
+    await user.type(screen.getByLabelText('모델 이름'), 'gemma4:12b')
+    await user.type(screen.getByLabelText('API 키 환경변수 이름'), 'IA_LLM_API_KEY')
+    await next(user)
+    expect(await screen.findByText('환경변수 IA_LLM_API_KEY')).toBeInTheDocument()
+    await waitFor(() => expect(screen.getByRole('button', { name: /다음/ })).toBeEnabled())
+    // 3. test: response time, first token, the server's models
+    await next(user)
+    await user.click(screen.getByTestId('run-test'))
+    const result = await screen.findByTestId('test-result')
+    expect(result).toHaveAttribute('data-ok', 'true')
+    expect(within(result).getByTestId('first-token')).toHaveTextContent('첫 토큰 0.3초')
+    expect(within(result).getByText('응답 0.8초')).toBeInTheDocument()
+    expect(within(result).getByTestId('server-models')).toHaveTextContent('gemma4:12b')
+    await next(user)
+    await user.type(screen.getByLabelText('변경 사유'), '사내 Ollama 서버로 비교')
+    await user.click(screen.getByTestId('apply'))
+    await waitFor(async () => expect(within(await card('llm.primary')).getByTestId('role-model')).toHaveTextContent('gemma4:12b'))
+    expect(getDb().models.active['llm.primary'].options).toMatchObject({ base_url: 'http://ollama.internal:11434/v1', api_key_env: 'IA_LLM_API_KEY' })
   })
 
   it('a provider that sends data outside the company needs the warning step', async () => {

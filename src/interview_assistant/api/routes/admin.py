@@ -2,8 +2,8 @@
 
 Admins only (403 otherwise). Credentials are never sent or shown here: requirements report only
 whether a package, an environment variable or a credentials file exists. Tests run only when the
-admin asks, and a provider that sends data beyond this PC and the company GCP needs
-`confirm_external` to be tested or applied (plus a reason to apply). Every test, change, rollback
+admin asks, and a provider that sends data out of the company (an outside API, Google Cloud)
+needs `confirm_external` to be tested or applied (plus a reason to apply). Every test, change, rollback
 and download is in the audit log; changes also in the model history (`ai_model_changes`).
 
 서류 읽기 roles (OCR engine, readers, converter, reading mode) are tested by reading a document:
@@ -302,9 +302,13 @@ async def test_model(
         except ChangeRefused as exc:
             if exc.status != 502:
                 raise
-            result = probe.ProbeResult(
-                False, prepared.spec.impl, 0, "모델을 불러오지 못했습니다.", error=exc.message
-            )
+            cause = exc.__cause__
+            if getattr(cause, "kind", None):  # e.g. the model server is unreachable at warm-up
+                result = probe.failed(prepared.spec.impl, 0, cause)
+            else:
+                result = probe.ProbeResult(
+                    False, prepared.spec.impl, 0, "모델을 불러오지 못했습니다.", error=exc.message
+                )
         else:
             result = await probe.run(prepared, provider, db, audio=path, expected_text=expected)
     audio_source = source if kind in ("stt", "diarization") else None

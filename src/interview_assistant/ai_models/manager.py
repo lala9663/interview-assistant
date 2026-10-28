@@ -10,8 +10,8 @@ instances are shared between sets by spec, so the same Whisper weights load once
 that neither the active set nor a live session uses are dropped (`evict`).
 
 Changing a role: the spec is checked against the catalog, this machine must meet its requirements,
-a provider sending data beyond this PC and the company GCP needs an explicit confirmation, and the
-new provider is built and warmed up (weights loaded) before anything is written. Only then is the
+a provider sending data out of the company (an outside API, Google Cloud) needs an explicit
+confirmation, and the new provider is built and warmed up (weights loaded) before anything is written. Only then is the
 change recorded (history + active row) and the new set swapped in.
 """
 
@@ -47,7 +47,7 @@ from interview_assistant.providers.base import (
     ProviderUnavailable,
     STTProvider,
 )
-from interview_assistant.providers.catalog import DataLocation, ImplInfo, Requirement, Role
+from interview_assistant.providers.catalog import ImplInfo, Requirement, Role
 from interview_assistant.providers.weights import DownloadManager
 
 log = logging.getLogger(__name__)
@@ -173,7 +173,7 @@ class Prepared:
 
     @property
     def external(self) -> bool:
-        return self.info.data_location is DataLocation.external
+        return self.info.data_location.leaves_company
 
 
 class ChangeRefused(Exception):

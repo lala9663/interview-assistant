@@ -6,7 +6,7 @@
 import { delay, http, HttpResponse } from 'msw'
 
 import type { ApplyModelRequest, ModelChange, ModelDownload, ModelRole, ModelSpec, RevertModelRequest } from '@/api/types'
-import { MODEL_ROLES } from '@/api/types'
+import { leavesCompany, MODEL_ROLES } from '@/api/types'
 
 import { getDb, newId, type MockDb } from './db'
 import { mockConfig } from './live'
@@ -181,7 +181,7 @@ export const adminHandlers = [
       role: params.role,
       spec: p.spec,
       data_location: p.impl.data_location,
-      external: p.impl.data_location === 'external',
+      external: leavesCompany(p.impl.data_location),
       requirements: p.requirements,
       ready: p.unmet.length === 0,
       same_as_active: same(db.models.active[params.role], p.spec),
@@ -201,7 +201,7 @@ export const adminHandlers = [
     }
     const p = prepare(db.models, params.role, spec)
     if (p.error) return p.error
-    if (p.impl.data_location === 'external' && form.get('confirm_external') !== 'true')
+    if (leavesCompany(p.impl.data_location) && form.get('confirm_external') !== 'true')
       return conflict('회사 밖으로 데이터를 보내는 provider입니다. 경고를 확인한 뒤 테스트하세요.')
     if (p.unmet.length) return conflict(`요구 조건을 충족하지 않습니다: ${p.unmet.map((r) => r.label).join(', ')}`)
     const audio = form.get('audio')
@@ -220,7 +220,7 @@ export const adminHandlers = [
     const p = prepare(db.models, params.role, { impl: body.impl, options: body.options })
     if (p.error) return p.error
     if (same(db.models.active[params.role], p.spec)) return conflict('지금 쓰는 설정과 같습니다.')
-    const external = p.impl.data_location === 'external'
+    const external = leavesCompany(p.impl.data_location)
     if (external && !body.confirm_external) return conflict('회사 밖으로 데이터를 보내는 provider입니다. 경고를 확인하고 사유를 적어야 적용됩니다.')
     if (!body.reason?.trim()) return invalid('reason', '변경 사유를 적어 주세요.')
     if (p.unmet.length) return conflict(`요구 조건을 충족하지 않습니다: ${p.unmet.map((r) => r.label).join(', ')}`)
@@ -240,7 +240,7 @@ export const adminHandlers = [
     const p = prepare(db.models, role, change.previous, true)
     if (p.error) return p.error
     if (same(db.models.active[role], p.spec)) return conflict('지금 쓰는 설정과 같습니다.')
-    const external = p.impl.data_location === 'external'
+    const external = leavesCompany(p.impl.data_location)
     if (external && !body.confirm_external) return conflict('회사 밖으로 데이터를 보내는 provider입니다. 경고를 확인하고 사유를 적어야 적용됩니다.')
     if (!body.reason?.trim()) return invalid('reason', '변경 사유를 적어 주세요.')
     if (p.unmet.length) return conflict(`요구 조건을 충족하지 않습니다: ${p.unmet.map((r) => r.label).join(', ')}`)

@@ -269,8 +269,10 @@ def test_llm_test_checks_structured_output_through_the_gateway(api):
     result = _test(api, "llm.primary", FAST_LLM).json()
     assert result["ok"] is True and result["model"] == "fake-llm-v2"
     assert result["output"]["structured"] == {"echo": "모델 연결 확인 문장입니다", "sum": 42}
-    [ai_row] = _audits(api, "model.connection_test")
-    assert ai_row.model == "fake-llm-v2" and ai_row.actor_type.value == "ai"
+    assert result["output"]["first_token_ms"] is not None and "첫 토큰" in result["summary"]
+    rows = _audits(api, "model.connection_test")  # the structured call and the stream
+    assert len(rows) == 2
+    assert all(r.model == "fake-llm-v2" and r.actor_type.value == "ai" for r in rows)
     [user_row] = _audits(api, "model.tested")
     assert user_row.target_id == "llm.primary" and user_row.details["ok"] is True
     assert "structured" not in user_row.details  # outcome only, never content
@@ -439,7 +441,9 @@ def test_apply_refuses_what_it_cannot_run(api):
     assert "지금 쓰는 설정과 같습니다" in refused(
         {"impl": "fake", "options": {"model": "fake-llm", "speed": 1}}, 409
     )
-    assert "구현" in refused({"impl": "anthropic_vertex", "options": {}}, 409)
+    vertex = {"impl": "anthropic_vertex", "options": {}}
+    assert "회사 밖" in refused(vertex, 409)  # Google Cloud is outside the company
+    assert "구현" in refused(vertex, 409, confirm_external=True)
     assert (
         refused({"impl": "fake", "options": {"temperature": 1}}, 422)[0]["loc"][-1] == "temperature"
     )

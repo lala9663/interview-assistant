@@ -880,9 +880,15 @@ export interface PresetQuestionBody {
 
 // --- 관리자 > 모델 설정 (admin only) ------------------------------------------------------------
 
-/** Where a provider sends data: this PC, the company GCP project, or an API outside the company. */
-export const DATA_LOCATIONS = ['local', 'gcp', 'external'] as const
+/**
+ * Where a provider sends data: this PC, the in-house server whose address the admin entered (open-weight
+ * model server), Google Cloud (outside the company, not used), or another API outside the company.
+ */
+export const DATA_LOCATIONS = ['local', 'server', 'gcp', 'external'] as const
 export type DataLocation = (typeof DATA_LOCATIONS)[number]
+
+/** Sending data there needs the admin's confirmation (and a reason to apply or roll back). */
+export const leavesCompany = (location: DataLocation | undefined) => location === 'gcp' || location === 'external'
 
 /** The AI roles, then the 서류 읽기 roles, in display order. */
 export const MODEL_ROLES = [

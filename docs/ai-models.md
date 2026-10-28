@@ -1,16 +1,16 @@
 # AI 모델 설정 (관리자)
 
-LLM, STT, 임베딩, 화자분리와 서류 읽기 도구(OCR 엔진 등)는 관리자 화면에서 고르고, 테스트하고, 서버 재시작 없이 바꾼다. API는 [api-contract.md](api-contract.md) "관리자 > 모델 설정", 고를 때의 기준은 [model-selection.md](model-selection.md), 측정은 [whisper-benchmark.md](whisper-benchmark.md)와 [ocr-benchmark.md](ocr-benchmark.md), 서류 읽기 규칙은 [document-reading.md](document-reading.md).
+LLM, STT, 임베딩, 화자분리와 서류 읽기 도구(OCR 엔진 등)는 관리자 화면에서 고르고, 테스트하고, 서버 재시작 없이 바꾼다. API는 [api-contract.md](api-contract.md) "관리자 > 모델 설정", 고를 때의 기준은 [model-selection.md](model-selection.md), 사내에 올릴 오픈 웨이트 LLM 비교는 [reference/llm.md](reference/llm.md), 측정은 [whisper-benchmark.md](whisper-benchmark.md)와 [ocr-benchmark.md](ocr-benchmark.md), 서류 읽기 규칙은 [document-reading.md](document-reading.md).
 
 ## 화면
 
 사이드바 "관리자 > 모델 설정"(또는 Ctrl+K에서 "모델"). 관리자만 보이고, API(`/api/admin/models/*`)도 관리자가 아니면 403이다. 관리자는 `Interviewer.is_admin`이며, SSO가 붙으면 그룹으로 채운다.
 
-- **역할 카드 11개, 두 묶음**: AI 모델(LLM 주 모델, LLM 선별용, STT 실시간, STT 사후, 임베딩, 화자분리, 그 아래 임베딩 색인 상태)과 서류 읽기(읽기 방식, OCR 엔진, PDF 텍스트 추출, HWP·HWPX 읽기, 구형 오피스 변환). 현재 provider와 실제 모델 이름, 사용 가능 여부(안 되면 이유), 데이터 위치 배지(이 PC / 사내 GCP / 외부), 마지막 변경(누가·언제·사유).
+- **역할 카드 11개, 두 묶음**: AI 모델(LLM 주 모델, LLM 선별용, STT 실시간, STT 사후, 임베딩, 화자분리, 그 아래 임베딩 색인 상태)과 서류 읽기(읽기 방식, OCR 엔진, PDF 텍스트 추출, HWP·HWPX 읽기, 구형 오피스 변환). 현재 provider와 실제 모델 이름, 사용 가능 여부(안 되면 이유), 데이터 위치 배지(이 PC / 설정한 사내 서버 / 외부 클라우드 (Google) / 외부), 마지막 변경(누가·언제·사유).
 - **변경**: provider 선택 → 모델·옵션 → 요구 조건 확인 → (외부 전송 경고) → 연결 테스트 → 사유 → 적용.
   - 요구 조건은 네트워크 없이 본다: 구현 여부, 패키지, 환경변수·자격증명 파일이 있는지(값은 보지 않음), 모델 파일.
   - API 키·자격증명은 화면에서 받지 않는다. 서버 환경변수나 Secret Manager로 넣는다.
-  - 회사 밖으로 데이터를 보내는 provider는 경고를 확인해야 테스트되고, 사유까지 적어야 적용된다.
+  - 회사 밖으로 데이터를 보내는 provider(외부 API, Google Cloud)는 경고를 확인해야 테스트되고, 사유까지 적어야 적용된다. 되돌리기로 그쪽으로 돌아갈 때도 같다.
 - **적용**은 재시작 없이 바로 된다. 진행 중인 면접은 시작할 때의 모델을 끝까지(실시간 전사, 꼬리질문, 종료 뒤 AI 채점까지) 쓰고, 새 면접부터 새 설정을 쓴다. 처리 중인 서류도 시작할 때의 읽기 설정으로 끝난다. 결과에는 실제 쓴 모델 이름(서류는 읽기 도구와 버전)이 남는다.
 - **변경 이력**에서 이전 설정으로 되돌린다. 활성 설정과 이력은 DB(`ai_model_settings`, `ai_model_changes`, Alembic 0004)에 있고, YAML(`IA_PROVIDERS_FILE`)은 처음 기동할 때의 기본값으로만 쓴다.
 - 모든 테스트·변경·다운로드는 감사 로그에 남는다. 테스트는 결과 수치만 남고, 전사나 응답 본문은 남지 않는다.
@@ -19,13 +19,74 @@ LLM, STT, 임베딩, 화자분리와 서류 읽기 도구(OCR 엔진 등)는 관
 
 | 역할 | 테스트 |
 | --- | --- |
-| LLM | 지원자 데이터가 없는 고정 문장으로 구조화 출력(JSON)과 간단한 지시 수행을 본다 |
+| LLM | 지원자 데이터가 없는 고정 문장으로 구조화 출력(JSON)과 간단한 지시 수행을 보고, 꼬리질문처럼 짧은 스트리밍을 한 번 받는다. 응답 시간, 스트리밍 첫 토큰 시간, 서버가 알려 준 모델 이름을 보여 준다. 호출 둘 다 게이트웨이(가드 + 감사 로그)를 거친다 |
 | STT | 내장 샘플(FLEURS 한국어 11.5초, 정답과 비교한 글자 오류율), 마이크 녹음(5~10초), 파일(60초·10MB 이하). 역할의 실제 경로로 돈다(실시간 = 스트리밍, 사후 = 파일 전사). 올린 음성은 테스트가 끝나면 지운다 |
 | 임베딩 | 지원자 데이터가 없는 고정 문장 세 개(문장, 같은 약어 FDC를 쓴 비슷한 문장, 무관한 문장)로 차원, 희소 가중치 유무, 비슷한 문장이 무관한 문장보다 가까운지. 아니면 실패 |
 | 화자분리 | 샘플의 화자 구간 수 |
 | 서류 읽기 | 역할별 내장 가상 이력서(OCR은 글자 그림 PNG, 읽기 방식은 텍스트+스캔 혼합 PDF, HWP는 HWPX, 구형 변환은 .doc) 또는 올린 파일(10MB). 테스트하는 설정 + 나머지 서류 읽기 역할의 활성 설정으로 읽고, 쪽마다 방법·이유·도구·신뢰도·시간, 그림마다 판단, 비식별화한 미리보기를 보여 준다. 내장 샘플은 정답과 비교한 글자 오류율도. 원문은 화면에도 감사 로그에도 없다 |
 
 마이크는 Chrome·Edge에서 http://localhost:5173 을 열고 마이크 권한을 허용해야 한다. Claude 앱 안의 브라우저 창은 마이크를 막는다.
+
+## 사내 오픈소스 모델 서버 LLM (`open_model_server`)
+
+사내에 설치한 오픈 웨이트 모델 서버(vLLM, Ollama, SGLang 등)를 LLM 주 모델·선별용으로 쓴다. 이런 서버가 주는 OpenAI 형식 API(`POST /v1/chat/completions`, `GET /v1/models`)로 부르지만 OpenAI 서비스로는 보내지 않는다. openai.com과 Azure OpenAI(`*.openai.azure.com`) 주소는 화면에서도, YAML·되돌리기로 들어온 설정에서도 거부한다. 비식별 텍스트만 가고(가드가 호출 직전에 다시 본다), 프롬프트와 응답은 저장하지 않는다. 데이터 위치 배지는 "설정한 사내 서버"다. 그 주소가 정말 사내인지는 앱이 알 수 없으니 회사 밖 주소를 적지 않는다. 어떤 모델을 올릴지는 [reference/llm.md](reference/llm.md). `config/providers.yaml`의 기본 LLM이 이 provider(예시 주소)이고, YAML은 처음 기동할 때만 읽으니 실제 주소는 화면에서 바꾼다.
+
+| 옵션 | 기본 | 설명 |
+| --- | --- | --- |
+| 서버 주소 `base_url` | 비움 (필수) | `/v1`까지. 예: vLLM `http://10.0.0.5:8000/v1`, Ollama `http://10.0.0.5:11434/v1`. 주소 안의 사용자 이름·비밀번호, `?`·`#`도 받지 않는다 |
+| 모델 이름 `model` | 비움 (필수) | 서버에 올린 이름 그대로. vLLM은 `--served-model-name`(없으면 Hugging Face 경로), Ollama는 `gemma4:e4b`처럼 태그까지 |
+| API 키 환경변수 이름 `api_key_env` | 비움 | 키가 든 환경변수의 이름(예: `IA_LLM_API_KEY`). 값은 앱 서버 환경에만 두고 화면·DB에는 이름만 남는다. 요구 조건에 그 변수가 있는지(값 아님)가 보이고, `Authorization: Bearer <값>`으로 보낸다 |
+| 타임아웃 `timeout` | 120초 | 요청 하나를 기다리는 최대 시간. 스트리밍은 토큰 사이 간격. GPU 없는 서버면 늘린다 |
+| 최대 출력 토큰 `max_tokens` | 4096 | 앱이 요청마다 정한 값과 이 값 중 작은 쪽. 서버의 컨텍스트 길이에서 입력 길이를 뺀 것보다 작아야 한다 |
+| 온도 `temperature` | 0.3 | AI 채점이 한 답변을 세 번 채점해 중앙값을 쓰므로 0보다 조금 크게 |
+| 구조화 출력 방식 `structured_output` | JSON 스키마 강제 | `json_schema`(vLLM·SGLang·Ollama가 스키마대로만 생성) / `json_object` / `prompt`(서버가 `response_format`을 거부할 때). 스키마는 어느 방식이든 프롬프트에도 넣고, 받은 답은 코드 블록·앞뒤 말·`<think>`를 걷어 JSON 객체로 읽는다 |
+| 추가 헤더 `headers` | 비움 | 사내 게이트웨이용 `이름: 값` 줄. 이름에 key·token·auth·secret·cookie·password가 들어가면 값은 `${환경변수}`로만 적는다(`Bearer ${IA_GW_TOKEN}`은 된다) |
+| 추가 요청 필드 `extra_body` | 비움 | 서버별 옵션 JSON 객체. `model`·`messages`·`stream`·`max_tokens`·`temperature`·`response_format`·`tools` 같은 필드는 넣을 수 없다 |
+
+적용 전 워밍업이 `GET /models`로 서버·인증·모델 이름을 확인한다(Ollama의 `qwen3`은 `qwen3:latest`와 같게 본다. 모델 목록을 주지 않는 게이트웨이는 첫 호출에서 확인된다). 연결 테스트가 실패하면 원인을 나눠 보여 준다. 감사 로그에는 오류 종류(클래스 이름)만 남는다.
+
+| 원인 | 예 |
+| --- | --- |
+| 주소 오류 | 연결 거부·연결 시간 초과, `/v1`이 빠진 경로(404), 다른 주소로 넘김(3xx), 모델 서버가 아닌 응답 |
+| 인증 실패 | 401·403, 키 환경변수가 서버 환경에 없음. 서버가 받은 키를 되돌려 보내도 오류 문장에서 지운다 |
+| 모델 없음 | 서버 목록에 없는 이름(서버가 가진 모델을 함께 보여 줌), vLLM·Ollama의 "model not found" |
+| 시간 초과 | 타임아웃 안에 응답이 끝나지 않음, 게이트웨이의 408·504 |
+| 서버 오류, 응답 형식 오류 | 5xx, 스트리밍 중 오류, JSON이 아니거나 최대 출력 토큰에서 잘린 답 |
+
+추론(thinking) 모델(Qwen3 계열, gpt-oss 등): 서버가 추론을 따로 주는 필드(`reasoning_content`, `reasoning`)는 버리고 답 앞의 `<think>…</think>`도 빼서 꼬리질문에는 답만 보인다. 그래도 추론하는 동안 첫 토큰이 늦으니 꼬리질문에 쓰려면 서버에서 추론을 끈다.
+
+도구 호출(tool calling)은 이번 범위 밖이다. 요청에 `tools`를 넣지 않고 `extra_body`로도 넣을 수 없다. 앱의 작업은 모두 구조화 출력(JSON)이나 텍스트 스트림으로 돈다.
+
+### vLLM
+
+GPU 서버에서(예: SKT A.X 3.1, Apache-2.0):
+
+```bash
+vllm serve skt/A.X-3.1 --served-model-name a.x-3.1 --max-model-len 32768 --api-key "$IA_LLM_API_KEY"
+```
+
+화면에는 서버 주소 `http://<GPU 서버>:8000/v1`, 모델 이름 `a.x-3.1`, API 키 환경변수 `IA_LLM_API_KEY`(앱 서버에도 같은 값)를 적는다. Qwen3 계열은 추가 요청 필드에 `{"chat_template_kwargs": {"enable_thinking": false}}`를 넣어 추론을 끈다.
+
+### Ollama
+
+시험·소규모용. 동시 면접이 많으면 vLLM을 쓴다.
+
+```bash
+ollama pull gemma4:e4b
+```
+
+다른 PC에서 부르려면 Ollama를 `OLLAMA_HOST=0.0.0.0`으로 띄운다. 화면에는 서버 주소 `http://<host>:11434/v1`, 모델 이름 `gemma4:e4b`, API 키는 비운다. Ollama의 OpenAI 형식 API는 요청마다 컨텍스트 길이를 정할 수 없어서, 서류 선별처럼 입력이 길면 서버의 `OLLAMA_CONTEXT_LENGTH`(또는 Modelfile의 `num_ctx`)로 늘린다.
+
+### 사내 게이트웨이
+
+게이트웨이가 OpenAI 형식을 그대로 넘겨주면 같은 provider로 붙는다. 사내 LLM(예: 사내 전용 모델)이 OpenAI 형식 API를 주면 마찬가지다.
+
+| 옵션 | 예 |
+| --- | --- |
+| 서버 주소 | `https://llm-gateway.example.corp/openai-compat/v1` |
+| API 키 환경변수 이름 | 게이트웨이가 `Authorization: Bearer`를 쓰면 `IA_LLM_API_KEY`, 아니면 비움 |
+| 추가 헤더 | `X-Team: hr-ai` 와 `X-Gateway-Key: ${IA_GATEWAY_KEY}` (두 줄) |
+| 구조화 출력 방식 | 게이트웨이가 `response_format`을 넘기지 못하면 `prompt` |
 
 ## 로컬 Whisper STT (`faster_whisper`)
 

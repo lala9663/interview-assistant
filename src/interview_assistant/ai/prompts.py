@@ -20,7 +20,7 @@ SCORING_PROMPT = "score-v0.4"
 PRESET_PROMPT = "preset-v0.1"
 CARRYOVER_PROMPT = "carryover-v0.1"
 CHECKPOINT_PROMPT = "checkpoint-v0.1"
-CONNECTION_TEST_PROMPT = "connection-test-v0.1"
+CONNECTION_TEST_PROMPT = "connection-test-v0.2"
 QUESTION_CHECK_PROMPT = "question-check-v0.1"
 # Not an LLM prompt: the version of the question-bank retrieval that follow-ups record.
 RETRIEVAL_VERSION = "retrieval-v0.1"
@@ -601,4 +601,14 @@ def connection_test_prompt() -> str:
             tagged("numbers", "17, 25"),
             "<echo>의 문장을 echo에 그대로 옮기고, <numbers>의 두 수를 더해 sum에 넣으세요.",
         ]
+    )
+
+
+# The streaming half (follow-ups stream): how soon the first piece of text arrives.
+CONNECTION_STREAM_SYSTEM = "연결 테스트입니다. 지시대로 짧게 답하세요. " + DATA_NOTE
+
+
+def connection_stream_prompt() -> str:
+    return "\n\n".join(
+        [tagged("echo", CONNECTION_TEST_ECHO), "<echo>의 문장만 한 줄로 그대로 쓰세요."]
     )

@@ -1,7 +1,7 @@
 """Connection tests on the admin screen: does a provider answer, how fast, and what.
 
-A test runs only when an admin presses the button; providers that send data beyond this PC and
-the company GCP also need the admin's confirmation (api/routes/admin.py). The LLM test sends a
+A test runs only when an admin presses the button; providers that send data out of the company
+also need the admin's confirmation (api/routes/admin.py). The LLM test sends a
 fixed, made-up prompt through the AI gateway (guard + audit) and checks the structured answer. STT
 transcribes a voice sample, the built-in clip or the admin's own recording, through the role's own
 path: batch `transcribe` on a file, streaming `stream` on 16 kHz PCM chunks. Embedding checks the
@@ -26,10 +26,12 @@ from sqlalchemy.orm import Session
 
 from interview_assistant.ai.gateway import AiCall, AiGateway, model_name
 from interview_assistant.ai.prompts import (
+    CONNECTION_STREAM_SYSTEM,
     CONNECTION_TEST_ECHO,
     CONNECTION_TEST_PROMPT,
     CONNECTION_TEST_SCHEMA,
     CONNECTION_TEST_SYSTEM,
+    connection_stream_prompt,
     connection_test_prompt,
 )
 from interview_assistant.ai_models.manager import Prepared, describe
@@ -80,15 +82,31 @@ async def run(
         else:
             ok, summary, output = await _diarization(provider, audio)
     except Exception as exc:
-        elapsed = round((time.perf_counter() - started) * 1000)
-        return ProbeResult(False, model, elapsed, "테스트가 실패했습니다.", error=describe(exc))
+        return failed(model, round((time.perf_counter() - started) * 1000), exc)
     elapsed = round((time.perf_counter() - started) * 1000)
     return ProbeResult(ok, model, elapsed, summary, output)
 
 
+def failed(model: str, elapsed_ms: int, exc: BaseException, summary: str = "테스트가 실패했습니다.") -> ProbeResult:
+    """A test that raised. Providers that tell the cause apart (`kind`, `label`: the model
+    server's address, authentication, model name, timeout) name it in the summary."""
+    kind = getattr(exc, "kind", None)
+    label = getattr(exc, "label", None)
+    if kind and label:
+        return ProbeResult(False, model, elapsed_ms, f"테스트 실패: {label}", {"failure": kind}, describe(exc))
+    return ProbeResult(False, model, elapsed_ms, summary, error=describe(exc))
+
+
+def _ms(since: float) -> int:
+    return round((time.perf_counter() - since) * 1000)
+
+
 async def _llm(prepared: Prepared, provider: Any, db: Session) -> tuple[bool, str, dict[str, Any]]:
+    """Structured output through the gateway, then a short stream (as follow-ups use it): the
+    response time, the time to the first token and the model name the server reports."""
     slot = prepared.role.key.split(".", 1)[1]
     gateway = AiGateway({slot: provider, "primary": provider})
+    started = time.perf_counter()
     result = await gateway.generate(
         db,
         AiCall(
@@ -103,20 +121,60 @@ async def _llm(prepared: Prepared, provider: Any, db: Session) -> tuple[bool, st
             target_id=prepared.role.key,
         ),
     )
+    generate_ms = _ms(started)
     structured = result.structured or {}
     echo_ok = CONNECTION_TEST_ECHO in str(structured.get("echo") or "")
     sum_ok = structured.get("sum") == 42
-    output = {
+    output: dict[str, Any] = {
         "structured": structured,
         "input_tokens": result.input_tokens,
         "output_tokens": result.output_tokens,
+        "server_model": result.model,
+        "generate_ms": generate_ms,
     }
-    if echo_ok and sum_ok:
-        return True, "구조화 출력(JSON)으로 지시대로 답했습니다.", output
-    missing = [
-        name for name, ok in (("문장 그대로 옮기기", echo_ok), ("두 수 더하기", sum_ok)) if not ok
+    served = getattr(provider, "served_models", None)
+    if served is not None:
+        output["server_models"] = list(served)[:20]
+
+    started = time.perf_counter()
+    _, pieces = gateway.stream(
+        db,
+        AiCall(
+            action="model.connection_test",
+            prompt_version=CONNECTION_TEST_PROMPT,
+            system=CONNECTION_STREAM_SYSTEM,
+            prompt=connection_stream_prompt(),
+            role=slot,
+            max_tokens=100,
+            target_type="ai_model",
+            target_id=prepared.role.key,
+            details={"stream": True},
+        ),
+    )
+    first_ms: int | None = None
+    streamed: list[str] = []
+    async for piece in pieces:
+        if first_ms is None and piece.strip():
+            first_ms = _ms(started)
+        streamed.append(piece)
+    text = "".join(streamed).strip()
+    output |= {"first_token_ms": first_ms, "stream_ms": _ms(started), "stream_text": text[:200]}
+
+    timing = f" 응답 {generate_ms / 1000:.1f}초" + (
+        f", 스트리밍 첫 토큰 {first_ms / 1000:.1f}초." if first_ms is not None else "."
+    )
+    problems = [
+        name
+        for name, ok in (
+            ("문장 그대로 옮기기", echo_ok),
+            ("두 수 더하기", sum_ok),
+            ("스트리밍", bool(text)),
+        )
+        if not ok
     ]
-    return False, f"응답은 왔지만 형식이나 내용이 맞지 않습니다: {', '.join(missing)}", output
+    if not problems:
+        return True, "구조화 출력(JSON)과 스트리밍으로 지시대로 답했습니다." + timing, output
+    return False, f"응답은 왔지만 형식이나 내용이 맞지 않습니다: {', '.join(problems)}." + timing, output
 
 
 async def _stt(
@@ -305,6 +363,10 @@ def summary_for_audit(result: ProbeResult) -> dict[str, Any]:
         "partials",
         "format",
         "read_ms",
+        "server_model",
+        "generate_ms",
+        "first_token_ms",
+        "failure",
     )
     details = {k: result.output[k] for k in keep if k in result.output}
     details |= {"ok": result.ok, "latency_ms": result.latency_ms}

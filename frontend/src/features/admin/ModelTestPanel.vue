@@ -11,7 +11,7 @@ import { Input } from '@/components/ui/input'
 import { Segmented, SegmentedItem } from '@/components/ui/segmented'
 import { errorMessage } from '@/lib/toast'
 
-import { PICTURE_LABEL, READ_METHOD_LABEL, takesAudio, takesDocument } from './labels'
+import { FAILURE_LABEL, PICTURE_LABEL, READ_METHOD_LABEL, takesAudio, takesDocument } from './labels'
 import { useRecorder } from './use-recorder'
 
 /**
@@ -75,6 +75,7 @@ const result = computed(() => run.data)
 const out = computed(() => (result.value?.output ?? {}) as Record<string, unknown>)
 const num = (k: string) => (typeof out.value[k] === 'number' ? (out.value[k] as number) : null)
 const str = (k: string) => (typeof out.value[k] === 'string' ? (out.value[k] as string) : null)
+const servedModels = computed(() => (Array.isArray(out.value.server_models) ? (out.value.server_models as string[]) : null))
 
 function pick(e: Event) {
   file.value = (e.target as HTMLInputElement).files?.[0] ?? null
@@ -155,7 +156,7 @@ const seconds = (ms: number | null | undefined) => (typeof ms === 'number' ? `${
       </div>
     </div>
     <p v-else-if="role.startsWith('llm.')" class="text-xs leading-relaxed text-muted-foreground">
-      지원자 데이터가 없는 고정 문장으로 구조화 출력(JSON)과 간단한 지시 수행을 확인합니다. 호출은 감사 로그에 남습니다.
+      지원자 데이터가 없는 고정 문장으로 구조화 출력(JSON)과 간단한 지시 수행, 꼬리질문처럼 스트리밍으로 받을 때의 첫 토큰 시간을 확인합니다. 호출은 감사 로그에 남습니다.
     </p>
     <p v-else class="text-xs leading-relaxed text-muted-foreground">
       지원자 데이터가 없는 고정 문장 세 개(문장, 같은 약어를 쓴 비슷한 문장, 무관한 문장)를 임베딩해 차원과, 비슷한 문장이 더 가깝게 나오는지 확인합니다.
@@ -178,11 +179,17 @@ const seconds = (ms: number | null | undefined) => (typeof ms === 'number' ? `${
       <div class="flex flex-wrap items-center gap-2">
         <Badge v-if="result.ok" variant="success"><CircleCheckIcon aria-hidden="true" />통과</Badge>
         <Badge v-else variant="danger"><CircleAlertIcon aria-hidden="true" />실패</Badge>
+        <Badge v-if="str('failure')" variant="danger" data-testid="test-failure">{{ FAILURE_LABEL[str('failure')!] ?? str('failure') }}</Badge>
         <span class="text-[13px]">{{ result.summary }}</span>
       </div>
       <div class="flex flex-wrap gap-1.5 text-xs">
         <Badge variant="outline" class="font-mono">{{ result.model }}</Badge>
+        <Badge v-if="str('server_model') && str('server_model') !== result.model" variant="outline" class="font-mono" data-testid="server-model">
+          서버 보고 {{ str('server_model') }}
+        </Badge>
         <Badge variant="outline" class="tabular">처리 {{ (result.latency_ms / 1000).toFixed(1) }}초</Badge>
+        <Badge v-if="num('generate_ms') !== null" variant="outline" class="tabular">응답 {{ (num('generate_ms')! / 1000).toFixed(1) }}초</Badge>
+        <Badge v-if="num('first_token_ms') !== null" variant="outline" class="tabular" data-testid="first-token">첫 토큰 {{ (num('first_token_ms')! / 1000).toFixed(1) }}초</Badge>
         <Badge v-if="num('audio_seconds') !== null" variant="outline" class="tabular">음성 {{ num('audio_seconds')!.toFixed(1) }}초</Badge>
         <Badge v-if="num('realtime_factor') !== null" variant="outline" class="tabular">음성 길이의 {{ num('realtime_factor')!.toFixed(2) }}배 시간</Badge>
         <Badge v-if="num('cer') !== null" variant="outline" class="tabular">CER {{ (num('cer')! * 100).toFixed(1) }}%</Badge>
@@ -202,6 +209,9 @@ const seconds = (ms: number | null | undefined) => (typeof ms === 'number' ? `${
         </template>
       </div>
       <pre v-if="out.structured" class="overflow-x-auto rounded-md bg-subtle px-3 py-2 text-xs">{{ JSON.stringify(out.structured, null, 2) }}</pre>
+      <p v-if="servedModels" class="text-xs text-muted-foreground" data-testid="server-models">
+        서버가 가진 모델: <span class="font-mono">{{ servedModels.join(', ') || '없음' }}</span>
+      </p>
       <template v-if="reading">
         <div class="flex flex-wrap gap-1.5 text-xs">
           <Badge v-if="reading.format" variant="outline" class="uppercase">{{ reading.format }}</Badge>

@@ -7,7 +7,7 @@
 - **라이선스**: 패키지는 설치된 메타데이터(`importlib.metadata`, `node_modules/*/package.json`)로, 설치 안 된 것은 PyPI로 확인했다. 모델은 코드와 가중치 라이선스를 따로 적는다.
 - **비용**: 무료 / 유료(과금 단위, 가격은 모두 2026-10-27 확인). 1·2장은 모두 무료라 비용 칸을 뺐다.
 - **상업**: 회사 내부 서비스에 써도 되는가. MIT·BSD·Apache·ISC는 고지 의무만 지키면 된다. MPL은 그 파일을 고쳐 배포할 때만 고친 파일을 공개한다. AGPL·비상업(NC)은 안 된다. GPL은 7장.
-- **데이터**: 로컬 = 이 PC나 회사 서버 안에서만 돈다. 사내 GCP = 이 PoC를 위해 직접 만들 GCP 프로젝트. 외부 = 회사 밖 API. 관리자 화면의 데이터 위치 배지와 같다.
+- **데이터**: 로컬 = 이 PC나 회사 서버 안에서만 돈다. 사내 GCP = 이 PoC를 위해 직접 만들 GCP 프로젝트. 외부 = 회사 밖 API. 설정한 사내 서버 = 관리자가 주소를 적은 사내 모델 서버(오픈소스 LLM). 관리자 화면의 데이터 위치 배지와 같다.
 - **상태**: 사용 중 / 후보(카탈로그나 설정 파일에 있고 구현 전) / 검토만 / 쓰지 않음(사유).
 
 ## 1. 백엔드 (파이썬)
@@ -76,15 +76,16 @@ OCR 엔진 비교(정확도·속도·메모리)는 [ocr-benchmark.md](../ocr-ben
 
 ## 4. AI 모델 (LLM·임베딩)
 
-역할별 기준(선별은 비용, 채점은 품질, 꼬리질문은 속도)은 [model-selection.md](../model-selection.md) 1·5장, 임베딩 결정과 측정은 같은 문서 6장과 [embedding-benchmark.md](../embedding-benchmark.md). LLM에는 비식별 텍스트만 가고, 호출 직전 가드가 다시 본다.
+역할별 기준(선별은 비용, 채점은 품질, 꼬리질문은 속도)은 [model-selection.md](../model-selection.md) 1·5장, 임베딩 결정과 측정은 같은 문서 6장과 [embedding-benchmark.md](../embedding-benchmark.md). 사내 서버에 올릴 오픈 웨이트 LLM(라이선스·출처 국가·GPU 메모리·한국어 근거·작업별 권장)은 [llm.md](llm.md). LLM에는 비식별 텍스트만 가고, 호출 직전 가드가 다시 본다.
 
 | 이름 | 용도 | 라이선스 | 비용 (100만 토큰당 입력 / 출력, global 엔드포인트) | 데이터 | 상태 |
 | --- | --- | --- | --- | --- | --- |
-| Claude Opus 5.5 (Vertex AI) | LLM 주 모델: 채점·역량 사전·꼬리질문 | 상용 | $4.00 / $20.00 | 사내 GCP | 후보 (`anthropic_vertex`, PoC 기본값, 3단계) |
-| Claude Sonnet 5.5 (Vertex AI) | 속도·성능 균형 | 상용 | $2.00 / $10.00 | 사내 GCP | 후보 |
-| Claude Haiku 5.5 (Vertex AI) | 서류 선별 (대량) | 상용 | 입력 10만 토큰까지 $0.10 / $0.50, 넘으면 $0.50 / $2.50 | 사내 GCP | 후보 (선별 기본값) |
-| Claude Fable 5.1 (Vertex AI) | 가장 높은 성능 | 상용 | $10.00 / $50.00 | 사내 GCP | 후보 |
-| Gemini (Vertex AI), vLLM + Qwen3-32B, 사내 LLM(`samsung_gauss`) | LLM 대안 | | 확인 안 함 | | `config/providers.yaml` 주석의 대안. 구현·조사 안 함 |
+| 오픈소스 모델 서버 (`open_model_server`: vLLM·Ollama·SGLang의 OpenAI 형식 API, httpx2로 호출) | LLM 주 모델·선별 | 연결 코드는 프로젝트 코드와 httpx2(BSD-3-Clause), 모델은 모델마다 다름([llm.md](llm.md)) | 무료 (사내 GPU 비용) | 설정한 사내 서버 | 구현, `providers.yaml` 기본값 (2026-10-28, 예시 `skt/A.X-3.1`). 실제 사내 서버 연결 전 |
+| Claude Opus 5.5 (Vertex AI) | LLM 주 모델: 채점·역량 사전·꼬리질문 | 상용 | $4.00 / $20.00 | 사내 GCP | 쓰지 않음 (2026-10-28 사용자: GCP·OpenAI 서비스 안 씀) |
+| Claude Sonnet 5.5 (Vertex AI) | 속도·성능 균형 | 상용 | $2.00 / $10.00 | 사내 GCP | 쓰지 않음 (2026-10-28 사용자: GCP·OpenAI 서비스 안 씀) |
+| Claude Haiku 5.5 (Vertex AI) | 서류 선별 (대량) | 상용 | 입력 10만 토큰까지 $0.10 / $0.50, 넘으면 $0.50 / $2.50 | 사내 GCP | 쓰지 않음 (2026-10-28 사용자: GCP·OpenAI 서비스 안 씀) |
+| Claude Fable 5.1 (Vertex AI) | 가장 높은 성능 | 상용 | $10.00 / $50.00 | 사내 GCP | 쓰지 않음 (2026-10-28 사용자: GCP·OpenAI 서비스 안 씀) |
+| Gemini (Vertex AI), 사내 LLM(`samsung_gauss`) | LLM 대안 | | 확인 안 함 | | 조사 안 함. 사내 LLM이 OpenAI 형식 API를 주면 `open_model_server`로 붙는다 |
 | Fake LLM | 흐름·화면 확인 | 프로젝트 코드 | 무료 | 로컬 | 사용 중 (`providers.fake.yaml`) |
 | BGE-M3 (BAAI/bge-m3, 공식 ONNX) | 임베딩: 밀집 1024차원 + 희소 | MIT | 무료 | 로컬 | 사용 중 (2026-10-27 결정) |
 | ONNX Runtime 1.31, tokenizers 0.23 | BGE-M3 실행 | MIT, Apache-2.0 | 무료 | 로컬 | 사용 중 |
@@ -197,4 +198,4 @@ STT 서비스별 비교는 [stt.md](stt.md), 화자분리 모델은 [diarization
 - Document AI의 학습 사용 정책, 가격 단위("count"가 쪽인지)
 - CLOVA OCR의 실제 리전 목록, 접근 기록 보관 기간
 - PyAV 휠에 든 FFmpeg(x264·x265)의 실제 라이선스 의무 (법무)
-- Gemini·Qwen3·사내 LLM 대안의 가격·조건 (조사 안 함)
+- Gemini·사내 LLM 대안의 가격·조건 (조사 안 함). 오픈 웨이트 모델의 확인 필요 항목은 [llm.md](llm.md) 끝

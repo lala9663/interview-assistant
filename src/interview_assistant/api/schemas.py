@@ -636,7 +636,7 @@ class ScheduleSuggestion(BaseModel):
 
 # --- 4. admin: AI model settings (관리자 > 모델 설정) ----------------------------------------
 
-DataLocationValue = Literal["local", "gcp", "external"]
+DataLocationValue = Literal["local", "server", "gcp", "external"]
 ModelChangeKindValue = Literal["initial", "apply", "rollback"]
 DownloadStatus = Literal["missing", "downloading", "done", "failed", "cancelled"]
 

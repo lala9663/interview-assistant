@@ -16,6 +16,7 @@ from interview_assistant.config import ProviderSpec
 _IMPLS: dict[str, dict[str, str]] = {
     "llm": {
         "fake": "interview_assistant.providers.fake:FakeLLM",
+        "open_model_server": "interview_assistant.providers.llm.open_model_server:OpenModelServerLLM",
         "anthropic_vertex": "interview_assistant.providers.llm.anthropic_vertex:AnthropicVertexLLM",
     },
     "stt": {

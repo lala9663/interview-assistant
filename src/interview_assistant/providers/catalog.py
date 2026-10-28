@@ -4,7 +4,7 @@ data goes, which roles it can serve, its models and options, and what this machi
 Requirement checks never touch the network or read secrets: they look for installed packages,
 whether an environment variable or a credentials file exists (never its value), and whether model
 weights are on disk. Credentials are never entered on the screen; they come from the server's
-environment or Secret Manager.
+environment or Secret Manager, and an option may only name the environment variable.
 """
 
 from __future__ import annotations
@@ -12,7 +12,7 @@ from __future__ import annotations
 import enum
 import importlib.util
 import os
-from collections.abc import Mapping
+from collections.abc import Callable, Mapping
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Literal
@@ -31,8 +31,14 @@ from interview_assistant.providers.weights import (
 
 class DataLocation(str, enum.Enum):
     local = "local"  # 이 PC(서버) 안
-    gcp = "gcp"  # 사내 GCP 프로젝트
+    server = "server"  # 관리자가 주소를 적은 사내 서버 (오픈소스 모델 서버)
+    gcp = "gcp"  # 외부 클라우드 (Google Cloud): 회사 밖, 쓰지 않는 대안
     external = "external"  # 회사 밖 API
+
+    @property
+    def leaves_company(self) -> bool:
+        """Sending data here needs the admin's confirmation (and a reason to apply)."""
+        return self in (DataLocation.gcp, DataLocation.external)
 
 
 @dataclass(frozen=True)
@@ -84,6 +90,7 @@ class OptionField:
     choices: tuple[Choice, ...] = ()
     roles: tuple[str, ...] = ()  # shown for these roles only (empty: every role)
     fixed: bool = False  # shown, not editable
+    optional: bool = False  # a string that may be left empty
 
     def applies_to(self, role: str) -> bool:
         return not self.roles or role in self.roles
@@ -116,6 +123,10 @@ class ImplInfo:
     role_defaults: Mapping[str, Mapping[str, Any]] = field(default_factory=dict)
     role_notes: Mapping[str, str] = field(default_factory=dict)
     programs: tuple[Program, ...] = ()  # system programs that must be installed (Tesseract ...)
+    # Checks the options together after each field's own check (raises SpecError).
+    check: Callable[[dict[str, Any]], dict[str, Any]] | None = None
+    # Environment variables the options name (an API key's variable): they must exist.
+    option_env: Callable[[Mapping[str, Any]], list[str]] | None = None
 
     def field(self, key: str) -> OptionField | None:
         return next((f for f in self.options if f.key == key), None)
@@ -146,7 +157,10 @@ _BATCH_DIARIZATION = OptionField(
     roles=("stt.batch",),
 )
 _GCP_PACKAGES = (("anthropic", "uv sync --extra gcp"),)
-_GCP_NOTE = "사내 GCP 프로젝트 안에서 처리합니다. 회사 밖 API로는 보내지 않습니다."
+_GCP_NOTE = (
+    "회사 밖 Google Cloud로 데이터를 보냅니다. GCP는 쓰지 않기로 해서(2026-10-28) 비교용으로만 남긴 "
+    "대안입니다."
+)
 _LIVE_AUDIO_NOTE = (
     "실시간 면접의 음성 입력(마이크·WebRTC)은 다음 단계에서 붙습니다. 그 전까지 진행 중 면접 "
     "화면은 가상 지원자 대본(텍스트)을 보내므로, fake가 아닌 STT로 바꾸면 새로 시작하는 면접의 "
@@ -358,10 +372,10 @@ def _document_impls() -> tuple[ImplInfo, ...]:
         ImplInfo(
             "ocr",
             "google_document_ai",
-            "Google Document AI (사내 GCP)",
-            "사내 GCP 프로젝트의 Document AI OCR. 구현 전이며 비교 대상입니다. 처리 위치는 프로세서의 리전(us·eu)입니다.",
+            "Google Document AI (외부 클라우드)",
+            "Google Cloud의 Document AI OCR. 구현 전이며 비교 대상입니다. 처리 위치는 프로세서의 리전(us·eu)입니다.",
             DataLocation.gcp,
-            "서류 그림을 사내 GCP 프로젝트의 Document AI로 보냅니다. 회사 밖 API로는 보내지 않습니다.",
+            "서류 그림(이름·연락처가 그대로 보이는 원본 쪽)을 회사 밖 Google Cloud의 Document AI로 보냅니다.",
             "상용 (GCP 과금)",
             ("document.ocr",),
             options=(
@@ -444,6 +458,119 @@ def _document_impls() -> tuple[ImplInfo, ...]:
     )
 
 
+_SERVER_OPTIONS = (
+    OptionField(
+        "base_url",
+        "서버 주소",
+        "string",
+        "",
+        "모델 서버의 OpenAI 형식 API 주소를 /v1까지 적습니다. 예: vLLM http://10.0.0.5:8000/v1, "
+        "Ollama http://10.0.0.5:11434/v1. openai.com 주소는 받지 않습니다.",
+        max_length=300,
+    ),
+    OptionField(
+        "model",
+        "모델 이름",
+        "string",
+        "",
+        "서버에 올린 이름 그대로 적습니다. vLLM은 --served-model-name(없으면 Hugging Face 경로, 예: "
+        "Qwen/Qwen3-8B), Ollama는 qwen3:8b처럼 태그까지.",
+        max_length=200,
+    ),
+    OptionField(
+        "api_key_env",
+        "API 키 환경변수 이름",
+        "string",
+        "",
+        "서버가 키를 요구하면 키가 든 환경변수의 이름을 적습니다(예: IA_LLM_API_KEY). 키 값은 여기에 "
+        "적지 않고 서버 환경에만 둡니다. 비우면 키 없이 부릅니다.",
+        optional=True,
+    ),
+    OptionField(
+        "timeout",
+        "타임아웃 (초)",
+        "number",
+        120,
+        "요청 하나를 기다리는 최대 시간. 스트리밍은 토큰 사이 간격에 적용합니다. GPU 없는 서버라면 늘립니다.",
+        minimum=5,
+        maximum=600,
+    ),
+    OptionField(
+        "max_tokens",
+        "최대 출력 토큰",
+        "integer",
+        4096,
+        "요청마다 앱이 정한 값과 이 값 중 작은 쪽을 씁니다. 서버의 컨텍스트 길이(vLLM --max-model-len, "
+        "Ollama num_ctx)에서 입력 길이를 뺀 것보다 작아야 합니다.",
+        minimum=256,
+        maximum=32768,
+    ),
+    OptionField(
+        "temperature",
+        "온도",
+        "number",
+        0.3,
+        "낮을수록 같은 입력에 같은 답을 냅니다. AI 채점은 한 답변을 세 번 채점해 중앙값을 쓰므로 0보다 "
+        "조금 큰 값을 권합니다.",
+        minimum=0,
+        maximum=2,
+    ),
+    OptionField(
+        "structured_output",
+        "구조화 출력 방식",
+        "select",
+        "json_schema",
+        "채점·선별처럼 JSON으로 받는 작업에서 서버에 형식을 어떻게 요구할지. 스키마는 어느 방식이든 "
+        "프롬프트에도 넣습니다.",
+        choices=(
+            Choice(
+                "json_schema",
+                "JSON 스키마 강제",
+                "vLLM·SGLang·Ollama가 스키마에 맞는 JSON만 만듭니다.",
+                recommended_for=("llm.primary", "llm.screening"),
+            ),
+            Choice("json_object", "JSON만 강제", "스키마 강제를 못 하는 서버·게이트웨이용."),
+            Choice("prompt", "프롬프트로만 요청", "서버가 response_format을 거부할 때."),
+        ),
+    ),
+    OptionField(
+        "headers",
+        "추가 헤더 (사내 게이트웨이용)",
+        "text",
+        "",
+        "한 줄에 '이름: 값' 하나. 키·토큰은 값 대신 ${환경변수}로 적습니다 "
+        "(예: X-Gateway-Key: ${IA_GATEWAY_KEY}). 값은 서버 환경에서 읽고 저장하지 않습니다.",
+        max_length=1000,
+    ),
+    OptionField(
+        "extra_body",
+        "추가 요청 필드 (JSON)",
+        "text",
+        "",
+        "서버별 옵션을 요청에 더합니다. 예: vLLM에서 Qwen3의 추론 끄기 "
+        '{"chat_template_kwargs": {"enable_thinking": false}}. model·messages·tools 같은 필드는 '
+        "넣을 수 없습니다.",
+        max_length=2000,
+    ),
+)
+
+
+def _check_server_options(values: dict[str, Any]) -> dict[str, Any]:
+    from interview_assistant.providers.llm.open_model_server import OptionError, check_options
+
+    try:
+        return check_options(values)
+    except OptionError as exc:
+        raise SpecError(exc.field, str(exc)) from exc
+
+
+def _server_env(options: Mapping[str, Any]) -> list[str]:
+    from interview_assistant.providers.llm.open_model_server import header_env_names
+
+    names = [str(options.get("api_key_env") or "").strip()]
+    return [n for n in (*names, *header_env_names(str(options.get("headers") or ""))) if n]
+
+
 CATALOG: tuple[ImplInfo, ...] = (
     ImplInfo(
         "llm",
@@ -468,9 +595,26 @@ CATALOG: tuple[ImplInfo, ...] = (
     ),
     ImplInfo(
         "llm",
+        "open_model_server",
+        "오픈소스 모델 서버 (vLLM·Ollama 등)",
+        "사내에 설치한 오픈 웨이트 모델 서버(vLLM, Ollama, SGLang 등)를 부릅니다. 이런 서버가 주는 "
+        "OpenAI 형식 API(/v1/chat/completions)를 쓰지만 OpenAI 서비스로는 보내지 않습니다(openai.com "
+        "주소는 거부). 도구 호출은 쓰지 않습니다.",
+        DataLocation.server,
+        "비식별 텍스트만 관리자가 적은 사내 서버 주소로 보냅니다. 회사 밖 주소를 적으면 안 됩니다. "
+        "프롬프트와 응답은 저장하지 않고, 감사 로그에는 호출 기록만 남습니다.",
+        "모델마다 다름 (docs/reference/llm.md)",
+        ("llm.primary", "llm.screening"),
+        options=_SERVER_OPTIONS,
+        packages=(("httpx2", "uv sync"),),
+        check=_check_server_options,
+        option_env=_server_env,
+    ),
+    ImplInfo(
+        "llm",
         "anthropic_vertex",
         "Claude (Vertex AI)",
-        "사내 GCP 프로젝트의 Vertex AI로 Claude를 부릅니다. 3단계에서 구현합니다.",
+        "Google Cloud의 Vertex AI로 Claude를 부릅니다. GCP를 쓰지 않기로 해서 구현하지 않은 대안입니다.",
         DataLocation.gcp,
         _GCP_NOTE,
         "상용 (GCP 과금)",
@@ -578,7 +722,7 @@ CATALOG: tuple[ImplInfo, ...] = (
         "stt",
         "google_stt_v2",
         "Google Speech-to-Text v2",
-        "사내 GCP 프로젝트의 Speech-to-Text v2 (Chirp). 10·11단계에서 구현합니다.",
+        "Google Cloud의 Speech-to-Text v2 (Chirp). 구현 전이며 비교 대상입니다.",
         DataLocation.gcp,
         _GCP_NOTE,
         "상용 (GCP 과금)",
@@ -669,7 +813,7 @@ CATALOG: tuple[ImplInfo, ...] = (
         "embedding",
         "vertex_embedding",
         "Vertex AI 임베딩",
-        "사내 GCP 프로젝트의 Vertex AI 텍스트 임베딩. 후순위로 구현합니다.",
+        "Google Cloud의 Vertex AI 텍스트 임베딩. 구현 전이며 비교 대상입니다.",
         DataLocation.gcp,
         _GCP_NOTE,
         "상용 (GCP 과금)",
@@ -704,7 +848,7 @@ CATALOG: tuple[ImplInfo, ...] = (
         "diarization",
         "google_stt_v2",
         "Google Speech-to-Text v2 화자분리",
-        "사내 GCP 프로젝트의 Speech-to-Text v2 화자 구분. 10단계에서 구현합니다.",
+        "Google Cloud의 Speech-to-Text v2 화자 구분. 구현 전이며 비교 대상입니다.",
         DataLocation.gcp,
         _GCP_NOTE,
         "상용 (GCP 과금)",
@@ -800,7 +944,8 @@ def requirements(
                 None if ok else f"서버에서 `{install}` 실행 후 서버를 다시 띄웁니다.",
             )
         )
-    for name in info.env:
+    named = info.option_env(options) if info.option_env else []
+    for name in dict.fromkeys([*info.env, *named]):
         ok = bool(os.environ.get(name))
         found.append(
             Requirement(
@@ -887,7 +1032,7 @@ def validate_options(info: ImplInfo, role: str, options: Mapping[str, Any]) -> d
                 raise SpecError(key, f"{f.label}은(는) 바꿀 수 없습니다.")
             continue
         values[key] = _check(f, value)
-    return values
+    return info.check(values) if info.check else values
 
 
 def _check(f: OptionField, value: Any) -> Any:
@@ -916,6 +1061,6 @@ def _check(f: OptionField, value: Any) -> Any:
     value = value.strip()
     if len(value) > f.max_length:
         raise SpecError(f.key, f"{f.label}: {f.max_length}자 이하로 적어 주세요.")
-    if f.type == "string" and not value:
+    if f.type == "string" and not value and not f.optional:
         raise SpecError(f.key, f"{f.label}: 비워 둘 수 없습니다.")
     return value

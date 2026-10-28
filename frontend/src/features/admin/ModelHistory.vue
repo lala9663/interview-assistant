@@ -5,6 +5,7 @@ import { toast } from 'vue-sonner'
 
 import { useRevertModel } from '@/api/queries'
 import type { ModelChange, ModelImpl } from '@/api/types'
+import { leavesCompany } from '@/api/types'
 import EmptyState from '@/components/common/EmptyState.vue'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
@@ -28,7 +29,7 @@ const confirmExternal = ref(false)
 const targetExternal = computed(() => {
   const t = target.value
   if (!t?.previous) return false
-  return props.catalog.find((i) => i.kind === kindOf(t.role) && i.impl === t.previous!.impl)?.data_location === 'external'
+  return leavesCompany(props.catalog.find((i) => i.kind === kindOf(t.role) && i.impl === t.previous!.impl)?.data_location)
 })
 
 function open(change: ModelChange) {

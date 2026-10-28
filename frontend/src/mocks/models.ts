@@ -1,8 +1,8 @@
 /**
  * Mock 관리자 > 모델 설정: the catalog (mirrors `providers/catalog.py`), the active spec per role, the change
- * history, simulated weight downloads and connection tests. The mock world runs the PoC config
- * (`config/providers.yaml`: Claude on Vertex AI, Chirp) as if GCP were set up, so the screen shows
- * every data location; `anthropic_api` exists only here, to show the external-transfer warning.
+ * history, simulated weight downloads and connection tests. The mock world runs `config/providers.yaml`
+ * (the LLM on an in-house vLLM server, Chirp STT on Google Cloud) as if both were reachable, so the screen
+ * shows every data location; `anthropic_api` exists only here, to show the external-transfer warning.
  */
 import type {
   DataLocation,
@@ -61,7 +61,11 @@ const choice = (value: string, label: string, note = '', extra: Partial<ModelOpt
 const ko = field('language', '언어', 'string', 'ko-KR', { help: '한국어로 고정합니다.', fixed: true })
 const speed = field('speed', '지연 흉내 속도', 'number', 1, { help: '1이면 데모 속도, 0이면 지연 없이 바로 답합니다.', minimum: 0, maximum: 5 })
 const batchDiarization = field('diarization', '화자 구분', 'boolean', false, { help: '사후 전사에서 화자 라벨을 붙입니다.', roles: ['stt.batch'] })
-const GCP_NOTE = '사내 GCP 프로젝트 안에서 처리합니다. 회사 밖 API로는 보내지 않습니다.'
+const GCP_NOTE = '회사 밖 Google Cloud로 데이터를 보냅니다. GCP는 쓰지 않기로 해서(2026-10-28) 비교용으로만 남긴 대안입니다.'
+/** The in-house model server of the mock world (config/providers.yaml). */
+export const SERVER_URL = 'http://vllm.internal:8000/v1'
+export const SERVER_MODEL = 'skt/A.X-3.1'
+const OPENAI_HOST = /(^|\.)openai\.com$|\.openai\.azure\.com$/i
 const LIVE_NOTE =
   '실시간 면접의 음성 입력(마이크·WebRTC)은 다음 단계에서 붙습니다. 그 전까지 진행 중 면접 화면은 가상 지원자 대본(텍스트)을 보내므로, fake가 아닌 STT로 바꾸면 새로 시작하는 면접의 전사가 꺼지고 수기 답변 입력으로 바뀝니다. 지금 진행 중인 면접은 시작할 때의 STT를 계속 씁니다.'
 
@@ -123,7 +127,53 @@ export function mockCatalog(downloaded: ReadonlySet<string>): ModelImpl[] {
     impl('llm', 'fake', 'Fake LLM', '자격증명 없이 도는 규칙 기반 응답. 화면과 흐름 확인용이며 내용의 품질은 없습니다.', 'local', '외부 호출이 없습니다.', '프로젝트 코드', ['llm.primary', 'llm.screening'], [field('model', '모델 이름 (표시용)', 'string', 'fake-llm', { help: '결과와 감사 로그에 남는 이름입니다.' }), speed], {
       role_defaults: { 'llm.screening': { model: 'fake-llm-screening' } },
     }),
-    impl('llm', 'anthropic_vertex', 'Claude (Vertex AI)', '사내 GCP 프로젝트의 Vertex AI로 Claude를 부릅니다.', 'gcp', GCP_NOTE, '상용 (GCP 과금)', ['llm.primary', 'llm.screening'], [
+    impl(
+      'llm',
+      'open_model_server',
+      '오픈소스 모델 서버 (vLLM·Ollama 등)',
+      '사내에 설치한 오픈 웨이트 모델 서버(vLLM, Ollama, SGLang 등)를 부릅니다. 이런 서버가 주는 OpenAI 형식 API(/v1/chat/completions)를 쓰지만 OpenAI 서비스로는 보내지 않습니다(openai.com 주소는 거부). 도구 호출은 쓰지 않습니다.',
+      'server',
+      '비식별 텍스트만 관리자가 적은 사내 서버 주소로 보냅니다. 회사 밖 주소를 적으면 안 됩니다. 프롬프트와 응답은 저장하지 않고, 감사 로그에는 호출 기록만 남습니다.',
+      '모델마다 다름 (docs/reference/llm.md)',
+      ['llm.primary', 'llm.screening'],
+      [
+        field('base_url', '서버 주소', 'string', '', {
+          help: '모델 서버의 OpenAI 형식 API 주소를 /v1까지 적습니다. 예: vLLM http://10.0.0.5:8000/v1, Ollama http://10.0.0.5:11434/v1. openai.com 주소는 받지 않습니다.',
+          max_length: 300,
+        }),
+        field('model', '모델 이름', 'string', '', {
+          help: '서버에 올린 이름 그대로 적습니다. vLLM은 --served-model-name(없으면 Hugging Face 경로, 예: Qwen/Qwen3-8B), Ollama는 qwen3:8b처럼 태그까지.',
+          max_length: 200,
+        }),
+        field('api_key_env', 'API 키 환경변수 이름', 'string', '', {
+          help: '서버가 키를 요구하면 키가 든 환경변수의 이름을 적습니다(예: IA_LLM_API_KEY). 키 값은 여기에 적지 않고 서버 환경에만 둡니다. 비우면 키 없이 부릅니다.',
+        }),
+        field('timeout', '타임아웃 (초)', 'number', 120, { help: '요청 하나를 기다리는 최대 시간. 스트리밍은 토큰 사이 간격에 적용합니다. GPU 없는 서버라면 늘립니다.', minimum: 5, maximum: 600 }),
+        field('max_tokens', '최대 출력 토큰', 'integer', 4096, {
+          help: '요청마다 앱이 정한 값과 이 값 중 작은 쪽을 씁니다. 서버의 컨텍스트 길이(vLLM --max-model-len, Ollama num_ctx)에서 입력 길이를 뺀 것보다 작아야 합니다.',
+          minimum: 256,
+          maximum: 32768,
+        }),
+        field('temperature', '온도', 'number', 0.3, { help: '낮을수록 같은 입력에 같은 답을 냅니다. AI 채점은 한 답변을 세 번 채점해 중앙값을 쓰므로 0보다 조금 큰 값을 권합니다.', minimum: 0, maximum: 2 }),
+        field('structured_output', '구조화 출력 방식', 'select', 'json_schema', {
+          help: '채점·선별처럼 JSON으로 받는 작업에서 서버에 형식을 어떻게 요구할지. 스키마는 어느 방식이든 프롬프트에도 넣습니다.',
+          choices: [
+            choice('json_schema', 'JSON 스키마 강제', 'vLLM·SGLang·Ollama가 스키마에 맞는 JSON만 만듭니다.', { recommended_for: ['llm.primary', 'llm.screening'] }),
+            choice('json_object', 'JSON만 강제', '스키마 강제를 못 하는 서버·게이트웨이용.'),
+            choice('prompt', '프롬프트로만 요청', '서버가 response_format을 거부할 때.'),
+          ],
+        }),
+        field('headers', '추가 헤더 (사내 게이트웨이용)', 'text', '', {
+          help: "한 줄에 '이름: 값' 하나. 키·토큰은 값 대신 ${환경변수}로 적습니다 (예: X-Gateway-Key: ${IA_GATEWAY_KEY}). 값은 서버 환경에서 읽고 저장하지 않습니다.",
+          max_length: 1000,
+        }),
+        field('extra_body', '추가 요청 필드 (JSON)', 'text', '', {
+          help: '서버별 옵션을 요청에 더합니다. 예: vLLM에서 Qwen3의 추론 끄기 {"chat_template_kwargs": {"enable_thinking": false}}. model·messages·tools 같은 필드는 넣을 수 없습니다.',
+          max_length: 2000,
+        }),
+      ],
+    ),
+    impl('llm', 'anthropic_vertex', 'Claude (Vertex AI)', 'Google Cloud의 Vertex AI로 Claude를 부릅니다. GCP를 쓰지 않기로 해서 구현하지 않은 대안입니다.', 'gcp', GCP_NOTE, '상용 (GCP 과금)', ['llm.primary', 'llm.screening'], [
       field('model', '모델', 'select', 'claude-opus-5-5', {
         choices: [
           choice('claude-opus-5-5', 'Claude Opus 5.5', '주 모델 권장', { recommended_for: ['llm.primary'] }),
@@ -154,7 +204,7 @@ export function mockCatalog(downloaded: ReadonlySet<string>): ModelImpl[] {
       role_defaults: { 'stt.streaming': { model: 'medium', beam_size: 1 }, 'stt.batch': { model: 'large-v3', beam_size: 5 } },
       role_notes: { 'stt.streaming': LIVE_NOTE, 'stt.batch': '화자 구분은 하지 않습니다 (화자분리 역할이 따로 맡습니다).' },
     }),
-    impl('stt', 'google_stt_v2', 'Google Speech-to-Text v2', '사내 GCP 프로젝트의 Speech-to-Text v2 (Chirp).', 'gcp', GCP_NOTE, '상용 (GCP 과금)', ['stt.streaming', 'stt.batch'], [
+    impl('stt', 'google_stt_v2', 'Google Speech-to-Text v2', 'Google Cloud의 Speech-to-Text v2 (Chirp). 구현 전이며 비교 대상입니다.', 'gcp', GCP_NOTE, '상용 (GCP 과금)', ['stt.streaming', 'stt.batch'], [
       field('model', '모델', 'select', 'chirp_3', { choices: [choice('chirp_3', 'Chirp 3'), choice('chirp_2', 'Chirp 2'), choice('long', 'long')] }),
       ko,
       batchDiarization,
@@ -183,12 +233,12 @@ export function mockCatalog(downloaded: ReadonlySet<string>): ModelImpl[] {
         ...retrieval(0.3, 0.85, 0.55),
       ],
     ),
-    impl('embedding', 'vertex_embedding', 'Vertex AI 임베딩', '사내 GCP 프로젝트의 Vertex AI 텍스트 임베딩.', 'gcp', GCP_NOTE, '상용 (GCP 과금)', ['embedding'], [
+    impl('embedding', 'vertex_embedding', 'Vertex AI 임베딩', 'Google Cloud의 Vertex AI 텍스트 임베딩. 구현 전이며 비교 대상입니다.', 'gcp', GCP_NOTE, '상용 (GCP 과금)', ['embedding'], [
       field('model', '모델', 'select', 'gemini-embedding-001', { choices: [choice('gemini-embedding-001', 'gemini-embedding-001'), choice('text-multilingual-embedding-002', 'text-multilingual-embedding-002')] }),
       field('dimensions', '차원', 'integer', 768, { minimum: 128, maximum: 3072 }),
     ]),
     impl('diarization', 'fake', 'Fake 화자분리', '고정된 화자 구간 두 개를 돌려줍니다.', 'local', '외부 호출이 없습니다.', '프로젝트 코드', ['diarization']),
-    impl('diarization', 'google_stt_v2', 'Google Speech-to-Text v2 화자분리', '사내 GCP 프로젝트의 Speech-to-Text v2 화자 구분.', 'gcp', GCP_NOTE, '상용 (GCP 과금)', ['diarization']),
+    impl('diarization', 'google_stt_v2', 'Google Speech-to-Text v2 화자분리', 'Google Cloud의 Speech-to-Text v2 화자 구분. 구현 전이며 비교 대상입니다.', 'gcp', GCP_NOTE, '상용 (GCP 과금)', ['diarization']),
     // 서류 읽기
     impl('reading', 'standard', '읽기 방식', '페이지(슬라이드)마다 텍스트 층을 쓸지 OCR로 읽을지 정합니다. 깨진 텍스트 층은 보내지 않습니다.', 'local', '설정입니다. 데이터를 보내지 않습니다.', '프로젝트 코드', ['document.reading'], [
       field('mode', '읽기 방식', 'select', 'auto', {
@@ -222,7 +272,7 @@ export function mockCatalog(downloaded: ReadonlySet<string>): ModelImpl[] {
       }),
       field('psm', '페이지 분할 방식 (psm)', 'integer', 3, { help: '3 자동, 4 한 단, 6 한 덩어리 글.', minimum: 3, maximum: 13 }),
     ]),
-    impl('ocr', 'google_document_ai', 'Google Document AI (사내 GCP)', '사내 GCP 프로젝트의 Document AI OCR. 구현 전이며 비교 대상입니다. 처리 위치는 프로세서의 리전(us·eu)입니다.', 'gcp', '서류 그림을 사내 GCP 프로젝트의 Document AI로 보냅니다. 회사 밖 API로는 보내지 않습니다.', '상용 (GCP 과금)', ['document.ocr'], [
+    impl('ocr', 'google_document_ai', 'Google Document AI (외부 클라우드)', 'Google Cloud의 Document AI OCR. 구현 전이며 비교 대상입니다. 처리 위치는 프로세서의 리전(us·eu)입니다.', 'gcp', '서류 그림(이름·연락처가 그대로 보이는 원본 쪽)을 회사 밖 Google Cloud의 Document AI로 보냅니다.', '상용 (GCP 과금)', ['document.ocr'], [
       field('processor_id', '프로세서 ID', 'string', 'ocr-processor', { help: 'Document AI OCR 프로세서.' }),
       field('location', '위치', 'string', 'us', { help: '프로세서 리전 (us 또는 eu).' }),
     ]),
@@ -242,7 +292,7 @@ const missing = (key: string, label: string, detail: string, fix: string): Model
 
 const ok = (key: string, label: string, detail: string): ModelRequirement => ({ key, label, ok: true, detail, fix: null })
 
-/** Mock machine: GCP credentials present (mock world), faster-whisper installed, weights as downloaded. */
+/** Mock machine: GCP credentials present (mock world), faster-whisper installed, weights as downloaded, every environment variable set. */
 export function requirementsFor(i: ModelImpl, options: Record<string, ModelOptionValue>, downloaded: ReadonlySet<string>): ModelRequirement[] {
   const notYet = ['google_document_ai', 'clova_ocr', 'hwplib']
   if (notYet.includes(i.impl)) {
@@ -281,6 +331,11 @@ export function requirementsFor(i: ModelImpl, options: Record<string, ModelOptio
     reqs.push(ok('env:GOOGLE_CLOUD_PROJECT', '환경변수 GOOGLE_CLOUD_PROJECT', '설정되어 있습니다.'), ok('gcp_credentials', 'GCP 자격증명', '서비스 계정 키 파일이 있습니다.'))
   }
   if (i.impl === 'anthropic_api') reqs.push(ok('env:ANTHROPIC_API_KEY', '환경변수 ANTHROPIC_API_KEY', '설정되어 있습니다.'))
+  if (i.impl === 'open_model_server') {
+    reqs.push(ok('package:httpx2', '패키지 httpx2', '설치되어 있습니다.'))
+    const env = String(options.api_key_env ?? '').trim()
+    if (env) reqs.push(ok(`env:${env}`, `환경변수 ${env}`, '설정되어 있습니다.'))
+  }
   if (i.impl === 'faster_whisper') {
     reqs.push(ok('package:faster_whisper', '패키지 faster_whisper', '설치되어 있습니다.'))
     const model = String(options.model ?? '')
@@ -328,7 +383,20 @@ export function normalize(i: ModelImpl, role: string, options: Record<string, Mo
       throw new SpecError(f.key, `${f.label}: 범위를 벗어났습니다.`)
     values[f.key] = typeof v === 'string' ? v.trim() : v
   }
+  if (i.impl === 'open_model_server') checkServer(values)
   return values
+}
+
+/** Mirrors open_model_server.check_options for the fields the screen most often gets wrong. */
+function checkServer(values: Record<string, ModelOptionValue>) {
+  const url = String(values.base_url ?? '').replace(/\/+$/, '')
+  if (!url) throw new SpecError('base_url', '서버 주소를 적어 주세요 (예: http://10.0.0.5:8000/v1).')
+  const parsed = URL.canParse(url) ? new URL(url) : null
+  if (!parsed || (parsed.protocol !== 'http:' && parsed.protocol !== 'https:'))
+    throw new SpecError('base_url', 'http:// 또는 https://로 시작하는 주소를 적어 주세요 (예: http://10.0.0.5:8000/v1).')
+  if (OPENAI_HOST.test(parsed.hostname.replace(/\.$/, ''))) throw new SpecError('base_url', 'OpenAI 서비스 주소는 쓸 수 없습니다. 사내에 설치한 모델 서버의 주소를 적어 주세요.')
+  values.base_url = url
+  if (!String(values.model ?? '').trim()) throw new SpecError('model', '서버에 올린 모델 이름을 적어 주세요.')
 }
 
 export interface DownloadJob {
@@ -345,8 +413,8 @@ export interface ModelState {
 }
 
 const INITIAL: Record<ModelRole, ModelSpec> = {
-  'llm.primary': { impl: 'anthropic_vertex', options: { model: 'claude-opus-5-5', region: 'global' } },
-  'llm.screening': { impl: 'anthropic_vertex', options: { model: 'claude-haiku-5-5', region: 'global' } },
+  'llm.primary': { impl: 'open_model_server', options: { base_url: SERVER_URL, model: SERVER_MODEL } },
+  'llm.screening': { impl: 'open_model_server', options: { base_url: SERVER_URL, model: SERVER_MODEL } },
   'stt.streaming': { impl: 'google_stt_v2', options: { model: 'chirp_3', language: 'ko-KR' } },
   'stt.batch': { impl: 'google_stt_v2', options: { model: 'chirp_3', language: 'ko-KR', diarization: true } },
   embedding: { impl: 'bge_m3', options: { model: 'bge-m3', max_length: 512, cpu_threads: 0, sparse_weight: 0.3, duplicate_threshold: 0.85, min_score: 0.55 } },
@@ -494,7 +562,18 @@ export function testResult(role: string, spec: ModelSpec, audio: File | null, do
   if (role.startsWith('document.')) return readingTest(role, spec, document, model)
   const base = { ok: true, model, error: null, audio: null as ModelTestResult['audio'] }
   if (role.startsWith('llm.')) {
-    return { ...base, latency_ms: 840, summary: '구조화 출력(JSON)으로 지시대로 답했습니다.', output: { structured: { echo: '모델 연결 확인 문장입니다', sum: 42 }, input_tokens: 61, output_tokens: 18 } }
+    const output: Record<string, unknown> = {
+      structured: { echo: '모델 연결 확인 문장입니다', sum: 42 },
+      input_tokens: 61,
+      output_tokens: 18,
+      server_model: model,
+      generate_ms: 840,
+      first_token_ms: 310,
+      stream_ms: 620,
+      stream_text: '모델 연결 확인 문장입니다',
+    }
+    if (spec.impl === 'open_model_server') output.server_models = [model]
+    return { ...base, latency_ms: 1460, summary: '구조화 출력(JSON)과 스트리밍으로 지시대로 답했습니다. 응답 0.8초, 스트리밍 첫 토큰 0.3초.', output }
   }
   if (role === 'embedding') {
     const dims = spec.impl === 'bge_m3' ? 1024 : Number(spec.options.dimensions ?? 768)
