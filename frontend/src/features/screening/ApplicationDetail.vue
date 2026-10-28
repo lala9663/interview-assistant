@@ -1,10 +1,10 @@
 <script setup lang="ts">
-import { ArrowRightIcon, BotIcon, BriefcaseIcon, CalendarIcon, FolderGit2Icon, GavelIcon, GraduationCapIcon } from '@lucide/vue'
-import { computed } from 'vue'
+import { ArrowRightIcon, BotIcon, BriefcaseIcon, CalendarIcon, CalendarPlusIcon, FolderGit2Icon, GavelIcon, GraduationCapIcon } from '@lucide/vue'
+import { computed, ref } from 'vue'
 import { RouterLink } from 'vue-router'
 import { toast } from 'vue-sonner'
 
-import { useApplication, useUpdateScreening } from '@/api/queries'
+import { useApplication, useSchedulable, useUpdateScreening } from '@/api/queries'
 import { SCREENING_STATUSES, type ScreeningStatus } from '@/api/types'
 import ChannelBadge from '@/components/common/ChannelBadge.vue'
 import DeidText from '@/components/common/DeidText.vue'
@@ -16,11 +16,13 @@ import RoundBadge from '@/components/common/RoundBadge.vue'
 import SessionStatusBadge from '@/components/common/SessionStatusBadge.vue'
 import StepStatusChip from '@/components/common/StepStatusChip.vue'
 import { Badge } from '@/components/ui/badge'
+import { Button } from '@/components/ui/button'
 import { Segmented, SegmentedItem } from '@/components/ui/segmented'
 import { Separator } from '@/components/ui/separator'
 import { SheetDescription, SheetTitle } from '@/components/ui/sheet'
 import { Skeleton } from '@/components/ui/skeleton'
-import { parseRationale, SCREENING_STATUS_LABEL } from '@/lib/labels'
+import ApplicationBookDialog from '@/features/schedule/ApplicationBookDialog.vue'
+import { parseRationale, SCREENING_STATUS_LABEL, SESSION_MODE_LABEL } from '@/lib/labels'
 import { formatDate, formatDateTime } from '@/lib/time'
 import { toastError } from '@/lib/toast'
 
@@ -35,6 +37,12 @@ const update = useUpdateScreening(() => props.postingId)
 const rationale = computed(() => (q.data?.screening ? parseRationale(q.data.screening.rationale) : null))
 const roundOf = (roundId: string) => q.data?.progress.find((s) => s.round?.id === roundId)?.round ?? null
 const finalCandidate = computed(() => q.data?.progress.at(-1)?.status === 'passed')
+// Waiting for a round with no session yet (interviews.next_round). The schedulable row has the
+// round's mode and panel size, and leaves out withdrawn applications.
+const waiting = computed(() => q.data?.stage.kind === 'round' && q.data.stage.status === 'waiting')
+const schedulable = useSchedulable(waiting)
+const next = computed(() => (waiting.value ? (schedulable.data?.find((a) => a.application_id === props.applicationId) ?? null) : null))
+const booking = ref(false)
 
 const change = (status: string) => {
   const d = q.data
@@ -164,10 +172,7 @@ const change = (status: string) => {
 
     <Separator />
     <SheetSection title="면접" :icon="CalendarIcon">
-      <p v-if="q.data.sessions.length === 0" class="text-[13px] text-muted-foreground">
-        잡힌 면접이 없습니다. 서류 통과 처리 후 면접관 스케줄에서 1차 일정을 잡을 수 있습니다.
-      </p>
-      <ul v-else class="space-y-1.5">
+      <ul v-if="q.data.sessions.length > 0" class="space-y-1.5">
         <li v-for="s in q.data.sessions" :key="s.id">
           <RouterLink
             :to="s.status === 'completed' ? `/sessions/${s.id}/evaluation` : `/sessions/${s.id}/live`"
@@ -180,6 +185,18 @@ const change = (status: string) => {
           </RouterLink>
         </li>
       </ul>
+      <div v-if="next" class="flex items-center gap-3 rounded-lg border border-dashed px-3 py-2 text-[13px]" data-testid="next-round">
+        <RoundBadge :round="next.round" />
+        <StepStatusChip status="waiting" />
+        <span class="min-w-0 truncate text-xs text-muted-foreground">권장 면접관 {{ next.recommended_interviewers }}명 · {{ SESSION_MODE_LABEL[next.mode] }}</span>
+        <Button size="xs" class="ml-auto" @click="booking = true">
+          <CalendarPlusIcon aria-hidden="true" />
+          면접 잡기
+        </Button>
+      </div>
+      <p v-else-if="q.data.sessions.length === 0 && !(waiting && schedulable.isPending)" class="text-[13px] text-muted-foreground">
+        잡힌 면접이 없습니다. 서류 통과 처리 후 여기서 1차 일정을 잡을 수 있습니다.
+      </p>
     </SheetSection>
     <template v-if="q.data.decisions.length > 0">
       <Separator />
@@ -198,5 +215,6 @@ const change = (status: string) => {
       </SheetSection>
     </template>
     <PrivacyNote />
+    <ApplicationBookDialog :key="booking ? 'open' : 'closed'" :application="booking ? next : null" @close="booking = false" />
   </div>
 </template>

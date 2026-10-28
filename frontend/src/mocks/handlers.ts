@@ -28,8 +28,8 @@ import type {
   UpdateRoundRequest,
 } from '@/api/types'
 import { BARS_LEVELS, DECISION_STATUSES, SCREENING_STATUSES, SESSION_MODES } from '@/api/types'
-import { availabilityByInterviewer, suggestSlots } from '@/lib/schedule'
-import { isSameKstDay } from '@/lib/time'
+import { availabilityByInterviewer, subtractIntervals, suggestSlots } from '@/lib/schedule'
+import { HOUR, isSameKstDay } from '@/lib/time'
 
 import { adminHandlers } from './admin'
 import { bankHandlers } from './bank'
@@ -944,6 +944,12 @@ export const handlers = [
     const body = (await request.json()) as ScheduleSuggestionRequest
     if (!body.interviewer_ids?.length) return invalid('interviewer_ids', '면접관을 한 명 이상 선택하세요.')
     const by = availabilityByInterviewer(db.availabilities)
+    // Like the server, a booked interview takes an hour (BOOKED_MINUTES) of its panel's free time.
+    for (const s of db.sessions) {
+      if ((s.status !== 'scheduled' && s.status !== 'in_progress') || !s.scheduled_at) continue
+      const start = new Date(s.scheduled_at).getTime()
+      for (const p of db.panelOf(s.id)) by.set(p.interviewer_id, subtractIntervals(by.get(p.interviewer_id) ?? [], [{ start, end: start + HOUR }]))
+    }
     const from = Math.max(new Date(body.from).getTime(), Date.now())
     return HttpResponse.json(
       suggestSlots(by, body.interviewer_ids, body.duration_minutes, {

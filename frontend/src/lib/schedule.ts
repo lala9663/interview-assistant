@@ -19,6 +19,19 @@ export function mergeIntervals(list: readonly Interval[]): Interval[] {
   return out
 }
 
+/** The parts of `free` that no `busy` interval covers (a booked interview takes its panel's time). */
+export function subtractIntervals(free: readonly Interval[], busy: readonly Interval[]): Interval[] {
+  let out = mergeIntervals(free)
+  for (const b of busy) {
+    out = out.flatMap((f) =>
+      b.end <= f.start || f.end <= b.start
+        ? [f]
+        : [...(f.start < b.start ? [{ start: f.start, end: b.start }] : []), ...(b.end < f.end ? [{ start: b.end, end: f.end }] : [])],
+    )
+  }
+  return out
+}
+
 export function availabilityByInterviewer(availabilities: readonly Availability[]): Map<string, Interval[]> {
   const map = new Map<string, Interval[]>()
   for (const a of availabilities) {

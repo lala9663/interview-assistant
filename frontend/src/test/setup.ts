@@ -1,6 +1,6 @@
 import '@testing-library/jest-dom/vitest'
 
-import { cleanup } from '@testing-library/vue'
+import { cleanup, configure } from '@testing-library/vue'
 import { afterAll, afterEach, beforeAll, vi } from 'vitest'
 
 import { resetDb } from '@/mocks/db'
@@ -20,6 +20,8 @@ Element.prototype.releasePointerCapture ??= () => {}
 
 // Mock API timings collapse to ~0 so streaming tests run fast.
 mockConfig.speed = 0.001
+// Test files run in parallel; under that load a screen's first render can take over the default 1s.
+configure({ asyncUtilTimeout: 5000 })
 
 beforeAll(() => server.listen({ onUnhandledFrame: 'error' }))
 afterEach(async () => {

@@ -1,10 +1,8 @@
 <script setup lang="ts">
 import { InfoIcon, UsersIcon } from '@lucide/vue'
 import { computed, ref, watch } from 'vue'
-import { useRouter } from 'vue-router'
-import { toast } from 'vue-sonner'
 
-import { useCreateSession, useSchedulable } from '@/api/queries'
+import { useSchedulable } from '@/api/queries'
 import type { Interviewer, ScheduleSuggestion, SessionMode } from '@/api/types'
 import RoundBadge from '@/components/common/RoundBadge.vue'
 import { Button } from '@/components/ui/button'
@@ -12,10 +10,11 @@ import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, D
 import { Label } from '@/components/ui/label'
 import { Segmented, SegmentedItem } from '@/components/ui/segmented'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
-import { roundFullName } from '@/lib/labels'
 import { formatDate, formatTime } from '@/lib/time'
-import { toastError } from '@/lib/toast'
 import { cn } from '@/lib/utils'
+
+import { useBookSession } from './booking'
+import BookingFields from './BookingFields.vue'
 
 /**
  * Turn a suggested slot into a scheduled session (확정 일정). The round comes first: 1차 lists those
@@ -24,15 +23,13 @@ import { cn } from '@/lib/utils'
 const props = defineProps<{ suggestion: ScheduleSuggestion | null; interviewers: Interviewer[] }>()
 const emit = defineEmits<{ close: [] }>()
 
-const router = useRouter()
 const apps = useSchedulable(() => props.suggestion !== null)
-const create = useCreateSession()
+const { create, book } = useBookSession()
 const position = ref<number | null>(null)
 const appId = ref('')
 const mode = ref<SessionMode>('remote')
 const lead = ref('')
 const panel = computed(() => (props.suggestion ? props.interviewers.filter((i) => props.suggestion!.interviewer_ids.includes(i.id)) : []))
-const leadId = computed(() => lead.value || panel.value[0]?.id || '')
 const description = computed(() =>
   props.suggestion
     ? `${formatDate(props.suggestion.start_at)} ${formatTime(props.suggestion.start_at)}–${formatTime(props.suggestion.end_at)} · 면접관 ${panel.value.map((p) => p.name).join(', ')}`
@@ -78,28 +75,8 @@ function submit() {
   const slot = props.suggestion
   const app = picked.value
   if (!slot || !app) return
-  create.mutate(
-    {
-      application_id: app.application_id,
-      round_id: app.round.id,
-      mode: mode.value,
-      scheduled_at: slot.start_at,
-      interviewers: panel.value.map((i) => ({ interviewer_id: i.id, role: i.id === leadId.value ? 'lead' : 'panel' })),
-    },
-    {
-      onSuccess: (s) => {
-        toast.success(`${s.candidate.pseudonym} ${s.round.label} 면접을 잡았습니다`, {
-          description: `${formatDate(slot.start_at)} ${formatTime(slot.start_at)} · ${roundFullName(s.round)}`,
-          action: { label: '보기', onClick: () => void router.push('/sessions') },
-        })
-        emit('close')
-      },
-      onError: toastError('일정을 잡지 못했습니다'),
-    },
-  )
+  book({ applicationId: app.application_id, roundId: app.round.id, slot, panel: panel.value, mode: mode.value, lead: lead.value }, () => emit('close'))
 }
-
-const asString = (v: unknown) => (typeof v === 'string' ? v : '')
 </script>
 
 <template>
@@ -146,26 +123,7 @@ const asString = (v: unknown) => (typeof v === 'string' ? v : '')
             </span>
           </p>
         </div>
-        <div class="flex flex-wrap gap-6">
-          <div class="space-y-1.5">
-            <Label>방식</Label>
-            <Segmented :model-value="mode" aria-label="면접 방식" @update:model-value="(v) => (mode = v as SessionMode)">
-              <SegmentedItem value="remote">비대면</SegmentedItem>
-              <SegmentedItem value="onsite">대면</SegmentedItem>
-            </Segmented>
-          </div>
-          <div class="min-w-48 flex-1 space-y-1.5">
-            <Label>주관 면접관</Label>
-            <Select :model-value="leadId" @update:model-value="(v) => (lead = asString(v))">
-              <SelectTrigger aria-label="주관 면접관">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem v-for="i in panel" :key="i.id" :value="i.id">{{ i.name }}</SelectItem>
-              </SelectContent>
-            </Select>
-          </div>
-        </div>
+        <BookingFields v-model:mode="mode" v-model:lead="lead" :panel="panel" />
       </div>
       <DialogFooter>
         <Button variant="outline" @click="emit('close')">취소</Button>

@@ -84,6 +84,18 @@ export function formatFullDate(date: Date | string): string {
   return `${p.year}. ${p.month}. ${p.day}.`
 }
 
+/** The KST day of an instant as an `<input type="date">` value: "2026-10-28". */
+export function kstDayInput(date: Date | string): string {
+  const p = kstParts(date)
+  return `${p.year}-${pad(p.month)}-${pad(p.day)}`
+}
+
+/** 00:00 KST of an `<input type="date">` value, null when it is empty or not a date. */
+export function parseKstDayInput(value: string): Date | null {
+  const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(value)
+  return m ? kstDate(Number(m[1]), Number(m[2]), Number(m[3])) : null
+}
+
 export function weekdayLabel(date: Date | string): string {
   return WEEKDAYS[kstParts(date).weekday] ?? ''
 }
