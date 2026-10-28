@@ -22,6 +22,8 @@ dependencies = [
     "olefile>=0.47",
     # Vectors in memory for retrieval (question bank, rubric anchors); see retrieval/.
     "numpy>=2.0",
+    # HTTP client (BSD-3) for the in-house open-weight model server (providers/llm/open_model_server.py).
+    "httpx2>=2.16",
 ]
 
 [project.optional-dependencies]
@@ -45,6 +47,11 @@ ocr = [
     "paddleocr==3.7.0",
     "paddlepaddle==3.2.2",
 ]
+# MCP server for the in-house agent platform (Python MCP SDK, MIT): a thin layer over the REST API,
+# read tools and proposals only (docs/agent-integration.md). Pinned below 3 for the v2 server API.
+agent = [
+    "mcp>=2.3.0,<3",
+]
 
 [dependency-groups]
 dev = [
@@ -53,7 +60,13 @@ dev = [
     "httpx2",
     "reportlab>=5.0.1",
     "pillow>=13.0.0",
+    # tests/test_agent.py drives the MCP server with the SDK's client; same pin as the `agent` extra.
+    "mcp>=2.3.0,<3",
 ]
+
+[tool.uv]
+# Two-week rule for new dependencies: sse-starlette 3.6.0 (mcp's dependency) came out 2026-10-25.
+exclude-newer-package = { sse-starlette = "2026-10-14T00:00:00Z" }
 
 [build-system]
 requires = ["hatchling"]

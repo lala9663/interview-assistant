@@ -32,6 +32,7 @@ from interview_assistant.ai.prompts import (
 )
 from interview_assistant.ai.question_rules import RULE_BY_CATEGORY, check
 from interview_assistant.api import schemas as s
+from interview_assistant.api.agent_access import agent_may_call
 from interview_assistant.api.deps import Admin, Db, Me, RuntimeDep, audit
 from interview_assistant.api.errors import ai_failed, conflict, invalid, not_found
 from interview_assistant.deid.leaks import residual_scan
@@ -225,6 +226,7 @@ def question_bank(
 
 
 @router.post("/question-bank/check", response_model=s.BankCheckResult)
+@agent_may_call
 def check_question(body: s.BankCheckRequest, me: Me) -> s.BankCheckResult:
     """Prohibited-question warnings for text being written (rules only, nothing stored)."""
     return s.BankCheckResult(flags=[s.BankFlag(**f) for f in _rule_flags(body.question, body.follow_ups)])

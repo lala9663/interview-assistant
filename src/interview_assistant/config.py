@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Any
+from typing import Any, Literal
 
 import yaml
 from pydantic import BaseModel, ConfigDict, Field, SecretStr
@@ -79,6 +79,11 @@ class Settings(BaseSettings):
     site_clock_skew: int = 300
     # Background workers applying received events. 0: events wait in the queue (tests, maintenance).
     intake_workers: int = 4
+    # Agent calls through the MCP server (docs/agent-integration.md). How a call proves who is
+    # asking (api/agent_access.py `agent_identity`): "dev_token" until the agent platform's or
+    # SSO's identity is known and added there. Its key (scripts/agent_token.py); empty: 503.
+    agent_identity: Literal["dev_token"] = "dev_token"
+    agent_token_secret: SecretStr | None = None
 
 
 def load_providers(path: Path) -> ProvidersConfig:

@@ -21,7 +21,8 @@ src/interview_assistant/
   domain.py             # JSON 컬럼 모양 (역량, 지원자 프로필)
   interviews.py         # 전형 진행 규칙: 서류 → 각 차수 → 최종 단계(progress·stage), 다음 차수 대상, 같은 차수 중복 거부 사유, 차수별 집계, 이전 차수 Q&A
   schedule.py           # 공통 빈 시간, 슬롯 후보 (프론트 lib/schedule.ts와 같은 규칙 + 잡힌 면접 제외)
-  api/                  # REST·SSE API (api-contract.md). routes/ 기능별 라우터(admin = 모델 설정, intake = 채용 사이트 수신·연동 현황, 관리자만), schemas.py 응답 스키마, views.py ORM → 응답
+  agent/                # MCP 서버 (agent-integration.md): settings(IA_MCP_*), api(질문한 사람의 토큰으로 REST 호출), tools(읽기 13·제안 3), shape(KST·라벨·링크·연락처 모양 가림), server(stdio·streamable HTTP)
+  api/                  # REST·SSE API (api-contract.md). agent_access = 에이전트 토큰·읽기 전용 가드·호출 감사, routes/ 기능별 라우터(admin = 모델 설정, intake = 채용 사이트 수신·연동 현황, 관리자만), schemas.py 응답 스키마, views.py ORM → 응답
   ai/                   # AI 작업: gateway(가드 → provider → 감사 로그), guard, prompts, competency(차수별 초안, 비슷한 공고의 확정 사전 참고), screening, followups(질문 은행 후보 먼저 + AI 스트리밍, 같은 질문 거르기, 이전 차수 Q&A 참고), scoring(평점 기준점), checkpoints(다음 차수 확인할 점), presets(차수 사전 질문 초안·이어 질문), question_rules(금지 질문 규칙)
   live/                 # 실시간 전사: hub(STT → 비식별화 → SSE), audio(오디오 소스, 지금은 대본 읽는 가상 지원자)
   demo/                 # 데모 데이터(프론트 모의 데이터와 같은 가상 데이터)와 시드, 가상 지원자 대본
@@ -45,6 +46,8 @@ migrations/versions/    # Alembic 0001~0007
 scripts/
   seed_demo.py          # 데모 데이터 시드
   grant_admin.py        # 면접관에게 관리자 권한 (0004 이전 DB용, SSO 전까지)
+  agent_token.py        # 에이전트(MCP) 개발용 토큰 발급 (SSO 전까지)
+  try_mcp.py            # 실행 중인 MCP 서버의 도구를 SDK 클라이언트로 한 번씩 부르기
   bench_whisper.py      # Whisper 크기별 속도·메모리·CER·스트리밍 지연 측정
   bench_ocr.py          # OCR 엔진별 쪽당 시간·메모리·CER 측정
   bench_embedding.py    # BGE-M3 로딩·임베딩·1,000건 색인·검색 시간, 메모리(단독, Whisper·PaddleOCR과 함께)
@@ -92,6 +95,17 @@ uploads/, recordings/, reports/   # 원본 영역 (git 제외)
 - 승인·폐기·수정은 그 자리에서 색인에 반영한다(바뀐 텍스트·필터 칸만 다시 임베딩). 검색 결과는 DB에서 승인 상태를 한 번 더 확인해, 방금 폐기한 질문이 제안되지 않는다.
 - 질의는 세션에 고정된 provider가 아니라 지금 검색하는 색인의 모델로 임베딩한다(다른 모델의 벡터는 비교할 수 없다). 지원자 답변은 가드를 통과한 비식별 답변만, 저장하지 않고 임베딩한다.
 - 채점은 검색을 쓰지 않는다. 기준점은 직군·역량으로 고르고, 지원자 답변과의 유사도는 계산하지 않는다.
+
+## 에이전트 (MCP 서버)
+
+사내 에이전트 플랫폼은 `agent/`의 MCP 서버를 거쳐 웹과 같은 REST API를 부른다. MCP 서버는 DB에 닿지 않고 기능 로직도 없어, 비식별화·권한·감사 로그는 API 한곳에서 돈다. 자세한 것은 [agent-integration.md](agent-integration.md).
+
+```
+에이전트 플랫폼 ─(MCP)─▶ agent/ ─(HTTP, 질문한 사람의 자격증명, X-Agent-*)─▶ /api ─ agent_guard(AgentIdentity → 면접관, 읽기만) ─ 라우트 ─ AgentAuditMiddleware(응답 전 agent.* 기록)
+```
+
+- 자격증명이 가리키는 면접관이 `Me`가 되고, 관리자 전용·"내 점수" 같은 규칙이 웹과 똑같이 돈다.
+- 에이전트 토큰으로는 GET과 `agent_may_call` 표시가 붙은 POST(공통 빈 시간, 금지 질문 확인, 제안 기록)만 된다. 바꾸는 일은 제안으로 남기고 웹에서 사람이 반영한다.
 
 ## 면접 차수 (전형)
 

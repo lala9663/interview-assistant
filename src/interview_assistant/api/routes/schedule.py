@@ -10,6 +10,7 @@ from sqlalchemy import select
 
 from interview_assistant import schedule
 from interview_assistant.api import schemas as s
+from interview_assistant.api.agent_access import agent_may_call
 from interview_assistant.api.deps import Db, Me, audit
 from interview_assistant.api.errors import invalid, not_found
 from interview_assistant.models import (
@@ -100,6 +101,7 @@ def delete_availability(availability_id: str, db: Db, me: Me) -> Response:
 
 
 @router.post("/schedule/suggestions", response_model=list[s.ScheduleSuggestion])
+@agent_may_call
 def suggestions(body: s.ScheduleSuggestionRequest, db: Db) -> list[s.ScheduleSuggestion]:
     if not body.interviewer_ids:
         raise invalid("interviewer_ids", "면접관을 한 명 이상 선택하세요.")

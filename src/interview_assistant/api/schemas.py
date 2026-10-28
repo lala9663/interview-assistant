@@ -1201,3 +1201,29 @@ class FollowUpMetrics(BaseModel):
     sources: list[SourceMetrics]
     duplicates: dict[str, int]  # bank / ai / total candidates dropped as already asked
     retrieval_model: str | None
+
+
+# --- agent proposals (docs/agent-integration.md) ------------------------------------------------
+
+ProposalKind = Literal["interview_booking", "screening_decision", "round_decision"]
+
+
+class AgentProposalRequest(BaseModel):
+    """What an agent proposes, recorded for the audit log only: nothing changes until a person
+    confirms it on the web screen. Structured fields only; the agent's free text is not kept."""
+
+    kind: ProposalKind
+    application_id: str
+    round_id: str | None = None
+    session_id: str | None = None
+    decision: Literal["passed", "hold", "rejected"] | None = None
+    start_at: AwareDatetime | None = None
+    interviewer_ids: list[str] = Field(default_factory=list, max_length=10)
+    mode: SessionMode | None = None
+
+
+class AgentProposalRecorded(BaseModel):
+    id: str  # the audit row
+    kind: ProposalKind
+    application_id: str
+    recorded_at: Timestamp

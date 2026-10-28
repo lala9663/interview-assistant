@@ -9,7 +9,7 @@ uv sync --extra whisper --extra ocr --extra embedding   # 로컬 Whisper STT, �
 cp .env.example .env
 ```
 
-`uv sync`는 목록에 없는 패키지를 지우므로, 매번 같은 `--extra`를 붙인다(`uv run`은 지우지 않는다). `ocr`은 paddleocr 3.7.0과 paddlepaddle 3.2.2(CPU, 약 500MB)다. `embedding`은 onnxruntime과 tokenizers로, faster-whisper가 이미 쓰는 패키지라 따로 받는 것은 거의 없다.
+`uv sync`는 목록에 없는 패키지를 지우므로, 매번 같은 `--extra`를 붙인다(`uv run`은 지우지 않는다). 에이전트용 MCP 서버(`python -m interview_assistant.agent`, [agent-integration.md](agent-integration.md))는 `--extra agent`로 받는다. 개발 환경에는 dev 그룹에도 같은 `mcp`가 있어 테스트가 늘 돈다. `ocr`은 paddleocr 3.7.0과 paddlepaddle 3.2.2(CPU, 약 500MB)다. `embedding`은 onnxruntime과 tokenizers로, faster-whisper가 이미 쓰는 패키지라 따로 받는 것은 거의 없다.
 
 ### 시스템 프로그램 (선택)
 
@@ -37,6 +37,8 @@ OCR 모델 파일(PaddleOCR PP-OCRv5, Tesseract 한국어 데이터)과 임베�
 | `IA_SITE_SECRET`, `IA_SITE_SECRET_PREVIOUS` | 채용 사이트 연동의 공유 HMAC 키([site-intake-spec.md](site-intake-spec.md) 4장). 없으면 사이트 수신 엔드포인트가 503. 키 교체 중에는 이전 키도 받는다. 커밋하지 않는다 |
 | `IA_SITE_CLOCK_SKEW` | 서명 시각 허용 차이(초, 기본 300) |
 | `IA_INTAKE_WORKERS` | 받은 지원서 이벤트를 처리하는 백그라운드 워커 수(기본 4, 0이면 큐에 쌓이기만 한다) |
+| `IA_AGENT_IDENTITY`, `IA_AGENT_TOKEN_SECRET` | 에이전트(MCP) 호출의 신원 확인 방식(지금은 `dev_token`뿐)과 개발용 토큰 서명 키. 키가 없으면 에이전트 호출이 503. 토큰은 `uv run python scripts/agent_token.py <사번>`. 플랫폼·SSO의 신원 확인을 더하면 바꾼다([agent-integration.md](agent-integration.md) 7장). 커밋하지 않는다 |
+| `IA_MCP_API_URL`, `IA_MCP_WEB_URL`, `IA_MCP_AGENT_NAME`, `IA_MCP_IDENTITY_HEADERS`, `IA_MCP_TOKEN` | MCP 서버(`python -m interview_assistant.agent`)만 읽는다. API 주소, 링크의 웹 주소, 감사 로그의 에이전트 이름, HTTP에서 사용자 토큰을 실어 오는 헤더, stdio로 쓸 때 그 사람의 토큰. `agent` extra 필요 |
 | `HF_ENDPOINT`, `HF_TOKEN` | 모델 다운로드에 미러나 토큰이 필요할 때만 |
 
 암호화 키 만들기:

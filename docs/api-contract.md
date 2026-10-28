@@ -1,6 +1,6 @@
 # API 계약 (프론트 ↔ 백엔드)
 
-2026-10-27 · v0.6 · 질문 은행·평점 기준 예시와 임베딩 검색(BGE-M3)을 더했다: 꼬리질문은 검수된 질문 은행 후보가 먼저, AI 후보가 이어서 나오고, 이미 한 질문과 같은 후보는 걸러진다(2장 "질문 은행·평점 기준 예시", 3.2, 4장 0007). v0.5 · 면접을 여러 차수(전형 차수: 1차 직무 면접, 2차 임원 면접 …)로 진행한다. 공고마다 차수 목록이 있고, 역량 사전·사전 질문은 차수별, 세션은 한 차수에 속하며, 차수마다 사람이 합격·보류·불합격을 정한다(2장 "전형", 4장 0006). 프론트(`frontend/`)가 모의 API(MSW)로 먼저 쓰던 계약을 백엔드(FastAPI, `src/interview_assistant/api/`)가 그대로 구현했다. 모든 경로가 동작하고, AI는 Provider 인터페이스를 거쳐 돈다. 어떤 provider가 어느 역할을 맡을지는 관리자 화면(관리자 > 모델 설정, 2장 마지막 절)에서 서버 재시작 없이 바꾸고, `config/providers*.yaml`은 처음 기동할 때의 기본값만 정한다. 첫 실제 provider로 로컬 Whisper STT(`faster_whisper`)가 붙었다. 지원서는 서류 선별 화면의 업로드와 채용 사이트 연동(서명된 이벤트 수신, 2장 "채용 사이트 연동") 두 통로로 들어오고, 둘 다 같은 처리 함수(`intake/service.py`)를 거친다. 채용 시스템 부서에 넘길 연동 명세는 [site-intake-spec.md](site-intake-spec.md). 프론트는 `npm run dev:api`로 실제 API에 붙는다. 실제 LLM 연결과 품질 검증은 남은 과제다(5장).
+2026-10-28 · v0.7 · 사내 에이전트 플랫폼용 MCP 서버([agent-integration.md](agent-integration.md))가 이 API를 그대로 부른다. 에이전트 호출은 질문한 사람의 자격증명으로 돌고, 읽기와 제안 기록만 할 수 있으며, 호출마다 감사 로그가 남는다(1장 인증·권한·감사 로그, 2장 "에이전트"). v0.6 · 질문 은행·평점 기준 예시와 임베딩 검색(BGE-M3)을 더했다: 꼬리질문은 검수된 질문 은행 후보가 먼저, AI 후보가 이어서 나오고, 이미 한 질문과 같은 후보는 걸러진다(2장 "질문 은행·평점 기준 예시", 3.2, 4장 0007). v0.5 · 면접을 여러 차수(전형 차수: 1차 직무 면접, 2차 임원 면접 …)로 진행한다. 공고마다 차수 목록이 있고, 역량 사전·사전 질문은 차수별, 세션은 한 차수에 속하며, 차수마다 사람이 합격·보류·불합격을 정한다(2장 "전형", 4장 0006). 프론트(`frontend/`)가 모의 API(MSW)로 먼저 쓰던 계약을 백엔드(FastAPI, `src/interview_assistant/api/`)가 그대로 구현했다. 모든 경로가 동작하고, AI는 Provider 인터페이스를 거쳐 돈다. 어떤 provider가 어느 역할을 맡을지는 관리자 화면(관리자 > 모델 설정, 2장 마지막 절)에서 서버 재시작 없이 바꾸고, `config/providers*.yaml`은 처음 기동할 때의 기본값만 정한다. 첫 실제 provider로 로컬 Whisper STT(`faster_whisper`)가 붙었다. 지원서는 서류 선별 화면의 업로드와 채용 사이트 연동(서명된 이벤트 수신, 2장 "채용 사이트 연동") 두 통로로 들어오고, 둘 다 같은 처리 함수(`intake/service.py`)를 거친다. 채용 시스템 부서에 넘길 연동 명세는 [site-intake-spec.md](site-intake-spec.md). 프론트는 `npm run dev:api`로 실제 API에 붙는다. 실제 LLM 연결과 품질 검증은 남은 과제다(5장).
 
 - 타입 정의 원본: [`frontend/src/api/types.ts`](../frontend/src/api/types.ts) (모델과 필드 이름·enum 값 동일). 백엔드 응답 스키마: [`api/schemas.py`](../src/interview_assistant/api/schemas.py) (필드 단위로 같다. `tests/test_api_contract.py`가 enum과 이 문서의 경로 목록을 대조한다)
 - 모의 구현: [`frontend/src/mocks/handlers.ts`](../frontend/src/mocks/handlers.ts) (요청 검증, 오류 코드, 스트림 이벤트 순서까지 이 문서와 같다)
@@ -16,9 +16,9 @@
 | 시각 | 응답은 UTC, 밀리초, `Z` (`2026-10-23T05:30:00.000Z`, JavaScript `toISOString`과 같은 모양). 요청의 시각은 오프셋이 있어야 한다(없으면 422). 화면은 항상 KST로 표시한다 |
 | enum | 모델 값과 동일: `PostingStatus` draft/open/closed, `ScreeningStatus` passed/hold/rejected, `SessionMode` onsite/remote, `SessionStatus` scheduled/in_progress/completed/cancelled, `InterviewerRole` lead/panel, `QuestionSource` preset/ai_suggested/interviewer, `EvaluatorType` ai/interviewer, `AvailabilitySource` manual/calendar, `ActorType` user/system/ai |
 | 오류 | FastAPI 기본 형식 `{"detail": "메시지"}`. 검증 오류는 422 `{"detail": [{"loc": ["body", "field"], "msg": "...", "type": "..."}]}` (Pydantic 기본 메시지도 한국어로 바꿔 보낸다). 없는 자원 404, 상태 충돌(예: 확정본 수정, 진행 중이 아닌 세션에 질문 기록) 409, AI 응답을 쓸 수 없거나 가드가 호출을 막으면 502, 암호화 키가 없어 비식별화를 못 하면 503. 프론트는 `detail` 문자열을 그대로 토스트에 보여 주므로 한국어로 쓴다 |
-| 인증 | Phase 1은 IAP + 사내 SSO 예정(남은 과제). 지금은 `IA_DEV_INTERVIEWER`(사번)의 면접관, 없으면 가장 먼저 등록된 면접관이 로그인한 사람이다. 쓰기 요청의 행위자는 서버가 정한다 (본문으로 받지 않음). 예외: `/api/intake/site/*`는 사람이 아니라 채용 사이트가 부르므로 로그인 대신 공유 키 HMAC 서명과 시각으로 확인한다([site-intake-spec.md](site-intake-spec.md) 4장) |
-| 권한 | `/api/admin/*`(모델 설정, 연동 현황)는 관리자(`Interviewer.is_admin`)만, 아니면 403 `관리자만 쓸 수 있습니다.` SSO가 붙으면 그룹 클레임으로 이 플래그를 채우고 API는 그대로 둔다. 시드의 김서연(E24017)이 관리자, 0004 이전 DB는 `scripts/grant_admin.py <사번>` |
-| 감사 로그 | 모든 쓰기 요청과 AI 호출은 `AuditLog`를 남긴다. AI 호출은 성공·실패·가드 거부 모두 한 줄씩(모델, 프롬프트 버전, 토큰 수). 프롬프트와 응답 본문은 남기지 않는다. 프론트는 `GET /api/activity`로 그중 사람이 볼 항목만 읽는다(`api/views.py`의 `FEED_ACTIONS`) |
+| 인증 | Phase 1은 IAP + 사내 SSO 예정(남은 과제). 지금은 `IA_DEV_INTERVIEWER`(사번)의 면접관, 없으면 가장 먼저 등록된 면접관이 로그인한 사람이다. 에이전트 호출(`Authorization: Bearer` 또는 `X-Agent-Name` 헤더가 있는 요청)은 자격증명이 가리키는 면접관이다. 확인 방식은 `IA_AGENT_IDENTITY`로 고르는 `AgentIdentity`(`api/agent_access.py`)이고, 지금은 `IA_AGENT_TOKEN_SECRET`으로 서명한 개발용 토큰(`dev_token`, `scripts/agent_token.py`)뿐이다. 없거나 틀리거나 만료면 401, 설정이 없으면 503. 이때는 `IA_DEV_INTERVIEWER`로 돌아가지 않는다. 쓰기 요청의 행위자는 서버가 정한다 (본문으로 받지 않음). 예외: `/api/intake/site/*`는 사람이 아니라 채용 사이트가 부르므로 로그인 대신 공유 키 HMAC 서명과 시각으로 확인한다([site-intake-spec.md](site-intake-spec.md) 4장) |
+| 권한 | `/api/admin/*`(모델 설정, 연동 현황)는 관리자(`Interviewer.is_admin`)만, 아니면 403 `관리자만 쓸 수 있습니다.` SSO가 붙으면 그룹 클레임으로 이 플래그를 채우고 API는 그대로 둔다. 시드의 김서연(E24017)이 관리자, 0004 이전 DB는 `scripts/grant_admin.py <사번>`. 에이전트 호출은 GET과 `agent_may_call` 표시가 붙은 POST 셋(`/api/schedule/suggestions`, `/api/question-bank/check`, `/api/agent/proposals`)만 된다. 그 밖의 쓰기는 403 `에이전트는 조회와 제안만 할 수 있습니다. 바꾸는 일은 웹 화면에서 사람이 확인해 반영합니다.` |
+| 감사 로그 | 모든 쓰기 요청과 AI 호출은 `AuditLog`를 남긴다. AI 호출은 성공·실패·가드 거부 모두 한 줄씩(모델, 프롬프트 버전, 토큰 수). 프롬프트와 응답 본문은 남기지 않는다. 프론트는 `GET /api/activity`로 그중 사람이 볼 항목만 읽는다(`api/views.py`의 `FEED_ACTIONS`). 에이전트 호출은 읽기까지 호출마다 한 줄: `agent.request`(통과) 또는 `agent.refused`(가드가 거절, 사유 코드) {agent, tool, client, method, path, status}. 질의 문자열·본문은 남기지 않는다. 응답을 보내기 전에 쓰고, 못 쓰면 503으로 답한다 |
 
 ### 비식별 원칙 (응답에 절대 넣지 않는 필드)
 
@@ -276,6 +276,18 @@
 - **임베딩 (BGE-M3)**: `bge_m3`(로컬 CPU, ONNX Runtime)는 밀집 1024차원과 희소(단어 일치) 가중치를 낸다. 모델 파일(약 2.29GB, BAAI/bge-m3 커밋 `5617a9f`의 ONNX와 희소 헤드)은 관리자가 "다운로드"를 누를 때만 받는다. 옵션의 `sparse_weight`(단어 일치 가중치), `duplicate_threshold`(같은 질문으로 볼 유사도), `min_score`(질문 은행 제안 최소 점수)는 모델의 점수 척도에 맞춘 검색 설정이고, 바꿔도 벡터를 다시 만들지 않는다(같은 가중치를 쓰는 인스턴스끼리 로드된 모델을 공유해 다시 올리지도 않는다). 연결 테스트는 고정 문장 세 개로 차원, 희소 출력, 비슷한 문장이 무관한 문장보다 가까운지를 본다(`output.similar`, `unrelated`, `sparse`, `lexical`).
 - **실시간 STT와 오디오 입력**: STT provider는 받을 수 있는 입력 형식(`accepts`)을 밝힌다. 실제 음성은 16kHz 모노 16비트 PCM(`PCM16_16K`)이고, 지금 실시간 면접의 가상 지원자는 텍스트를 보내므로 fake STT만 받아 적는다. 실시간 STT를 실제 모델로 바꾸면 새로 시작하는 면접은 `stt: down`(수기 답변)이 되고 감사 로그에 `transcript.unsupported_audio`가 남는다. 마이크·WebRTC 입력(`live/audio.AudioSource`가 PCM을 내는 구현)이 붙으면 같은 교체가 그대로 쓰인다.
 
+### 에이전트 (MCP 서버)
+
+사내 에이전트 플랫폼은 MCP 서버(`interview_assistant/agent/`, [agent-integration.md](agent-integration.md))를 거쳐 위의 API를 부른다. MCP 서버는 기능 로직이 없는 얇은 계층이라 가드·권한·비식별·감사 로그가 이 API 한곳에서 돈다. 에이전트 전용 엔드포인트는 제안 기록 하나다.
+
+| 메서드 | 경로 | 요청 | 응답 | 단계 |
+| --- | --- | --- | --- | --- |
+| POST | `/api/agent/proposals` | `AgentProposalRequest` {kind interview_booking/screening_decision/round_decision, application_id, round_id?, session_id?, decision?, start_at?, interviewer_ids?, mode?} | 201 `AgentProposalRecorded` {id(감사 로그 행), kind, application_id, recorded_at}. 감사 로그 `agent.proposed`에 구조화된 칸만 남기고 아무것도 바꾸지 않는다. 에이전트 호출이 아니면 403, 없는 지원서·차수·면접·면접관 404, 결정 제안에 decision이 없으면 422 | 에이전트 |
+
+- **질문한 사람**: 자격증명 하나가 면접관 한 명이다. `GET /api/me`, 관리자 확인(`Admin`), 대시보드의 "내 점수"가 모두 그 사람으로 돈다. MCP 서버 자체의 계정은 없고, 서비스 계정 하나로 부르는 방식은 받지 않는다.
+- **헤더**: `Authorization: Bearer <토큰>`(필수), `X-Agent-Name`(에이전트·플랫폼 이름), `X-Agent-Tool`(MCP 도구 이름), `X-Agent-Client`(MCP 클라이언트 이름). 뒤의 셋은 감사 로그에만 쓴다(ASCII 64자).
+- **바꾸는 일**: 면접 잡기·서류 상태·차수 결정은 제안(`agent.proposed`)으로만 남고, 사람이 웹에서 같은 화면의 규칙대로 반영한다. 제안의 자유 텍스트(사유)는 저장하지 않는다.
+
 ### 관리자: 임베딩 색인·꼬리질문 지표
 
 | 메서드 | 경로 | 요청 | 응답 | 단계 |
@@ -445,6 +457,8 @@ SQLite 마이그레이션 주의: batch 모드는 테이블을 복사한 뒤 원
 
 구현됨 (2026-10-25): 관리자 > 모델 설정 10개 엔드포인트(합계 45개), DB 저장·이력·되돌리기, 재시작 없는 교체와 세션 고정, 연결 테스트, 모델 다운로드, 로컬 Whisper STT(`faster_whisper`, CPU int8, 한국어). 테스트 `tests/test_model_settings.py`, `test_weights.py`, `test_whisper.py`(모델 파일이 있을 때만). 측정 결과는 [Whisper 측정](whisper-benchmark.md).
 
+구현됨 (2026-10-28): 사내 에이전트 플랫폼용 MCP 서버(`interview_assistant/agent/`, 읽기 도구 13개와 제안 도구 3개, stdio·streamable HTTP), 교체 가능한 신원 확인·가드·감사(`api/agent_access.py`), 제안 기록 1개(합계 87개). 테스트 `tests/test_agent.py`. [agent-integration.md](agent-integration.md).
+
 남은 과제:
 
 - **실제 모델 연결 (3단계)**: `anthropic_vertex` LLM provider(구조화 출력, 스트리밍, 토큰 집계, 프롬프트 캐싱). 지금 fake LLM은 규칙으로 그럴듯한 모양만 만든다(`providers/fake_tasks.py`). 연결 뒤 프롬프트별 품질 검증(역량 사전 초안, 프로필 구조화 정확도, 선별 근거, 꼬리질문 적합성, 채점 일치도)이 필요하다. 스트림 provider가 토큰 수를 돌려주게 인터페이스를 넓힐 것.
@@ -453,7 +467,7 @@ SQLite 마이그레이션 주의: batch 모드는 테이블을 복사한 뒤 원
 - **답변 도중 질문 은행 후보**: 지금은 답변이 끝난 뒤에만 찾는다. 확정된 전사 구간이 일정 길이 쌓이면 미리 찾는 것은 마이크 입력(11단계)을 붙일 때 같이 정한다.
 - **임베딩 속도·메모리**: 이 노트북에서 답변 1건 약 0.9초, 질문 1,000건 재색인 약 2.6분, 서버 메모리 BGE-M3 1.6GB(+Whisper medium 2.5GB). int8 양자화나 GPU로 줄일지 실제 사용량을 보고 정한다([embedding-benchmark.md](embedding-benchmark.md)).
 - **벡터 검색 엔진**: 지금은 메모리 내 전수 검색(수천 건). 수만 건이 되거나 여러 인스턴스가 되면 DB 엔진을 정한 뒤 pgvector 등으로 `VectorIndex`를 바꾼다. 여러 인스턴스면 색인 갱신을 다른 인스턴스에 알리는 방법도 필요하다.
-- **로그인·SSO**: IAP + 사내 SSO, `GET /api/me`를 세션에서. 지금은 `IA_DEV_INTERVIEWER`. 면접관 점수는 본인 것만 쓰게 막기(지금은 패널이면 누구 것이든 가능).
+- **로그인·SSO**: IAP + 사내 SSO, `GET /api/me`를 세션에서. 지금은 `IA_DEV_INTERVIEWER`. 에이전트 호출은 `api/agent_access.py`에 그 자격증명을 확인하는 `AgentIdentity`를 더하고 `IA_AGENT_IDENTITY`로 고른다(바꿀 곳은 [agent-integration.md](agent-integration.md) 7장). 면접관 점수는 본인 것만 쓰게 막기(지금은 패널이면 누구 것이든 가능).
 - **실제 오디오·WebRTC (11단계)**: LiveKit 통화 또는 대면 마이크, 참가자 트랙 → 스트리밍 STT. `live/audio.py`의 `AudioSource`를 16kHz PCM(`PCM16_16K`)을 내는 구현으로 붙이면 관리자 화면에서 고른 실시간 STT(예: `faster_whisper`)가 그대로 쓰인다. 녹음 파일 저장(지금 `recording_uri`는 저장 예정 위치만 가리킨다), 대면 면접 화자분리.
 - **로컬 Whisper 실시간 속도**: 이 노트북(CPU, 배터리)에서는 Whisper 호출 한 번이 30초 창 고정 비용(medium 약 5초)이라 발화 하나 확정까지 medium 약 10초 걸린다. 부분 전사는 호출 비용이 작을 때만 나온다. 실시간은 small·GPU·Chirp 중에서 다시 정할 것([측정](whisper-benchmark.md)).
 - **모델 설정 다중 인스턴스**: 활성 스냅샷은 프로세스 메모리에 있다. 여러 인스턴스면 변경을 다른 인스턴스에 알릴 방법(DB revision 폴링 또는 Pub/Sub)이 필요하다.

@@ -21,6 +21,7 @@ from interview_assistant import __version__
 from interview_assistant.ai.scoring import score_session
 from interview_assistant.api import errors
 from interview_assistant.api import router as api_router
+from interview_assistant.api.agent_access import AgentAuditMiddleware
 from interview_assistant.config import Settings
 from interview_assistant.live.audio import AudioSource
 from interview_assistant.models import AiScoringStatus, InterviewSession
@@ -95,6 +96,7 @@ def create_app(
 
     app = FastAPI(title="interview-assistant", version=__version__, lifespan=lifespan)
     errors.install(app)
+    app.add_middleware(AgentAuditMiddleware)  # one audit row per agent call (MCP server)
     app.include_router(api_router)
 
     @app.get("/health")

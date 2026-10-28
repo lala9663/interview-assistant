@@ -26,9 +26,15 @@ RuntimeDep = Annotated[Runtime, Depends(get_runtime)]
 Db = Annotated[Session, Depends(get_db)]
 
 
-def current_interviewer(db: Db, runtime: RuntimeDep) -> Interviewer:
+def current_interviewer(request: Request, db: Db, runtime: RuntimeDep) -> Interviewer:
     """Login (IAP + SSO) is Phase 1. Until then IA_DEV_INTERVIEWER (employee number) is the
-    signed-in interviewer, or else the first interviewer created."""
+    signed-in interviewer, or else the first interviewer created. An agent call is the
+    interviewer its token names (api/agent_access.py checked it before the route ran)."""
+    call = getattr(request.state, "agent_call", None)
+    if call is not None and call.interviewer_id is not None:
+        found = db.get(Interviewer, call.interviewer_id)
+        if found is not None:
+            return found
     query = select(Interviewer)
     if runtime.settings.dev_interviewer:
         query = query.where(Interviewer.employee_no == runtime.settings.dev_interviewer)
