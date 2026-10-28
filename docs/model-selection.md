@@ -84,7 +84,7 @@
 
 1. 실행 위치: 사내 서버, 사내 클라우드, 에이전트 플랫폼 안 중 어디인가
 2. GPU 서버를 받을 수 있는가
-3. 사내 LLM을 제공하는가(에이전트 플랫폼이 주는 것 포함), API 형식은 무엇인가. OpenAI 호환이면 `open_model_server`로 붙는다. 없으면 사내 서버에 오픈 웨이트 모델을 설치할 수 있는가([reference/llm.md](reference/llm.md))
+3. 사내 LLM을 제공하는가(에이전트 플랫폼이 주는 것 포함), API 형식은 무엇인가. OpenAI 형식 API면 `open_model_server`로 붙는다(OpenAI 서비스는 쓰지 않는다). 없으면 사내 서버에 오픈 웨이트 모델을 설치할 수 있는가([reference/llm.md](reference/llm.md))
 4. 사내 STT가 있는가, 면접 음성을 회사 밖으로 보내도 되는가
 5. 외부 클라우드 API(Google·Azure·AWS 등)를 쓸 수 있는가, 쓴다면 데이터를 어느 리전에 둬야 하는가
 6. 어떤 에이전트 플랫폼이 들어오는가([agent-integration.md](agent-integration.md) 8장)
@@ -101,10 +101,10 @@
 
 "이 서비스가 면접에서 쓸 만한가"를 빨리 보이기 위한 임시 선택이다. 2026-10-21에는 직접 만들 GCP 프로젝트(STT 실시간 Chirp 3 스트리밍, LLM Vertex AI의 Claude)로 정했으나 2026-10-28 철회했다.
 
-- STT 실시간: 로컬 Whisper medium (이 PC CPU는 확정까지 8초 안팎). GPU 서버가 생기면 GPU Whisper. 외부 클라우드 스트리밍 STT(Chirp 3 등)는 승인 시 대안
-- STT 사후: 로컬 Whisper large-v3 (지금 바로 된다, 샘플 오류 0%)
-- LLM: 사내 LLM(플랫폼 제공) 또는 사내 설치 모델을 OpenAI 호환 provider(`open_model_server`)로. 모델 비교는 [reference/llm.md](reference/llm.md), 꼬리질문은 주 모델로 재 보고 결정
-- 화자분리: 별도 검토. Whisper에는 없다. 로컬 후보는 pyannote community-1, Chirp 3(외부 클라우드)은 GA지만 비스트리밍 요청에서만 ([reference/diarization.md](reference/diarization.md))
+- STT 실시간: 로컬 Whisper. GPU가 없으면 small(이 노트북 마이크 측정에서 말 끝부터 답이 닫히기까지 평균 5~7초, medium은 17~20초라 못 따라간다), GPU가 있으면 medium 이상 ([audio-input.md](audio-input.md) 8~10장). 외부 클라우드 스트리밍 STT(Chirp 3 등)는 승인 시 대안
+- STT 사후: 로컬 Whisper large-v3 + 면접 뒤 녹음 재전사 (샘플 오류 0%, 녹음 길이의 약 1.2배)
+- LLM: 사내 LLM(플랫폼 제공) 또는 사내에 설치한 오픈 웨이트 모델에 OpenAI 형식 API provider(`open_model_server`)로 붙는다(OpenAI 서비스는 쓰지 않음, 모델 서버 위치 미정). 모델 비교는 [reference/llm.md](reference/llm.md), 꼬리질문은 주 모델로 재 보고 결정
+- 화자: 한 마이크 대면 면접은 질문 중 / 답변 듣는 중 전환(Alt+1/Alt+2)으로 면접관·지원자를 나누고, 재전사에도 그 역할 기록을 붙인다([audio-input.md](audio-input.md) 4·8장). 화자분리 모델(방 마이크 하나·그룹 면접)은 남은 과제로, 로컬 후보는 pyannote community-1, Chirp 3(외부 클라우드)은 GA지만 비스트리밍 요청에서만 ([reference/diarization.md](reference/diarization.md))
 - 연결: 사내 에이전트 플랫폼에 MCP로 ([agent-integration.md](agent-integration.md))
 
 `config/providers.yaml`의 STT·화자분리 기본값은 2026-10-21 결정 때의 `google_stt_v2`(구현 전)로 아직 남아 있다.

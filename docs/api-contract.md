@@ -491,7 +491,7 @@ SQLite 마이그레이션 주의: batch 모드는 테이블을 복사한 뒤 원
 
 남은 과제:
 
-- **실제 모델 연결 (3단계)**: 사내 LLM(플랫폼 제공) 또는 사내 설치 모델. OpenAI 호환 provider `open_model_server`는 가짜 모델 서버로만 검증했고, 사내 서버·모델을 정해 실제 호출로 확인한다([reference/llm.md](reference/llm.md) 4장). 지금 fake LLM은 규칙으로 그럴듯한 모양만 만든다(`providers/fake_tasks.py`). 연결 뒤 프롬프트별 품질 검증(역량 사전 초안, 프로필 구조화 정확도, 선별 근거, 꼬리질문 적합성, 채점 일치도)이 필요하다. 스트림 provider가 토큰 수를 돌려주게 인터페이스를 넓힐 것.
+- **실제 모델 연결 (3단계)**: 사내 LLM(플랫폼 제공) 또는 사내 설치 모델. OpenAI 형식 API provider `open_model_server`(OpenAI 서비스로는 보내지 않음)는 가짜 모델 서버로만 검증했고, 사내 서버·모델을 정해 실제 호출로 확인한다([reference/llm.md](reference/llm.md) 4장). 지금 fake LLM은 규칙으로 그럴듯한 모양만 만든다(`providers/fake_tasks.py`). 연결 뒤 프롬프트별 품질 검증(역량 사전 초안, 프로필 구조화 정확도, 선별 근거, 꼬리질문 적합성, 채점 일치도)이 필요하다. 스트림 provider가 토큰 수를 돌려주게 인터페이스를 넓힐 것.
 - **실행 위치**: 미정(사내 서버, 사내 클라우드, 에이전트 플랫폼 안). 정해지면 앞단 인증, 비밀 저장, 여러 인스턴스 방식이 따라 정해진다. 2026-10-21에 PoC를 GCP에서 하기로 정했으나 2026-10-28 철회했다.
 - **외부 클라우드 provider (승인 시 대안)**: Vertex AI의 Claude·Gemini, Speech-to-Text v2, Vertex 임베딩, Document AI는 카탈로그만 있고 구현하지 않는다. `config/providers.yaml`의 STT·화자분리 기본값은 아직 `google_stt_v2`(구현 전)다.
 - **검색 품질 (실제 LLM 뒤)**: 질문 은행 예시를 넣은 꼬리질문의 품질, AI 금지 질문 확인의 정확도, 기준점을 넣은 채점의 면접관 점수 일치도(12단계 게이트)는 fake LLM으로는 볼 수 없다. 실제 모델을 붙인 뒤 출처별 채택률(관리자 > 꼬리질문 지표)과 함께 잰다.
