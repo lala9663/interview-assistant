@@ -70,6 +70,7 @@ cd frontend && npm run check    # 타입 검사 + 린트 + 테스트 + 빌드
 | [docs/whisper-benchmark.md](docs/whisper-benchmark.md) | 이 노트북에서 잰 Whisper 크기별 속도·메모리·정확도 |
 | [docs/ocr-benchmark.md](docs/ocr-benchmark.md) | 이 노트북에서 잰 PaddleOCR·Tesseract 쪽당 속도·메모리·한국어 정확도 |
 | [docs/reference/](docs/reference/README.md) | 참고 자료: 라이브러리·모델·클라우드 서비스(라이선스·비용·데이터 위치), STT·화자분리 비교, 음성 품질, 용어집 |
+| [docs/internal-environment-checklist.md](docs/internal-environment-checklist.md) | 사내 환경 확인 체크리스트: 외부 개발 환경을 사내와 맞추기 위해 손으로 채워 오는 양식(사내 LLM, OS·Python, Docker·GPU, DB, 네트워크·미러, 사용자 PC, 인증·연동, 반입·반출 규정) |
 | [docs/agent-integration.md](docs/agent-integration.md) | 사내 에이전트 플랫폼 연동(MCP 서버): 구조, 도구 목록, 보안 규칙(질문한 사람 권한·비식별 출력·웹 확인·감사 로그·플랫폼 LLM으로 가는 데이터), 사용자 신원을 갈아 끼우는 곳, 플랫폼 담당 부서 확인 목록, 연결 예시 |
 | [docs/implementation-order.md](docs/implementation-order.md) | 13단계 구현 순서와 체크리스트 |
 
