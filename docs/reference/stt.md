@@ -55,7 +55,7 @@
 
 ## 4. Google Cloud Speech-to-Text v2 (Chirp 3)
 
-외부 클라우드(Google) 대안이다. 2026-10-21 "PoC는 GCP" 결정에 따라 설정 파일 기본값이 됐고(`google_stt_v2`, 구현 전, 10·11단계), 2026-10-28 GCP를 철회한 뒤에도 `config/providers.yaml`에는 아직 남아 있다.
+외부 클라우드(Google) 대안이다. 2026-10-21 "PoC는 GCP" 결정에 따라 설정 파일 기본값이 됐으나(`google_stt_v2`, 구현 전, 10·11단계), 2026-10-28 GCP를 철회하며 `config/providers.yaml`의 STT 기본값은 로컬 Whisper로 바꿨다. 화자분리 기본값으로는 아직 남아 있다.
 
 | | 내용 |
 | --- | --- |

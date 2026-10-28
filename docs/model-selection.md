@@ -107,7 +107,7 @@
 - 화자: 한 마이크 대면 면접은 질문 중 / 답변 듣는 중 전환(Alt+1/Alt+2)으로 면접관·지원자를 나누고, 재전사에도 그 역할 기록을 붙인다([audio-input.md](audio-input.md) 4·8장). 화자분리 모델(방 마이크 하나·그룹 면접)은 남은 과제로, 로컬 후보는 pyannote community-1, Chirp 3(외부 클라우드)은 GA지만 비스트리밍 요청에서만 ([reference/diarization.md](reference/diarization.md))
 - 연결: 사내 에이전트 플랫폼에 MCP로 ([agent-integration.md](agent-integration.md))
 
-`config/providers.yaml`의 STT·화자분리 기본값은 2026-10-21 결정 때의 `google_stt_v2`(구현 전)로 아직 남아 있다.
+`config/providers.yaml`의 STT 기본값은 2026-10-28부터 로컬 Whisper(실시간 small·빔 1, 사후 large-v3·빔 5 + 면접 뒤 녹음 재전사)다. 화자분리 기본값은 2026-10-21 결정 때의 `google_stt_v2`(구현 전)로 아직 남아 있다.
 
 판단 기준: 실시간 부분 전사 0.5초 이하, 꼬리질문 첫 글자 2초 이하, 실제 면접 녹음의 오류율. 실행 위치와 모델이 정해지면 관리자 화면의 연결 테스트와 `scripts/bench_whisper.py`처럼 같은 조건에서 잰다.
 

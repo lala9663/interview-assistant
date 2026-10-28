@@ -5,7 +5,8 @@ from fastapi.testclient import TestClient
 
 from interview_assistant.config import ProviderSpec, Settings, load_providers
 from interview_assistant.main import create_app
-from interview_assistant.providers import registry
+from interview_assistant.providers import catalog, registry
+from interview_assistant.providers.catalog import DataLocation
 
 ROOT = Path(__file__).resolve().parents[1]
 FAKE = ROOT / "config" / "providers.fake.yaml"
@@ -42,6 +43,18 @@ def test_default_llm_is_an_in_house_model_server():
         assert spec.impl == "open_model_server"
         llm = registry.resolve("llm", spec)  # builds without calling the server
         assert "openai.com" not in llm.base_url and llm.model
+
+
+def test_default_stt_is_local_whisper():
+    cfg = load_providers(DEFAULT)
+    assert {slot: spec.impl for slot, spec in cfg.stt.items()} == {
+        "streaming": "faster_whisper",
+        "batch": "faster_whisper",
+    }
+    assert catalog.impl_info("stt", "faster_whisper").data_location is DataLocation.local
+    live = registry.resolve("stt", cfg.stt["streaming"])  # builds without loading the weights
+    assert live.size == "small" and live.beam_size == 1
+    assert cfg.stt["batch"].options["retranscribe"] is True
 
 
 def test_registered_but_unimplemented_impl_raises_clear_error():
