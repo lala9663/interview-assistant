@@ -2,6 +2,7 @@
 final transcript, to the answer closing (end of answer), to the first follow-up card.
 
     uv run python scripts/bench_live_audio.py --sizes small medium --turns silence smart_turn --json out.json
+    uv run python scripts/bench_live_audio.py --sizes small --turns silence --embedding bge-m3-int8 --llm-speed 1 --repeat 2
 
 Runs the app's own pieces in one process, on a seeded demo database in a temporary folder: the
 live hub with a `MicrophoneSource` (Silero VAD, the end-of-answer detector), local Whisper as the
@@ -16,6 +17,11 @@ segment, `closed` the last `qa.answered` (an answer ended early and went on clos
 suggestion shown (`suggestion.start`, a question-bank card or the first AI card), `first AI card`
 the fake LLM's first. The fake LLM runs without simulated latency (speed 0): a real model adds its
 time to first token on top. Whisper weights and the Smart Turn file must be downloaded already.
+
+`--embedding bge-m3` / `bge-m3-int8` uses the real BGE-M3 instead (loaded once, the index built on
+each run's database): the answer is then embedded while the candidate talks (live/prefetch.py),
+beside Whisper on the same CPU, and the question-bank card waits for the search.
+`--llm-speed 1` paces the fake LLM like the frontend mock (first token 0.55 s).
 """
 
 from __future__ import annotations
@@ -65,7 +71,7 @@ def seeded(folder: Path):
     return settings, factory
 
 
-async def run_one(settings, factory, size: str, turn_impl: str, wav: Path) -> dict:
+async def run_one(settings, factory, size: str, turn_impl: str, wav: Path, embedding=None, llm_speed: float = 0.0) -> dict:
     from interview_assistant.ai.followups import follow_up_events
     from interview_assistant.live.microphone import FRAME, MicrophoneSource, speech_flags
     from interview_assistant.models import InterviewSession, QAItem, QuestionSource
@@ -81,9 +87,9 @@ async def run_one(settings, factory, size: str, turn_impl: str, wav: Path) -> di
     stt = FasterWhisperSTT(model=size, beam_size=1, weights_dir=settings.weights_dir)
     await stt.warm_up()
     providers = Providers(
-        llm={"primary": FakeLLM(), "screening": FakeLLM()},
+        llm={"primary": FakeLLM(speed=llm_speed), "screening": FakeLLM()},
         stt={"streaming": stt, "batch": FakeSTT()},
-        embedding=FakeEmbedding(),
+        embedding=embedding or FakeEmbedding(),
         diarization=FakeDiarization(),
     )
     runtime = build_runtime(settings, providers=providers, session_factory=factory)
@@ -183,6 +189,7 @@ async def run_one(settings, factory, size: str, turn_impl: str, wav: Path) -> di
         "sample": wav.name,
         "stt": f"faster-whisper-{size}",
         "turn": turn_impl,
+        "embedding": getattr(embedding, "model", "fake"),
         "last_speech_s": round(float(last_speech_s), 2),
         "endpoint_s": to(endpoint),
         "final_s": to(max(finals) if finals else None),
@@ -201,8 +208,17 @@ async def main() -> None:
     parser.add_argument("--sizes", nargs="+", default=["small", "medium"])
     parser.add_argument("--turns", nargs="+", default=["silence", "smart_turn"])
     parser.add_argument("--samples", nargs="+", type=Path, default=[SAMPLES / "answer-pauses.wav", SAMPLES / "ko-fleurs-1894.wav"])
+    parser.add_argument("--embedding", default="fake", choices=["fake", "bge-m3", "bge-m3-int8"])
+    parser.add_argument("--llm-speed", type=float, default=0.0, help="fake LLM pace (1 = like the frontend mock)")
+    parser.add_argument("--repeat", type=int, default=1, help="runs per sample")
     parser.add_argument("--json", type=Path)
     args = parser.parse_args()
+    embedding = None
+    if args.embedding != "fake":
+        from interview_assistant.providers.embedding.bge_m3 import BgeM3Embedding
+
+        embedding = BgeM3Embedding(model=args.embedding, weights_dir=ROOT / "weights")
+        await embedding.warm_up()
     rows = []
     with tempfile.TemporaryDirectory(prefix="ia-bench-live-") as tmp:
         folder = Path(tmp)
@@ -210,15 +226,14 @@ async def main() -> None:
         template = folder / "bench.db"
         for size in args.sizes:
             for turn in args.turns:
-                for wav in args.samples:
-                    run_dir = folder / f"{size}-{turn}-{wav.stem}"
-                    run_dir.mkdir()
+                for wav in [w for w in args.samples for _ in range(args.repeat)]:
+                    run_dir = Path(tempfile.mkdtemp(prefix=f"{size}-{turn}-{wav.stem}-", dir=folder))
                     shutil.copyfile(template, run_dir / "bench.db")
                     run_settings = settings.model_copy(update={"database_url": f"sqlite+pysqlite:///{(run_dir / 'bench.db').as_posix()}"})
                     from interview_assistant.db import make_engine, make_session_factory
 
                     run_factory = make_session_factory(make_engine(run_settings.database_url, connect_args={"check_same_thread": False, "timeout": 30}))
-                    row = await run_one(run_settings, run_factory, size, turn, wav)
+                    row = await run_one(run_settings, run_factory, size, turn, wav, embedding, args.llm_speed)
                     run_factory.kw["bind"].dispose()
                     rows.append(row)
                     print(json.dumps(row, ensure_ascii=False), flush=True)
