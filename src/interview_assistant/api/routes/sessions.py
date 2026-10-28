@@ -302,6 +302,9 @@ async def create_qa(
             raise invalid("suggestion", "알 수 없는 제안입니다.")
         if suggestion.used_qa_item_id is not None:
             raise conflict("이미 질문으로 쓴 제안입니다.")
+        if suggestion.discarded is not None:
+            # Shown before its duplicate check finished (ai/followups.py), then taken back.
+            raise conflict("이미 한 질문과 비슷해 거둔 제안입니다.")
         target = suggestion.competency
 
     # A new question ends the answer in progress.
@@ -322,7 +325,9 @@ async def create_qa(
     audit(db, me, "qa.created", "interview_session", found.id, **details)
     db.commit()
     if found.recording_uri is not None:
-        runtime.hub.listen(found.id, qa.id)
+        runtime.hub.listen(found.id, qa.id)  # embeds the questions asked ahead, too
+    else:
+        runtime.hub.prefetch(found.id, [qa.question], runtime.deid.identity(found.application.candidate))
     return s.QAItem.model_validate(qa)
 
 

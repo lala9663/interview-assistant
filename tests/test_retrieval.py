@@ -361,12 +361,28 @@ def test_questions_already_asked_are_filtered_by_meaning(api, monkeypatch):
 
     monkeypatch.setattr(model, "stream", same_again)
     events = sse_events(api.post(f"/api/sessions/{LIVE}/follow-ups", json={"qa_item_id": qa["id"]}).text)
-    shown = [d["question"] for e, d in events if e == "suggestion.done"]
-    assert asked not in shown
+    shown = {d["question"]: d for e, d in events if e == "suggestion.done"}
+    # The model's copy is shown, still being checked, then taken back; the bank's never shows.
+    assert shown[asked]["source"] == "ai" and shown[asked]["checking"] is True
     [discarded] = [d for e, d in events if e == "suggestion.discarded"]
+    assert discarded["suggestion_id"] == shown[asked]["suggestion_id"]
     assert discarded["duplicate_of"] == asked and discarded["similarity"] >= 0.99
+    assert [d["suggestion_id"] for e, d in events if e == "suggestion.checked"] == [
+        d["suggestion_id"] for q, d in shown.items() if d["source"] == "ai" and q != asked
+    ]
     assert events[-1] == ("batch.done", {"batch_id": events[0][1]["batch_id"], "discarded": 1})
     assert duplicate["question"] not in shown
+
+    # The interviewer cannot record the duplicate (it was on screen for a moment).
+    count = len(api.get(f"/api/sessions/{LIVE}").json()["qa_items"])
+    refused = api.post(
+        f"/api/sessions/{LIVE}/qa-items",
+        json={"question": asked, "question_source": "ai_suggested",
+              "suggestion": {"batch_id": discarded["batch_id"], "suggestion_id": discarded["suggestion_id"],
+                             "edited": False, "original_question": asked}},
+    )
+    assert refused.status_code == 409 and "거둔 제안" in refused.json()["detail"]
+    assert len(api.get(f"/api/sessions/{LIVE}").json()["qa_items"]) == count
     with api.runtime.session_factory() as db:
         dropped = db.scalars(select(FollowUpSuggestion).where(FollowUpSuggestion.discarded == "duplicate")).all()
         mine = [r for r in dropped if r.bank_item_id == duplicate["id"]]
@@ -380,6 +396,118 @@ def test_questions_already_asked_are_filtered_by_meaning(api, monkeypatch):
     monkeypatch.setattr(embedding(api), "duplicate_threshold", 1.01)
     again = sse_events(api.post(f"/api/sessions/{LIVE}/follow-ups", json={"qa_item_id": qa["id"]}).text)
     assert not [e for e, _ in again if e == "suggestion.discarded"]
+
+
+def test_duplicate_check_runs_after_the_card_is_shown(api, monkeypatch):
+    """Embedding a model suggestion for the duplicate check holds up neither its card nor the next
+    one. Until the check is done the suggestion is not stored, so it cannot become a question; a
+    duplicate is stored as discarded and the API refuses it. The bank examples stay in the prompt."""
+    from interview_assistant.ai.followups import follow_up_events
+    from interview_assistant.models import InterviewSession
+
+    ready(api)
+    qa = _answer_preset(api, _preset(api, "공정·장비 이해"))
+    asked = qa["question"]
+    written = [asked, "그 조건을 정한 근거 데이터는 무엇이었나요?", "다른 챔버에서도 같은 현상이 있었나요?"]
+    retrieval = api.runtime.retrieval
+    original = retrieval.encode
+    state: dict[str, Any] = {}
+
+    async def gated(texts):
+        if len(texts) == 1 and texts[0] in written:  # a model suggestion's check (even if cached)
+            await state["gate"].wait()
+        return await original(texts)
+
+    prompts: list[str] = []
+
+    async def three(system: str, prompt: str, **kwargs: Any) -> AsyncIterator[str]:
+        prompts.append(prompt)
+        quote = re.search(r"<answer>\n(.*?)\n</answer>", prompt, re.S).group(1).split(".")[0]
+        for question in written:
+            yield (f"<suggestion><competency>공정·장비 이해</competency><question>{question}</question>"
+                   f"<rationale>확인</rationale><grounding>{quote}</grounding></suggestion>")
+        state["gate"].set()  # every card is on screen before any check may finish
+
+    monkeypatch.setattr(retrieval, "encode", gated)
+    monkeypatch.setattr(llm(api), "stream", three)
+    with api.runtime.session_factory() as db:
+        ai = api.runtime.pinned(db.get(InterviewSession, LIVE)).ai
+
+    async def run() -> list[tuple[str, dict]]:
+        state["gate"] = asyncio.Event()
+        events = []
+        async for event in follow_up_events(
+            api.runtime.session_factory, ai, api.runtime.deid,
+            session_id=LIVE, qa_item_id=qa["id"], retrieval=api.runtime.retrieval,
+        ):
+            events.append(event)
+            name, data = event
+            if name == "suggestion.done" and data["source"] == "ai":
+                assert data["checking"] is True
+                with api.runtime.session_factory() as db:  # not usable yet: the API does not know it
+                    assert db.get(FollowUpSuggestion, data["suggestion_id"]) is None
+        return events
+
+    events = api.portal.call(run)
+    names = [(e, d.get("suggestion_id")) for e, d in events]
+    ai_ids = [d["suggestion_id"] for e, d in events if e == "suggestion.start" and d["source"] == "ai"]
+    assert len(ai_ids) == 3
+    first_result = min(names.index(("suggestion.checked", i)) if ("suggestion.checked", i) in names
+                       else names.index(("suggestion.discarded", i)) for i in ai_ids)
+    assert names.index(("suggestion.start", ai_ids[2])) < first_result  # shown without waiting
+    [discarded] = [d for e, d in events if e == "suggestion.discarded"]
+    assert discarded["suggestion_id"] == ai_ids[0] and discarded["duplicate_of"] == asked
+    assert [d["suggestion_id"] for e, d in events if e == "suggestion.checked"] == ai_ids[1:]
+
+    # The question-bank examples are still in the prompt.
+    [prompt] = prompts
+    assert re.search(r"<example_questions>\n- \[", prompt)
+
+    with api.runtime.session_factory() as db:
+        rows = {r.id: r for r in db.scalars(select(FollowUpSuggestion).where(FollowUpSuggestion.id.in_(ai_ids)))}
+    assert rows[ai_ids[0]].discarded == "duplicate" and rows[ai_ids[0]].duplicate_of == asked
+    assert rows[ai_ids[1]].discarded is None and rows[ai_ids[1]].latency_ms is not None
+
+    def use(suggestion_id: str, question: str):
+        return api.post(
+            f"/api/sessions/{LIVE}/qa-items",
+            json={"question": question, "question_source": "ai_suggested",
+                  "suggestion": {"batch_id": discarded["batch_id"], "suggestion_id": suggestion_id,
+                                 "edited": False, "original_question": question}},
+        )
+
+    count = len(api.get(f"/api/sessions/{LIVE}").json()["qa_items"])
+    assert use(ai_ids[0], asked).status_code == 409
+    assert len(api.get(f"/api/sessions/{LIVE}").json()["qa_items"]) == count
+    assert use(ai_ids[1], written[1]).status_code == 201
+
+
+def test_retrieval_embeds_a_text_once_while_it_is_being_embedded(api):
+    """The answer prefetched while the candidate spoke and the follow-up search asking for the same
+    text share one embedding instead of queueing a second one behind it."""
+    retrieval = ready(api)
+    provider = retrieval.serving.provider
+    calls: list[list[str]] = []
+    original = provider.encode
+
+    async def counted(texts):
+        calls.append(list(texts))
+        await asyncio.sleep(0.05)
+        return await original(texts)
+
+    async def run():
+        provider.encode = counted
+        try:
+            first = asyncio.ensure_future(retrieval.encode(["지금 막 끝난 답변입니다."]))
+            await asyncio.sleep(0)
+            second = await retrieval.encode(["지금 막 끝난 답변입니다.", "이미 한 질문인가요?"])
+            return await first, second
+        finally:
+            del provider.encode
+
+    first, second = api.portal.call(run)
+    assert calls == [["지금 막 끝난 답변입니다."], ["이미 한 질문인가요?"]]
+    assert first[0].dense == second[0].dense
 
 
 def test_earlier_round_questions_count_as_asked(api, monkeypatch):

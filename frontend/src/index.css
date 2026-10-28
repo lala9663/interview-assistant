@@ -157,6 +157,7 @@
   --animate-caret: caret 1s steps(1) infinite;
   --animate-live: live 1.6s ease-out infinite;
   --animate-shimmer: shimmer 1.6s linear infinite;
+  --animate-appear-late: appear 160ms ease-out 400ms both;
 
   @keyframes caret {
     50% {
@@ -170,6 +171,11 @@
     70%,
     100% {
       box-shadow: 0 0 0 6px transparent;
+    }
+  }
+  @keyframes appear {
+    from {
+      opacity: 0;
     }
   }
   @keyframes shimmer {

@@ -88,7 +88,7 @@ export const WEIGHT_SIZES: Record<string, Record<string, number>> = {
   faster_whisper: WHISPER_SIZES,
   paddleocr: { 'ppocrv5-mobile': 32_288_476, 'ppocrv5-server': 115_701_129 },
   tesseract: { best: 27_928_729, fast: 5_790_503 },
-  bge_m3: { 'bge-m3': 2_284_631_868 },
+  bge_m3: { 'bge-m3-int8': 585_685_408, 'bge-m3': 2_284_631_868 },
   smart_turn: { 'smart-turn-v3.2-cpu': 8_679_182 },
 }
 export const weightKey = (impl: string, model: string) => `${impl}:${model}`
@@ -234,9 +234,15 @@ export function mockCatalog(downloaded: ReadonlySet<string>): ModelImpl[] {
       'MIT (BGE-M3 모델, ONNX Runtime), Apache-2.0 (tokenizers)',
       ['embedding'],
       [
-        field('model', '모델', 'select', 'bge-m3', {
+        field('model', '모델', 'select', 'bge-m3-int8', {
           choices: sized('bge_m3', [
-            choice('bge-m3', 'BGE-M3 (fp32 ONNX)', '한국어 포함 100여 개 언어, 최대 8,192토큰. 밀집 1024차원 + 희소(단어 일치). 메모리 약 2.5GB.', { recommended_for: ['embedding'] }),
+            choice(
+              'bge-m3-int8',
+              'BGE-M3 (int8 ONNX)',
+              '같은 모델의 가중치를 int8로 줄인 것(Hugging Face transformers.js 변환, MIT). 이 노트북에서 답변 1건 0.28초(fp32 0.44~0.74초), 메모리 약 0.9GB(fp32 1.6GB). 검색 품질은 평가 세트 37개 중 1개 차이(상위 3개 적중 94.6% → 91.9%), 약어 질의는 같다. fp32와 바꾸면 다시 색인한다.',
+              { recommended_for: ['embedding'] },
+            ),
+            choice('bge-m3', 'BGE-M3 (fp32 ONNX)', '공식 내보내기 원본. 한국어 포함 100여 개 언어, 최대 8,192토큰. 밀집 1024차원 + 희소(단어 일치). 메모리 약 1.6GB, GPU 서버나 메모리가 넉넉할 때.'),
           ]),
         }),
         field('max_length', '최대 길이 (토큰)', 'integer', 512, { help: '이보다 긴 텍스트는 잘라서 임베딩합니다. 면접 답변 하나는 보통 300토큰 안쪽이고, 길수록 느려집니다.', minimum: 64, maximum: 8192 }),

@@ -12,7 +12,7 @@ const SCHEDULED = '0a1b2c3d-0000-4000-9000-s10000000000'
 
 const WAIT = { timeout: 15_000, interval: 100 }
 
-/** Three finished AI cards (the question-bank cards come first, finished at once). waitFor reruns its
+/** Three finished AI cards, usable (past their duplicate check; the question-bank cards come first, finished at once). waitFor reruns its
  * check on every DOM change, and the transcript and the suggestions stream hundreds of them: a whole-page
  * text query each time made this wait CPU-bound, and under load it timed out with two cards of three. So it
  * watches the suggestions panel only, with a plain selector, and allows for a busy machine. */
@@ -20,7 +20,7 @@ async function suggestionsReady() {
   let panel: HTMLElement | null = null
   await waitFor(() => expect((panel = document.querySelector<HTMLElement>('section[aria-label="꼬리질문 제안"]'))).not.toBeNull(), WAIT)
   const ready = () =>
-    [...panel!.querySelectorAll('li[data-source="ai"] button')].filter((b) => b.textContent?.trim() === '이 질문 사용')
+    [...panel!.querySelectorAll<HTMLButtonElement>('li[data-source="ai"] button')].filter((b) => b.textContent?.trim() === '이 질문 사용' && !b.disabled)
   await waitFor(() => expect(ready()).toHaveLength(3), { ...WAIT, timeout: 40_000, container: panel! })
 }
 
@@ -78,6 +78,31 @@ describe('live interview (mock API over MSW)', { timeout: 60_000 }, () => {
     await waitFor(() => expect(getDb().qaOf(LIVE)).toHaveLength(4), WAIT)
     expect(getDb().qaOf(LIVE)[3]).toMatchObject({ question: '그 기준을 팀에 어떻게 공유했나요?', question_source: 'ai_suggested' })
     expect(await within(qaLog()).findByText('수정함', {}, WAIT)).toBeInTheDocument()
+  })
+
+  it('folds an AI suggestion that turns out to repeat a question already asked, and never records it', async () => {
+    const db = getDb()
+    const [q1, , q3] = db.qaOf(LIVE)
+    const repeated = db.qaMeta.get(q3!.id)!.suggestions![0]!.question
+    q1!.question = repeated
+    const user = userEvent.setup()
+    await renderRoute(LiveInterviewPage, { path: '/sessions/:sessionId/live', url: `/sessions/${LIVE}/live` })
+
+    // Shown while it streamed, then dimmed and folded to one line once the check found the repeat.
+    const folded = await screen.findByRole('listitem', { name: '꼬리질문 후보 (이미 한 질문과 비슷해 접음)' }, { ...WAIT, timeout: 40_000 })
+    expect(folded).toHaveTextContent('이미 한 질문과 비슷함')
+    expect(folded).toHaveTextContent(repeated)
+    expect(within(folded).queryByRole('button', { name: '이 질문 사용' })).toBeNull()
+    expect([...db.suggestions.values()].some((s) => s.question === repeated)).toBe(false) // not usable at all
+    await waitFor(() => expect(screen.getByTestId('discarded-note')).toHaveTextContent('1개는 접었습니다'), WAIT)
+    // The cards still offered are numbered without a gap; the folded one has no number.
+    const numbers = screen.getAllByRole('listitem', { name: /꼬리질문 후보 \d+/ }).map((c) => Number(/후보 (\d+)/.exec(c.getAttribute('aria-label')!)![1]))
+    expect(numbers).toEqual(numbers.map((_, i) => i + 1))
+
+    await user.click(within(folded).getByRole('button', { name: '접은 후보 보기' }))
+    const opened = screen.getByRole('listitem', { name: '꼬리질문 후보 (이미 한 질문과 비슷함)' })
+    expect(opened).toHaveTextContent(`이미 한 질문과 뜻이 같아 쓰지 않습니다. 한 질문: ${repeated}`)
+    expect(within(opened).queryByRole('button', { name: '이 질문 사용' })).toBeNull()
   })
 
   it('requires the recording consent step before starting', async () => {

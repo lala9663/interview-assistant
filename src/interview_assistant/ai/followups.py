@@ -8,10 +8,14 @@ the SSE events of docs/api-contract.md 3.2 as text arrives.
 
 A candidate that means the same as a question already asked in this interview or an earlier round,
 or as a suggestion shown before it (dense similarity at or above the embedding role's
-`duplicate_threshold`), is left out: a bank one before it is shown, a model one once it is complete
-(`suggestion.discarded` takes back the card that was being written). Every candidate is stored
-(FollowUpSuggestion) with its source, timing and, if dropped, what it duplicated. Suggestions are
-never turned into questions here.
+`duplicate_threshold`), is left out. A bank one is checked before it is shown (its vector is in the
+index). A model one is checked after it is shown, so embedding it does not hold up the card or the
+next one: its `suggestion.done` says `checking`, and `suggestion.checked` (keep it) or
+`suggestion.discarded` (the screen folds it away) follows. Its row is stored only when the check is
+done, marked as a duplicate if it is one, so a duplicate can never become a question (the API
+refuses a discarded suggestion, and one still being checked is not known yet). Every candidate is
+stored (FollowUpSuggestion) with its source, timing and, if dropped, what it duplicated.
+Suggestions are never turned into questions here.
 
 In round 2 and later the prompt also carries the earlier rounds' Q&A (de-identified, as stored),
 so the model does not ask again what an earlier round asked and digs deeper instead. Those texts
@@ -20,9 +24,11 @@ are declared to the guard like the current answer.
 
 from __future__ import annotations
 
+import asyncio
 import logging
 import re
 import time
+from collections import deque
 from collections.abc import AsyncIterator, Sequence
 from dataclasses import dataclass, field
 from typing import Any
@@ -64,6 +70,9 @@ CONTEXT_ANSWERS = 2  # earlier answers given to the model as context
 Event = tuple[str, dict[str, Any]]
 
 _FIELDS = ("competency", "question", "rationale", "grounding")
+
+# Duplicate checks of shown suggestions finish (and store their row) even if the client went away.
+_checks: set[asyncio.Task[Any]] = set()
 
 
 @dataclass
@@ -409,16 +418,45 @@ async def follow_up_events(
     rows = []
 
     parser = SuggestionParser()
-    written = 0  # model suggestions shown (duplicates do not count)
+    checks: deque[tuple[str, asyncio.Task[tuple[str, float] | None]]] = deque()  # shown, oldest first
+    last: asyncio.Task[tuple[str, float] | None] | None = None
+    kept = 0  # model suggestions shown and not taken back
     suggestion_id = ""
     competency = ""
     shown_at = 0
     discarded = 0
+
+    async def settle(everything: bool) -> AsyncIterator[Event]:
+        """Results of the duplicate checks that are done (all of them: wait), in order."""
+        nonlocal kept, discarded
+        while checks and (everything or checks[0][1].done()):
+            checked_id, task = checks.popleft()
+            same = await task
+            if same is None:
+                kept += 1
+                yield "suggestion.checked", {"batch_id": batch_id, "suggestion_id": checked_id}
+            else:
+                discarded += 1
+                yield (
+                    "suggestion.discarded",
+                    {
+                        "batch_id": batch_id,
+                        "suggestion_id": checked_id,
+                        "reason": "duplicate",
+                        "duplicate_of": same[0],
+                        "similarity": round(same[1], 3),
+                    },
+                )
+
     try:
         async for chunk in stream:
             for event in parser.feed(chunk):
-                if written >= MAX_SUGGESTIONS:
-                    break
+                if kept + len(checks) >= MAX_SUGGESTIONS:
+                    # Enough on screen: a duplicate among them leaves room for one more.
+                    async for result in settle(True):
+                        yield result
+                    if kept >= MAX_SUGGESTIONS:
+                        break
                 if event.kind == "start":
                     suggestion_id = new_id()
                     competency = _pick_competency(event.fields["competency"], names, target)
@@ -467,34 +505,28 @@ async def follow_up_events(
                         "latency_ms": shown_at,
                     }
                     index += 1
-                    vector = await _vector(retrieval, done["question"], known) if cleared else None
-                    same = (
-                        duplicate_of(vector, [(s.text, s.vector) for s in shown], threshold)
-                        if vector is not None
-                        else None
-                    )
-                    if same is not None:
-                        row |= {"discarded": "duplicate", "duplicate_of": same[0], "similarity": round(same[1], 3)}
-                        _store(session_factory, [row], qa_item_id)
-                        discarded += 1
-                        yield (
-                            "suggestion.discarded",
-                            {
-                                "batch_id": batch_id,
-                                "suggestion_id": suggestion_id,
-                                "reason": "duplicate",
-                                "duplicate_of": same[0],
-                                "similarity": round(same[1], 3),
-                            },
+                    yield "suggestion.done", done | {"checking": True}
+                    last = asyncio.create_task(
+                        _check(
+                            last,
+                            retrieval if cleared else None,
+                            known,
+                            shown,
+                            threshold,
+                            row,
+                            session_factory,
+                            qa_item_id,
                         )
-                        continue
-                    if vector is not None:
-                        shown.append(_Shown(done["question"], vector))
-                    _store(session_factory, [row], qa_item_id)
-                    yield "suggestion.done", done
-                    written += 1
-            if written >= MAX_SUGGESTIONS:
+                    )
+                    _checks.add(last)
+                    last.add_done_callback(_checks.discard)
+                    checks.append((suggestion_id, last))
+            async for result in settle(False):
+                yield result
+            if kept >= MAX_SUGGESTIONS:
                 break
+        async for result in settle(True):
+            yield result
     except Exception:
         log.exception("follow-up stream failed")
         yield "error", {"message": "꼬리질문 생성 중 오류가 발생했습니다."}
@@ -504,6 +536,32 @@ async def follow_up_events(
         if aclose is not None:
             await aclose()  # stops the model call when the client goes away
     yield "batch.done", {"batch_id": batch_id, "discarded": discarded}
+
+
+async def _check(
+    previous: asyncio.Task[Any] | None,
+    retrieval: Retrieval | None,
+    known: Any,
+    shown: list[_Shown],
+    threshold: float,
+    row: dict[str, Any],
+    session_factory: sessionmaker[Session],
+    qa_item_id: str,
+) -> tuple[str, float] | None:
+    """Duplicate check of a model suggestion already on screen: the asked or shown question it
+    means the same as, if any. Compared after the check before it (suggestions shown earlier count
+    as shown), then its row is stored, as discarded if it is a duplicate."""
+    question = row["question"]
+    vector = await _vector(retrieval, question, known)
+    if previous is not None:
+        await asyncio.wait([previous])
+    same = duplicate_of(vector, [(s.text, s.vector) for s in shown], threshold) if vector is not None else None
+    if same is not None:
+        row |= {"discarded": "duplicate", "duplicate_of": same[0], "similarity": round(same[1], 3)}
+    elif vector is not None:
+        shown.append(_Shown(question, vector))
+    _store(session_factory, [row], qa_item_id)
+    return same
 
 
 async def _vector(retrieval: Retrieval | None, text: str, known: Any) -> list[float] | None:

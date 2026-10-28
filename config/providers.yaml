@@ -37,10 +37,12 @@ providers:
     # 외부 클라우드 대안(승인 시, 구현 전): { impl: google_stt_v2, model: chirp_3 }(Google, 회사 밖) / { impl: clova_speech }
     #   google_stt_v2는 2026-10-21 "PoC는 GCP" 때의 기본값이었고 2026-10-28 GCP를 철회하며 바꿨다.
   # 임베딩: 로컬 BGE-M3(밀집 + 희소). 모델 파일은 관리자 화면의 "다운로드"로 받는다.
+  # int8(0.59GB)이 권장: fp32보다 답변 임베딩 1.6~2.7배 빠르고 메모리 0.6GB 적으며, 검색 차이는 평가 세트 37개 중
+  # 1개(docs/embedding-benchmark.md "int8 양자화"). 이 값은 새 DB의 첫 기동에만 쓰이고, 이미 적용한 설정은 그대로다.
   embedding:
     impl: bge_m3
-    model: bge-m3
-    # 대안: { impl: vertex_embedding, model: gemini-embedding-001 }(외부 클라우드 Google, 구현 전)
+    model: bge-m3-int8
+    # 대안: { model: bge-m3 }(fp32 공식 원본 2.29GB) / { impl: vertex_embedding, model: gemini-embedding-001 }(외부 클라우드 Google, 구현 전)
   diarization:
     impl: google_stt_v2
     # 대안: { impl: pyannote }

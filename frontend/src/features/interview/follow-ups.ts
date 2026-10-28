@@ -14,6 +14,10 @@ export interface Suggestion {
   done: boolean
   rationale: string | null
   grounding: string | null
+  /** shown, duplicate check still running: not usable yet */
+  checking: boolean
+  /** taken back after it was shown: the asked (or shown) question it means the same as */
+  duplicateOf: string | null
 }
 
 export interface FollowUpState {
@@ -24,7 +28,7 @@ export interface FollowUpState {
   model: string | null
   /** the embedding model the question bank was searched with (null: no search) */
   retrievalModel: string | null
-  /** AI candidates taken back because they meant the same as a question already asked */
+  /** AI candidates taken back because they meant the same as a question already asked (their cards stay, folded) */
   discarded: { question: string; duplicateOf: string }[]
   error: string | null
   /** suggestion the interviewer turned into a question, and the QA seq it became */
@@ -82,6 +86,8 @@ export function followUpReducer(state: FollowUpState, action: FollowUpAction): F
                 done: false,
                 rationale: null,
                 grounding: null,
+                checking: false,
+                duplicateOf: null,
               },
             ],
           }
@@ -97,16 +103,30 @@ export function followUpReducer(state: FollowUpState, action: FollowUpAction): F
             ...state,
             suggestions: state.suggestions.map((s) =>
               s.id === e.data.suggestion_id
-                ? { ...s, text: e.data.question, done: true, rationale: e.data.rationale, grounding: e.data.grounding, competency: e.data.competency }
+                ? {
+                    ...s,
+                    text: e.data.question,
+                    done: true,
+                    rationale: e.data.rationale,
+                    grounding: e.data.grounding,
+                    competency: e.data.competency,
+                    checking: e.data.checking ?? false,
+                  }
                 : s,
             ),
           }
+        case 'suggestion.checked':
+          if (e.data.batch_id !== state.batchId) return state
+          return { ...state, suggestions: state.suggestions.map((s) => (s.id === e.data.suggestion_id ? { ...s, checking: false } : s)) }
         case 'suggestion.discarded': {
           if (e.data.batch_id !== state.batchId) return state
           const gone = state.suggestions.find((s) => s.id === e.data.suggestion_id)
           return {
             ...state,
-            suggestions: state.suggestions.filter((s) => s.id !== e.data.suggestion_id),
+            // The card stays where it was, folded and marked, so the list does not jump under the interviewer.
+            suggestions: state.suggestions.map((s) =>
+              s.id === e.data.suggestion_id ? { ...s, done: true, checking: false, duplicateOf: e.data.duplicate_of } : s,
+            ),
             discarded: [...state.discarded, { question: gone?.text ?? '', duplicateOf: e.data.duplicate_of }],
           }
         }

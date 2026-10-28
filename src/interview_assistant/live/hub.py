@@ -321,6 +321,11 @@ class LiveHub:
             channel.prefetch = AnswerPrefetch(self.retrieval)
         return channel.prefetch
 
+    def prefetch(self, session_id: str, texts: list[str], known: Any) -> None:
+        """Embed a question just asked ahead of its follow-ups, also when nothing is recorded
+        (answers typed in): the follow-up search compares candidates with it."""
+        self._prefetch(session_id).push(texts, known)
+
     async def _listen(self, session_id: str, qa_item_id: str, announce: bool) -> None:
         channel = self._channel(session_id)
         source = self.source_for(session_id)

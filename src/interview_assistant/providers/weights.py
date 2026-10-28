@@ -285,6 +285,37 @@ BGE_M3: dict[str, WeightSet] = {
             ),
         ),
     ),
+    # int8, checked 2026-10-28: the same export (outputs sentence_embedding, token_embeddings)
+    # dynamically quantised by Hugging Face's transformers.js conversion (Xenova/bge-m3, MIT;
+    # quantize_config.json: QInt8 weights, per channel, reduce_range), so 0.57 GB instead of
+    # 2.27 GB. Its tokenizer.json is byte for byte BAAI's; the sparse head comes from BAAI. Vectors
+    # differ slightly from fp32, so it has its own index key (switching reindexes).
+    "bge-m3-int8": WeightSet(
+        "bge-m3/onnx-int8",
+        "Xenova/bge-m3",
+        "4de13258303883538bd53b696b452bf8099f0858",
+        (
+            WeightFile(
+                "onnx/model.onnx",
+                568599071,
+                "e5b42096865cef734247dd8c7a44e35d305b70ba0c3736758065e1cad50f6453",
+                remote="onnx/sentence_transformers_int8.onnx",
+            ),
+            WeightFile(
+                "onnx/tokenizer.json",
+                17082821,
+                "6710678b12670bc442b99edc952c4d996ae309a7020c1fa0096dd245c2faf790",
+                remote="tokenizer.json",
+            ),
+            WeightFile(
+                "sparse_linear.pt",
+                3516,
+                "45c93804d2142b8f6d7ec6914ae23a1eee9c6a1d27d83d908a20d2afb3595ad9",
+                repo_id="BAAI/bge-m3",
+                revision="5617a9f61b028005a4858fdac845db406aefb181",
+            ),
+        ),
+    ),
 }
 
 

@@ -739,6 +739,8 @@ export interface SuggestionDone extends SuggestionMeta {
   /** bank only: the question-bank item and its retrieval score */
   bank_item_id?: string
   score?: number
+  /** AI only: shown before its duplicate check; `suggestion.checked` or `suggestion.discarded` follows */
+  checking?: boolean
 }
 
 export type FollowUpEvent =
@@ -749,7 +751,9 @@ export type FollowUpEvent =
   | { event: 'suggestion.start'; data: SuggestionMeta }
   | { event: 'suggestion.delta'; data: { batch_id: string; suggestion_id: string; text: string } }
   | { event: 'suggestion.done'; data: SuggestionDone }
-  /** an AI suggestion that turned out to mean the same as a question already asked: take its card back */
+  /** the AI suggestion shown with `checking` is not a duplicate: it can be used */
+  | { event: 'suggestion.checked'; data: { batch_id: string; suggestion_id: string } }
+  /** an AI suggestion already shown turned out to mean the same as a question already asked: fold its card away */
   | {
       event: 'suggestion.discarded'
       data: { batch_id: string; suggestion_id: string; reason: 'duplicate'; duplicate_of: string; similarity: number }

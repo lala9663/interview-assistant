@@ -112,11 +112,14 @@ uv run python scripts/bench_whisper.py --manifest clips.json --sizes small mediu
 BAAI의 다국어 임베딩 모델 BGE-M3(MIT)를 이 PC의 CPU에서 돌린다. 공식 ONNX 변환본을 ONNX Runtime(MIT)과 tokenizers(Apache-2.0)로 읽어 torch가 필요 없다. 의미 벡터(밀집, 1024차원)와 단어 일치 가중치(희소)를 함께 내고, 검색 점수는 의미 유사도 + `sparse_weight` × 단어 일치다. 질문·답변 텍스트는 PC 밖으로 나가지 않는다. 쓰는 곳은 [question-bank.md](question-bank.md), 측정은 [embedding-benchmark.md](embedding-benchmark.md).
 
 1. `uv sync --extra whisper --extra ocr --extra embedding` (onnxruntime·tokenizers는 faster-whisper도 쓰는 패키지라 대부분 이미 있다)
-2. 모델 설정 > 임베딩 > 변경 > "BGE-M3 (로컬)" > 모델 카드의 "다운로드 2.3GB". Hugging Face BAAI/bge-m3의 커밋 `5617a9f`에서 ONNX 모델·데이터·토크나이저와 희소 헤드(`sparse_linear.pt`, 바이트로만 읽고 pickle은 실행하지 않음)를 sha256 검증으로 받아 `weights/bge-m3/onnx-fp32/`에 둔다. 받기 전에는 요구 조건 미충족으로 테스트·적용이 안 된다.
+2. 모델 설정 > 임베딩 > 변경 > "BGE-M3 (로컬)" > 모델을 고르고 모델 카드의 "다운로드". 받기 전에는 요구 조건 미충족으로 테스트·적용이 안 된다. 희소 헤드(`sparse_linear.pt`)는 바이트로만 읽고 pickle은 실행하지 않는다. 모든 파일을 커밋 고정·sha256 검증으로 받는다.
+   - **BGE-M3 (int8 ONNX)**, 권장, 0.59GB: Hugging Face `Xenova/bge-m3` 커밋 `4de1325`의 int8 변환본(transformers.js, MIT)과 BAAI의 희소 헤드를 `weights/bge-m3/onnx-int8/`에. 이 노트북에서 답변 1건 0.28초, 메모리 약 0.9GB. 평가 세트에서 검색 품질 차이는 37개 중 1개([embedding-benchmark.md](embedding-benchmark.md) "int8 양자화")
+   - **BGE-M3 (fp32 ONNX)**, 2.29GB: BAAI/bge-m3 커밋 `5617a9f`의 공식 ONNX를 `weights/bge-m3/onnx-fp32/`에. 답변 1건 0.44~0.9초, 메모리 약 1.6GB
+   - 둘은 벡터가 조금 달라 색인 키가 다르다. 서로 바꾸면 백그라운드로 다시 색인한다. 권장값이 바뀌어도 이미 적용한 설정은 그대로다
 3. 옵션: 최대 길이(512토큰), CPU 스레드(자동 = 코어 수의 절반, 최대 6), 검색 설정 셋(단어 일치 가중치 0.3, 같은 질문으로 볼 유사도 0.85, 질문 은행 제안 최소 점수 0.55). 검색 설정은 바꿔도 벡터를 다시 만들지 않고 모델도 다시 올리지 않는다.
 4. 연결 테스트, 사유, 적용. 적용하면 "임베딩 색인" 칸에 새 색인 진행률이 보이고, 끝날 때까지 이전 색인(이전 모델)으로 검색한다. 실패하면 이전 색인이 남고 "다시 만들기"로 다시 시도한다.
 
-메모리는 서버 프로세스에 약 1.6GB가 더해진다(Whisper medium과 함께 2.5GB). ONNX Runtime은 Intel OpenMP를 싣지 않아 Whisper(CTranslate2)와 한 프로세스에서 돌아도 DLL이 충돌하지 않는다. Vertex AI 임베딩은 카탈로그에만 있다(구현 전).
+메모리는 서버 프로세스에 fp32 약 1.6GB, int8 약 0.9GB가 더해진다(Whisper medium과 함께 2.5GB, 1.9GB). ONNX Runtime은 Intel OpenMP를 싣지 않아 Whisper(CTranslate2)와 한 프로세스에서 돌아도 DLL이 충돌하지 않는다. Vertex AI 임베딩은 카탈로그에만 있다(구현 전).
 
 ## 음성 입력 (VAD, 답변 끝 판정, 잡음 억제)
 

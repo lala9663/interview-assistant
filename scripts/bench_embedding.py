@@ -6,7 +6,11 @@ PaddleOCR in its worker process). Memory is the resident set size (psutil). No n
 files come from 관리자 > 모델 설정.
 
     uv run --with psutil python scripts/bench_embedding.py
+    uv run --with psutil python scripts/bench_embedding.py --model bge-m3-int8 --json int8.json
     uv run --with psutil python scripts/bench_embedding.py --whisper medium --json bench.json
+
+Run each model in its own process (memory is the process's). Times wobble with heat and power
+management on this laptop, so calls are repeated and reported as median and p90.
 """
 
 from __future__ import annotations
@@ -82,6 +86,9 @@ def stats(times: list[float]) -> dict[str, float]:
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
     parser.add_argument("--weights", default=str(ROOT / "weights"))
+    parser.add_argument("--model", default="bge-m3", help="bge-m3 (fp32) or bge-m3-int8")
+    parser.add_argument("--repeat", type=int, default=30, help="runs per timed call")
+    parser.add_argument("--loads", type=int, default=3, help="times the model is loaded")
     parser.add_argument("--whisper", default="medium", help="faster-whisper size loaded beside it")
     parser.add_argument("--threads", type=int, default=0, help="BGE-M3 CPU threads (0: auto)")
     parser.add_argument("--json")
@@ -91,29 +98,44 @@ def main() -> None:
     report: dict = {"cpu_threads_logical": psutil.cpu_count(), "ram_gb": round(psutil.virtual_memory().total / 1e9, 1)}
     report["rss_start_gb"] = round(psutil.Process().memory_info().rss / 1e9, 2)
 
-    from interview_assistant.providers.embedding.bge_m3 import BgeM3Embedding
+    from interview_assistant.providers.embedding.bge_m3 import BgeM3Embedding, _Engine
 
-    bge = BgeM3Embedding(weights_dir=weights, cpu_threads=args.threads)
+    bge = BgeM3Embedding(model=args.model, weights_dir=weights, cpu_threads=args.threads)
+    report["model"] = bge.model
+    report["index_key"] = bge.index_key
     report["threads"] = bge.threads
     started = time.perf_counter()
     asyncio.run(bge.warm_up())
-    report["load_s"] = round(time.perf_counter() - started, 2)
+    loads = [time.perf_counter() - started]
     report["rss_after_load_gb"] = round(rss(), 2)
+    # Load again a few times, one model in memory at a time (the engine cache holds weak references).
+    bge._engine = None  # noqa: SLF001
+    folder = bge.weights.path(weights)
+    loads += timed(lambda: _Engine(folder, bge.threads), args.loads - 1)
+    report["load"] = stats(loads)
+    asyncio.run(bge.warm_up())
 
     encode = lambda texts: asyncio.run(bge.encode(texts))  # noqa: E731
     tokens = len(bge._engine.tokenizer.encode(ANSWER).ids)  # noqa: SLF001
     encode([ANSWER])  # first call warms the kernels
     report["answer_tokens"] = tokens
-    report["answer"] = stats(timed(lambda: encode([ANSWER]), 10))
-    report["short_question"] = stats(timed(lambda: encode(["FDC 데이터에서 이상 징후를 찾을 때 어떤 변수부터 보나요?"]), 10))
+    report["answer"] = stats(timed(lambda: encode([ANSWER]), args.repeat))
+    report["short_question"] = stats(timed(lambda: encode(["FDC 데이터에서 이상 징후를 찾을 때 어떤 변수부터 보나요?"]), args.repeat))
 
     questions = thousand_questions()
     started = time.perf_counter()
     embeddings = []
+    chunks = []
     for i in range(0, len(questions), CHUNK):
+        chunk_started = time.perf_counter()
         embeddings.extend(encode(questions[i : i + CHUNK]))
+        chunks.append(time.perf_counter() - chunk_started)
     seconds = time.perf_counter() - started
-    report["index_1000"] = {"seconds": round(seconds, 1), "per_question_ms": round(seconds * 1000 / len(questions))}
+    report["index_1000"] = {
+        "seconds": round(seconds, 1),
+        "per_question_ms": round(seconds * 1000 / len(questions)),
+        "chunk_of_16": stats(chunks),
+    }
     report["rss_after_index_gb"] = round(rss(), 2)
 
     index = MemoryIndex()

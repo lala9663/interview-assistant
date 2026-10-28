@@ -1,5 +1,6 @@
 """BGE-M3 on this machine: sparse weights on technical terms, retrieval of the evaluation set, the
-duplicate threshold, and loading beside faster-whisper in one process.
+duplicate threshold, and loading beside faster-whisper in one process. The model checks run for the
+fp32 and the int8 weights, each only if downloaded.
 
 Skipped unless onnxruntime/tokenizers and the model files are here (`uv sync --extra embedding`,
 관리자 > 모델 설정 > 임베딩 > 다운로드). No network.
@@ -28,18 +29,21 @@ from .conftest import ROOT
 WEIGHTS = Path(os.environ.get("IA_WEIGHTS_DIR") or ROOT / "weights")
 
 pytestmark = pytest.mark.skipif(
-    importlib.util.find_spec("onnxruntime") is None or not is_complete(BGE_M3["bge-m3"], WEIGHTS),
-    reason="onnxruntime or the BGE-M3 model files are missing",
+    importlib.util.find_spec("onnxruntime") is None, reason="onnxruntime is not installed"
 )
+INDEX_KEYS = {"bge-m3": "BAAI/bge-m3@5617a9f/1024", "bge-m3-int8": "BAAI/bge-m3-int8@4de1325/1024"}
 
 
-@pytest.fixture(scope="module")
-def bge():
+@pytest.fixture(scope="module", params=list(INDEX_KEYS))
+def bge(request):
     from interview_assistant.providers.embedding.bge_m3 import BgeM3Embedding
 
-    provider = BgeM3Embedding(weights_dir=WEIGHTS)
+    if not is_complete(BGE_M3[request.param], WEIGHTS):
+        pytest.skip(f"the {request.param} model files are not downloaded")
+    provider = BgeM3Embedding(model=request.param, weights_dir=WEIGHTS)
     asyncio.run(provider.warm_up())
-    return provider
+    yield provider
+    provider._engine = None  # one model in memory at a time
 
 
 def encode(provider, texts):
@@ -53,7 +57,7 @@ def test_dense_and_sparse_outputs(bge):
     for term in ("DC", "▁RF", "▁CV"):  # FDC is "▁F" + "DC", CVD "▁CV" + "D" in this vocabulary
         assert tokens.get(term, 0) > 0.1, (term, tokens)
     assert not {"<s>", "</s>", "<pad>"} & set(tokens)
-    assert bge.index_key == "BAAI/bge-m3@5617a9f/1024"
+    assert bge.index_key == INDEX_KEYS[next(k for k, v in BGE_M3.items() if v is bge.weights)]
 
 
 def _eval():
@@ -92,7 +96,7 @@ def test_technical_terms_and_korean_answers_find_their_questions(bge):
     # Abbreviations and terms (FDC, SPC, DOE, CVD, SLO, GPU ...): always in the top 3.
     assert hit("hybrid", 3, ("term", "mixed")) == 1.0
     assert hit("hybrid", 1, ("term", "mixed")) >= hit("dense", 1, ("term", "mixed"))
-    assert hit("hybrid", 3) >= 0.9  # measured 0.946 (35/37), docs/embedding-benchmark.md
+    assert hit("hybrid", 3) >= 0.9  # measured fp32 0.946 (35/37), int8 0.919, docs/embedding-benchmark.md
     assert hit("hybrid", 1) >= hit("dense", 1)
 
 
@@ -117,8 +121,10 @@ def test_duplicate_threshold_tells_the_same_question(bge):
 
 
 @pytest.mark.skipif(
-    importlib.util.find_spec("faster_whisper") is None or not is_complete(WHISPER["small"], WEIGHTS),
-    reason="faster-whisper small is not downloaded",
+    importlib.util.find_spec("faster_whisper") is None
+    or not is_complete(WHISPER["small"], WEIGHTS)
+    or not is_complete(BGE_M3["bge-m3"], WEIGHTS),
+    reason="faster-whisper small or BGE-M3 is not downloaded",
 )
 @pytest.mark.parametrize("order", ["bge-first", "whisper-first"])
 def test_loads_beside_faster_whisper_in_one_process(order):

@@ -20,8 +20,13 @@ const emit = defineEmits<{ use: [s: Suggestion, text: string, edited: boolean]; 
 
 const streamingEmpty = computed(() => props.state.status === 'streaming' && props.state.suggestions.length === 0)
 // While streaming, room for the AI's 2-3 under whatever the question bank showed first.
-const aiCount = computed(() => props.state.suggestions.filter((s) => s.source === 'ai').length)
+const aiCount = computed(() => props.state.suggestions.filter((s) => s.source === 'ai' && s.duplicateOf === null).length)
 const placeholders = computed(() => (props.state.status === 'streaming' ? Math.max(0, 3 - aiCount.value) : 0))
+// Numbers count the cards still offered; one folded away as a duplicate has none.
+const positions = computed(() => {
+  let n = 0
+  return props.state.suggestions.map((s) => (s.duplicateOf === null ? ++n : null))
+})
 </script>
 
 <template>
@@ -78,7 +83,7 @@ const placeholders = computed(() => (props.state.status === 'streaming' ? Math.m
           v-for="(s, i) in state.suggestions"
           :key="s.id"
           :s="s"
-          :position="i + 1"
+          :position="positions[i] ?? null"
           :used="state.used?.suggestionId === s.id"
           :used-seq="state.used?.suggestionId === s.id ? state.used.seq : null"
           :used-edited="state.used?.suggestionId === s.id ? state.used.edited : false"
@@ -94,7 +99,7 @@ const placeholders = computed(() => (props.state.status === 'streaming' ? Math.m
       </TransitionGroup>
       <p v-if="state.used && listening" class="mt-2 text-center text-[11.5px] text-muted-foreground">새 답변이 끝나면 다음 후보를 제안합니다.</p>
       <p v-if="state.discarded.length > 0" class="mt-2 text-[11.5px] text-muted-foreground" data-testid="discarded-note">
-        이미 물은 질문과 같은 후보 {{ state.discarded.length }}개는 뺐습니다.
+        이미 한 질문과 같은 뜻의 후보 {{ state.discarded.length }}개는 접었습니다.
       </p>
       <p v-if="state.model && state.status === 'done'" class="mt-2 text-right font-mono text-[10.5px] text-muted-foreground/70">
         {{ state.retrievalModel ? `${state.retrievalModel} · ` : '' }}{{ state.model }}

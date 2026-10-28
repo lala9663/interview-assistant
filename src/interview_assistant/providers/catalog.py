@@ -970,15 +970,25 @@ CATALOG: tuple[ImplInfo, ...] = (
                 "model",
                 "모델",
                 "select",
-                "bge-m3",
+                # int8 is recommended (docs/embedding-benchmark.md "int8 양자화"): a new choice of
+                # this impl starts there; settings already applied keep their model.
+                "bge-m3-int8",
                 choices=(
+                    Choice(
+                        "bge-m3-int8",
+                        "BGE-M3 (int8 ONNX)",
+                        "같은 모델의 가중치를 int8로 줄인 것(Hugging Face transformers.js 변환, MIT). 이 노트북에서 "
+                        "답변 1건 0.28초(fp32 0.44~0.74초), 메모리 약 0.9GB(fp32 1.6GB). 검색 품질은 평가 세트 "
+                        "37개 중 1개 차이(상위 3개 적중 94.6% → 91.9%), 약어 질의는 같다. fp32와 바꾸면 다시 색인한다.",
+                        BGE_M3["bge-m3-int8"].size_bytes,
+                        ("embedding",),
+                    ),
                     Choice(
                         "bge-m3",
                         "BGE-M3 (fp32 ONNX)",
-                        "한국어 포함 100여 개 언어, 최대 8,192토큰. 밀집 1024차원 + 희소(단어 일치). "
-                        "메모리 약 2.5GB.",
+                        "공식 내보내기 원본. 한국어 포함 100여 개 언어, 최대 8,192토큰. 밀집 1024차원 + 희소(단어 "
+                        "일치). 메모리 약 1.6GB, GPU 서버나 메모리가 넉넉할 때.",
                         BGE_M3["bge-m3"].size_bytes,
-                        ("embedding",),
                     ),
                 ),
             ),

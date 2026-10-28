@@ -87,7 +87,8 @@ OCR 엔진 비교(정확도·속도·메모리)는 [ocr-benchmark.md](../ocr-ben
 | Claude Fable 5.1 (Vertex AI) | 가장 높은 성능 | 상용 | $10.00 / $50.00 | 외부 클라우드 (Google) | 쓰지 않음 (2026-10-28 사용자: GCP·OpenAI 서비스 안 씀) |
 | Gemini (Vertex AI), 사내 LLM(`samsung_gauss`) | LLM 대안 | | 확인 안 함 | | 조사 안 함. 사내 LLM이 OpenAI 형식 API를 주면 `open_model_server`로 붙는다 |
 | Fake LLM | 흐름·화면 확인 | 프로젝트 코드 | 무료 | 로컬 | 사용 중 (`providers.fake.yaml`) |
-| BGE-M3 (BAAI/bge-m3, 공식 ONNX) | 임베딩: 밀집 1024차원 + 희소 | MIT | 무료 | 로컬 | 사용 중 (2026-10-27 결정) |
+| BGE-M3 (BAAI/bge-m3, 공식 ONNX) | 임베딩: 밀집 1024차원 + 희소 | MIT | 무료 | 로컬 | 사용 중 (2026-10-27 결정). fp32 원본 |
+| BGE-M3 int8 (Xenova/bge-m3, transformers.js 변환) | 같은 모델의 int8 가중치(0.59GB), BAAI 희소 헤드와 함께 | MIT | 무료 | 로컬 | 권장 (2026-10-28, [embedding-benchmark.md](../embedding-benchmark.md) "int8 양자화") |
 | ONNX Runtime 1.31, tokenizers 0.23 | BGE-M3 실행 | MIT, Apache-2.0 | 무료 | 로컬 | 사용 중 |
 | FlagEmbedding + torch | BGE-M3 공식 파이썬 라이브러리 | MIT (+ torch BSD, transformers Apache-2.0) | 무료 | 로컬 | 쓰지 않음 (8장) |
 | Vertex AI gemini-embedding-001 | 임베딩 대안 (최대 3072차원, 2048토큰, 한국어 지원) | 상용 | "1,000개"당 $0.00015, 배치 $0.00012. 단위(글자·토큰)는 확인 필요 | 외부 클라우드 (Google), 서울 리전 있음 | 외부 클라우드 대안 (카탈로그만) |

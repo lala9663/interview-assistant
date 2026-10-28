@@ -14,6 +14,11 @@ in the server process: onnxruntime ships no Intel OpenMP, unlike Paddle, and loa
 CTranslate2 in either order (tests/test_engines_together.py). Weights come from the admin screen's
 download (providers/weights.py); nothing is fetched at run time.
 
+Two weight sets (providers/weights.py): `bge-m3`, the official fp32 export, and `bge-m3-int8`, the
+same export quantised to int8 weights (0.57 GB, faster on CPU, slightly different vectors:
+docs/embedding-benchmark.md). Each has its own name and index key, so switching between them
+reindexes.
+
 Loaded models are shared by every provider instance with the same weights and threads, so changing
 a retrieval option on the admin screen (a threshold) does not load 2.3 GB again. One batch runs at a
 time; long reindex jobs use small batches so a live query waits at most one of them.
@@ -36,6 +41,8 @@ from interview_assistant.providers.weights import BGE_M3, is_complete
 
 DIMENSIONS = 1024
 BATCH = 8
+# The int8 weights give slightly different vectors, so they get their own name (and index key).
+NAMES = {"bge-m3": "BAAI/bge-m3", "bge-m3-int8": "BAAI/bge-m3-int8"}
 _PAD, _EOS = 1, 2
 _SPECIAL = frozenset({0, 1, 2, 3})  # <s> <pad> </s> <unk>: no lexical meaning
 
@@ -90,9 +97,7 @@ class _Engine:
         ids = [e.ids for e in self.tokenizer.encode_batch(list(texts))]
         ids = [seq if len(seq) <= max_length else [*seq[: max_length - 1], _EOS] for seq in ids]
         out: list[Embedding | None] = [None] * len(ids)
-        order = sorted(range(len(ids)), key=lambda i: len(ids[i]))
-        for start in range(0, len(order), BATCH):
-            batch = order[start : start + BATCH]
+        for batch in _batches(ids):
             width = max(len(ids[i]) for i in batch)
             input_ids = np.full((len(batch), width), _PAD, dtype=np.int64)
             mask = np.zeros((len(batch), width), dtype=np.int64)
@@ -120,6 +125,22 @@ class _Engine:
         return [e for e in out if e is not None]
 
 
+def _batches(ids: Sequence[Sequence[int]]) -> list[list[int]]:
+    """Indexes of `ids` in runs of similar length, shortest first. Every row of a batch is padded
+    to its longest, and on CPU the work grows with rows × width: a 20-token question batched with
+    a 174-token answer costs about as much as a second answer. Batching saves nothing on CPU
+    (docs/embedding-benchmark.md), so a much longer text starts a new batch."""
+    order = sorted(range(len(ids)), key=lambda i: len(ids[i]))
+    batches: list[list[int]] = []
+    for i in order:
+        current = batches[-1] if batches else None
+        if current and len(current) < BATCH and len(ids[i]) <= 2 * len(ids[current[0]]) + 16:
+            current.append(i)
+        else:
+            batches.append([i])
+    return batches
+
+
 _ENGINES: weakref.WeakValueDictionary[tuple[str, int], _Engine] = weakref.WeakValueDictionary()
 _ENGINES_LOCK = threading.Lock()
 
@@ -142,7 +163,7 @@ class BgeM3Embedding(EmbeddingProvider):
             raise ValueError(f"unknown BGE-M3 model '{model}' (known: {', '.join(BGE_M3)})")
         self.weights = BGE_M3[model]
         self.weights_dir = Path(weights_dir)
-        self.model = "BAAI/bge-m3"
+        self.model = NAMES[model]
         self.dimensions = DIMENSIONS
         self.max_length = max_length
         self.threads = cpu_threads or auto_threads()

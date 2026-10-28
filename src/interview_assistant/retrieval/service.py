@@ -94,6 +94,7 @@ class Retrieval:
         self._job_key: str | None = None
         self._lock = asyncio.Lock()  # one writer of the serving index at a time
         self._cache: OrderedDict[tuple[str, str], Embedding] = OrderedDict()
+        self._running: dict[tuple[str, str], asyncio.Future[dict[str, Embedding]]] = {}
         self._pending: asyncio.Task[Any] | None = None
         self._again = False
 
@@ -452,27 +453,48 @@ class Retrieval:
         return str(getattr(provider, "model", "")) if provider is not None else None
 
     async def encode(self, texts: Sequence[str]) -> list[Embedding]:
-        """Texts embedded with the serving index's model (cached by text)."""
+        """Texts embedded with the serving index's model (cached by text). A text another caller
+        is embedding right now (the answer prefetched while the candidate spoke) is waited for,
+        not embedded a second time behind it."""
         served = self.serving
         if served is None:
             raise LookupError("no embedding index is ready")
-        out: dict[int, Embedding] = {}
-        todo: list[int] = []
-        for i, text in enumerate(texts):
-            hit = self._cache.get((served.key, text))
+        found: dict[str, Embedding] = {}
+        waits: dict[str, asyncio.Future[dict[str, Embedding]]] = {}
+        todo: list[str] = []
+        for text in texts:
+            key = (served.key, text)
+            if text in found or text in waits or text in todo:
+                continue
+            hit = self._cache.get(key)
             if hit is not None:
-                self._cache.move_to_end((served.key, text))
-                out[i] = hit
+                self._cache.move_to_end(key)
+                found[text] = hit
+            elif key in self._running:
+                waits[text] = self._running[key]
             else:
-                todo.append(i)
+                todo.append(text)
         if todo:
-            fresh = await served.provider.encode([texts[i] for i in todo])
-            for i, emb in zip(todo, fresh, strict=True):
-                out[i] = emb
-                self._cache[(served.key, texts[i])] = emb
-            while len(self._cache) > CACHE:
-                self._cache.popitem(last=False)
-        return [out[i] for i in range(len(texts))]
+            # Not tied to this caller: if it goes away, the result still reaches the cache and
+            # whoever waits for the same text.
+            job = asyncio.ensure_future(self._embed(served, todo))
+            for text in todo:
+                waits[text] = self._running[(served.key, text)] = job
+        for job in dict.fromkeys(waits.values()):
+            found |= await asyncio.shield(job)
+        return [found[text] for text in texts]
+
+    async def _embed(self, served: Served, texts: list[str]) -> dict[str, Embedding]:
+        try:
+            fresh = await served.provider.encode(texts)
+        finally:
+            for text in texts:
+                self._running.pop((served.key, text), None)
+        for text, emb in zip(texts, fresh, strict=True):
+            self._cache[(served.key, text)] = emb
+        while len(self._cache) > CACHE:
+            self._cache.popitem(last=False)
+        return dict(zip(texts, fresh, strict=True))
 
     def search(
         self,

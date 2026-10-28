@@ -167,7 +167,10 @@ const fragment = (sentence: string, words = 5) => {
   return parts.slice(0, words).join(' ') + (parts.length > words ? '…' : '')
 }
 
-/** Question-bank suggestions first (up to 2, not already asked), then 3 AI suggestions streamed. */
+/** Question-bank suggestions first (up to 2, not already asked), then 3 AI suggestions streamed.
+ * Like the server, an AI suggestion is checked against the questions asked after it is shown:
+ * `checking` on its done, then `suggestion.checked`, or `suggestion.discarded` when it repeats one
+ * (then it is never registered, so it cannot become a question). */
 export async function* followUps(sessionId: string, qaItemId: string): AsyncGenerator<FollowUpEvent> {
   const started = Date.now()
   const db = getDb()
@@ -253,11 +256,13 @@ export async function* followUps(sessionId: string, qaItemId: string): AsyncGene
     index++
   }
   await wait(450)
-  for (const seedItem of seeds.slice(0, 3)) {
+  let kept = 0
+  let discarded = 0
+  for (const seedItem of seeds) {
+    if (kept >= 3) break
     const suggestion_id = newId()
     const grounding = seedItem.grounding && qa.answer_deidentified.includes(seedItem.grounding) ? seedItem.grounding : firstSentence
-    db.suggestions.set(suggestion_id, { ...seedItem, grounding, batch_id, suggestion_id, qa_item_id: qa.id, source: 'ai' })
-    db.bank.shown.push({ batch_id, suggestion_id, source: 'ai', latency_ms: Date.now() - started, discarded: false, used: false, edited: false, at: Date.now() })
+    const shownAt = Date.now() - started
     yield { event: 'suggestion.start', data: { batch_id, suggestion_id, index, competency: seedItem.competency, source: 'ai' } }
     const text = seedItem.question
     let i = 0
@@ -269,10 +274,21 @@ export async function* followUps(sessionId: string, qaItemId: string): AsyncGene
     }
     yield {
       event: 'suggestion.done',
-      data: { batch_id, suggestion_id, index, competency: seedItem.competency, source: 'ai', question: text, rationale: seedItem.rationale, grounding },
+      data: { batch_id, suggestion_id, index, competency: seedItem.competency, source: 'ai', question: text, rationale: seedItem.rationale, grounding, checking: true },
     }
     index++
-    await wait(160)
+    await wait(60)
+    const same = asked.find((q) => overlap(q, text) >= 0.8)
+    db.bank.shown.push({ batch_id, suggestion_id, source: 'ai', latency_ms: shownAt, discarded: same !== undefined, used: false, edited: false, at: Date.now() })
+    if (same !== undefined) {
+      discarded++
+      yield { event: 'suggestion.discarded', data: { batch_id, suggestion_id, reason: 'duplicate', duplicate_of: same, similarity: Math.round(overlap(same, text) * 1000) / 1000 } }
+    } else {
+      kept++
+      db.suggestions.set(suggestion_id, { ...seedItem, grounding, batch_id, suggestion_id, qa_item_id: qa.id, source: 'ai' })
+      yield { event: 'suggestion.checked', data: { batch_id, suggestion_id } }
+    }
+    await wait(100)
   }
-  yield { event: 'batch.done', data: { batch_id, discarded: 0 } }
+  yield { event: 'batch.done', data: { batch_id, discarded } }
 }

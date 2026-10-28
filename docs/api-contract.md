@@ -1,6 +1,6 @@
 # API 계약 (프론트 ↔ 백엔드)
 
-2026-10-28 · v0.7 · 사내 에이전트 플랫폼용 MCP 서버([agent-integration.md](agent-integration.md))가 이 API를 그대로 부른다. 에이전트 호출은 질문한 사람의 자격증명으로 돌고, 읽기와 제안 기록만 할 수 있으며, 호출마다 감사 로그가 남는다(1장 인증·권한·감사 로그, 2장 "에이전트"). v0.6 · 질문 은행·평점 기준 예시와 임베딩 검색(BGE-M3)을 더했다: 꼬리질문은 검수된 질문 은행 후보가 먼저, AI 후보가 이어서 나오고, 이미 한 질문과 같은 후보는 걸러진다(2장 "질문 은행·평점 기준 예시", 3.2, 4장 0007). v0.5 · 면접을 여러 차수(전형 차수: 1차 직무 면접, 2차 임원 면접 …)로 진행한다. 공고마다 차수 목록이 있고, 역량 사전·사전 질문은 차수별, 세션은 한 차수에 속하며, 차수마다 사람이 합격·보류·불합격을 정한다(2장 "전형", 4장 0006). 프론트(`frontend/`)가 모의 API(MSW)로 먼저 쓰던 계약을 백엔드(FastAPI, `src/interview_assistant/api/`)가 그대로 구현했다. 모든 경로가 동작하고, AI는 Provider 인터페이스를 거쳐 돈다. 어떤 provider가 어느 역할을 맡을지는 관리자 화면(관리자 > 모델 설정, 2장 마지막 절)에서 서버 재시작 없이 바꾸고, `config/providers*.yaml`은 처음 기동할 때의 기본값만 정한다. 첫 실제 provider로 로컬 Whisper STT(`faster_whisper`)가 붙었다. 지원서는 서류 선별 화면의 업로드와 채용 사이트 연동(서명된 이벤트 수신, 2장 "채용 사이트 연동") 두 통로로 들어오고, 둘 다 같은 처리 함수(`intake/service.py`)를 거친다. 채용 시스템 부서에 넘길 연동 명세는 [site-intake-spec.md](site-intake-spec.md). 프론트는 `npm run dev:api`로 실제 API에 붙는다. 실제 LLM 연결과 품질 검증은 남은 과제다(5장).
+2026-10-28 · v0.8 · 꼬리질문의 AI 후보는 화면에 뜬 뒤 같은 질문인지 확인한다: AI 후보의 `suggestion.done`에 `checking: true`가 붙고, 이어서 `suggestion.checked`(쓸 수 있음) 또는 `suggestion.discarded`(화면이 카드를 접음)가 온다. 거둔 후보로는 질문을 기록할 수 없다(409). 임베딩 모델에 BGE-M3 int8을 더하고 권장으로 했다(3.2, 2장 "관리자 > 모델 설정"). v0.7 · 사내 에이전트 플랫폼용 MCP 서버([agent-integration.md](agent-integration.md))가 이 API를 그대로 부른다. 에이전트 호출은 질문한 사람의 자격증명으로 돌고, 읽기와 제안 기록만 할 수 있으며, 호출마다 감사 로그가 남는다(1장 인증·권한·감사 로그, 2장 "에이전트"). v0.6 · 질문 은행·평점 기준 예시와 임베딩 검색(BGE-M3)을 더했다: 꼬리질문은 검수된 질문 은행 후보가 먼저, AI 후보가 이어서 나오고, 이미 한 질문과 같은 후보는 걸러진다(2장 "질문 은행·평점 기준 예시", 3.2, 4장 0007). v0.5 · 면접을 여러 차수(전형 차수: 1차 직무 면접, 2차 임원 면접 …)로 진행한다. 공고마다 차수 목록이 있고, 역량 사전·사전 질문은 차수별, 세션은 한 차수에 속하며, 차수마다 사람이 합격·보류·불합격을 정한다(2장 "전형", 4장 0006). 프론트(`frontend/`)가 모의 API(MSW)로 먼저 쓰던 계약을 백엔드(FastAPI, `src/interview_assistant/api/`)가 그대로 구현했다. 모든 경로가 동작하고, AI는 Provider 인터페이스를 거쳐 돈다. 어떤 provider가 어느 역할을 맡을지는 관리자 화면(관리자 > 모델 설정, 2장 마지막 절)에서 서버 재시작 없이 바꾸고, `config/providers*.yaml`은 처음 기동할 때의 기본값만 정한다. 첫 실제 provider로 로컬 Whisper STT(`faster_whisper`)가 붙었다. 지원서는 서류 선별 화면의 업로드와 채용 사이트 연동(서명된 이벤트 수신, 2장 "채용 사이트 연동") 두 통로로 들어오고, 둘 다 같은 처리 함수(`intake/service.py`)를 거친다. 채용 시스템 부서에 넘길 연동 명세는 [site-intake-spec.md](site-intake-spec.md). 프론트는 `npm run dev:api`로 실제 API에 붙는다. 실제 LLM 연결과 품질 검증은 남은 과제다(5장).
 
 - 타입 정의 원본: [`frontend/src/api/types.ts`](../frontend/src/api/types.ts) (모델과 필드 이름·enum 값 동일). 백엔드 응답 스키마: [`api/schemas.py`](../src/interview_assistant/api/schemas.py) (필드 단위로 같다. `tests/test_api_contract.py`가 enum과 이 문서의 경로 목록을 대조한다)
 - 모의 구현: [`frontend/src/mocks/handlers.ts`](../frontend/src/mocks/handlers.ts) (요청 검증, 오류 코드, 스트림 이벤트 순서까지 이 문서와 같다)
@@ -152,7 +152,7 @@
 | POST | `/api/sessions/{id}/start` | | `SessionDetail`. status in_progress, started_at, 그때의 그 차수 확정 역량 사전을 세션에 고정, has_recording = 동의 여부. 동의 안 했으면 수기 모드 | 6 |
 | POST | `/api/sessions/{id}/carryover-questions` | | `SessionDetail`. 이어 질문: AI가 이전 차수의 비식별 Q&A와 확인할 점으로 이 지원자에게 더 깊이 물을 질문 2~3개를 만든다(carryover-v0.1). 이전 질문 반복 금지, 기댄 이전 답변을 그대로 인용(`origin.grounding`). 아직 묻지 않은 이어 질문은 바꾸고 물은 것은 남긴다. 1차 세션·예정/진행 중이 아닌 세션·마친 이전 차수가 없으면 409, 식별 정보가 남아 가드가 막으면 502 | 차수 |
 | POST | `/api/sessions/{id}/end` | | `SessionDetail`. completed, ended_at. 답변 중이던 질문은 그때까지 들은 전사로 닫고, AI 채점을 백그라운드로 시작 | 6, 8 |
-| POST | `/api/sessions/{id}/qa-items` | `CreateQARequest` {question, question_source, preset_question_id?, suggestion?{batch_id, suggestion_id, edited, original_question}} | 201 `QAItem` (seq = 마지막+1). in_progress가 아니면 409. 다른 세션의 사전 질문·모르는 제안이면 422, 이미 쓴 제안이면 409 | 6, 7 |
+| POST | `/api/sessions/{id}/qa-items` | `CreateQARequest` {question, question_source, preset_question_id?, suggestion?{batch_id, suggestion_id, edited, original_question}} | 201 `QAItem` (seq = 마지막+1). in_progress가 아니면 409. 다른 세션의 사전 질문·모르는 제안(같은 질문 확인이 아직 안 끝난 AI 후보 포함)이면 422, 이미 쓴 제안·이미 한 질문과 같아 거둔 제안이면 409 | 6, 7 |
 | PATCH | `/api/qa-items/{id}` | `{answer_text}` | `QAItem` (answer_deidentified, answered_at). 수기 모드·STT 장애 시. in_progress가 아니면 409 | 6 |
 | POST | `/api/sessions/{id}/notes` | `{content}` | 201 `CandidateNote` (author = 로그인 면접관, 내용은 비식별화) | 6 |
 | GET | `/api/sessions/{id}/transcript?source=` | | `{segments: TranscriptSegment[]}` 확정 구간만. `source` live(기본: 면접 중 실시간 전사) 또는 batch(면접 뒤 녹음 재전사, 3.3) | 10, 11 |
@@ -279,7 +279,7 @@
 - **보안**: API 키·자격증명은 화면에서 받지 않는다(서버 환경변수, 또는 실행 위치의 비밀 저장소). `data_location`은 `local`(이 PC), `server`(관리자가 주소를 적은 사내 모델 서버), `gcp`(외부 클라우드 Google, 쓰지 않는 대안), `external`(회사 밖 API). 데이터가 회사 밖으로 나가는 provider(`gcp`, `external`, 응답의 `external: true`)는 테스트에 `confirm_external`, 적용·되돌리기에 `confirm_external`과 사유가 있어야 한다. provider가 무엇이든 LLM 입력은 같은 비식별화·가드를 거친다(`tests/test_api_privacy.py`가 런타임 교체 뒤에도 검사). 테스트용 음성은 임시 폴더에 두었다가 테스트가 끝나면 지운다.
 - **감사 로그**: `model.tested`(결과·지연·CER·형식·읽기 시간 같은 수치만, 전사·응답·서류 본문 없음, 서류 테스트는 sample/upload), `model.applied`, `model.reverted`, `model.download_started`, `model.download_cancelled`. LLM 연결 테스트 호출 자체도 게이트웨이가 `model.connection_test`(actor ai)로 남긴다. 실시간 전사는 답변마다 `transcript.listened`(쓴 STT 모델).
 - **연결 테스트**: LLM은 지원자 데이터가 없는 고정 프롬프트(`connection-test-v0.2`)로 구조화 출력(JSON)과 간단한 지시 수행을 보고, 꼬리질문처럼 짧은 스트리밍을 한 번 받는다. `output`에 응답 시간(`generate_ms`), 스트리밍 첫 토큰 시간(`first_token_ms`), 서버가 알려 준 모델 이름(`server_model`), 서버가 가진 모델 목록(`server_models`, 오픈소스 모델 서버만)이 있다. 오픈소스 모델 서버의 실패는 `output.failure`로 나뉜다: `address`(주소 오류), `auth`(인증 실패), `model`(모델 없음), `timeout`(시간 초과), `server`, `output`(응답 형식). 키 값은 응답·감사 로그 어디에도 없다. STT는 내장 한국어 샘플(FLEURS ko_kr, CC BY 4.0, 정답과 비교해 CER) 또는 관리자가 올린 녹음을 역할의 실제 경로로 전사한다(사후 = `transcribe`, 실시간 = 16kHz PCM 조각을 `stream`). 임베딩은 벡터 차원, 화자분리는 구간 수. 서류 읽기는 역할별 내장 가상 이력서(`providers/samples/documents/`, OCR 샘플은 정답과 비교해 CER) 또는 올린 파일을, 테스트하는 설정과 나머지 서류 읽기 역할의 활성 설정으로 읽는다. `output`은 쪽마다 방법·이유·도구·신뢰도·시간(`pages`), 그림마다 판단(`images`: OCR, 증명사진 버림, 작음, 끔), 도구 버전, 비식별화한 미리보기(2,000자, 전화·이메일 모양은 한 번 더 가림)다. 원문은 응답에도 감사 로그에도 없다. 읽기 방식 "텍스트만" 테스트는 스캔한 쪽을 보류로 보여 주고 ok다(적용할 수 있다).
-- **임베딩 (BGE-M3)**: `bge_m3`(로컬 CPU, ONNX Runtime)는 밀집 1024차원과 희소(단어 일치) 가중치를 낸다. 모델 파일(약 2.29GB, BAAI/bge-m3 커밋 `5617a9f`의 ONNX와 희소 헤드)은 관리자가 "다운로드"를 누를 때만 받는다. 옵션의 `sparse_weight`(단어 일치 가중치), `duplicate_threshold`(같은 질문으로 볼 유사도), `min_score`(질문 은행 제안 최소 점수)는 모델의 점수 척도에 맞춘 검색 설정이고, 바꿔도 벡터를 다시 만들지 않는다(같은 가중치를 쓰는 인스턴스끼리 로드된 모델을 공유해 다시 올리지도 않는다). 연결 테스트는 고정 문장 세 개로 차원, 희소 출력, 비슷한 문장이 무관한 문장보다 가까운지를 본다(`output.similar`, `unrelated`, `sparse`, `lexical`).
+- **임베딩 (BGE-M3)**: `bge_m3`(로컬 CPU, ONNX Runtime)는 밀집 1024차원과 희소(단어 일치) 가중치를 낸다. 옵션 `model`은 `bge-m3-int8`(권장, 0.59GB: `Xenova/bge-m3` 커밋 `4de1325`의 int8 변환본 + BAAI 희소 헤드, 색인 키 `BAAI/bge-m3-int8@4de1325/1024`)과 `bge-m3`(fp32 2.29GB: BAAI/bge-m3 커밋 `5617a9f`의 ONNX와 희소 헤드, `BAAI/bge-m3@5617a9f/1024`). 모델 파일은 관리자가 "다운로드"를 누를 때만 받는다. 둘은 색인 키가 달라 서로 바꾸면 다시 색인한다. 권장값(새로 고를 때의 기본값)이 바뀌어도 이미 적용한 설정은 그대로다. 옵션의 `sparse_weight`(단어 일치 가중치), `duplicate_threshold`(같은 질문으로 볼 유사도), `min_score`(질문 은행 제안 최소 점수)는 모델의 점수 척도에 맞춘 검색 설정이고, 바꿔도 벡터를 다시 만들지 않는다(같은 가중치를 쓰는 인스턴스끼리 로드된 모델을 공유해 다시 올리지도 않는다). 연결 테스트는 고정 문장 세 개로 차원, 희소 출력, 비슷한 문장이 무관한 문장보다 가까운지를 본다(`output.similar`, `unrelated`, `sparse`, `lexical`).
 - **실시간 STT와 오디오 입력**: STT provider는 받을 수 있는 입력 형식(`accepts`)을 밝힌다. 실제 음성은 16kHz 모노 16비트 PCM(`PCM16_16K`)이고, 지금 실시간 면접의 가상 지원자는 텍스트를 보내므로 fake STT만 받아 적는다. 실시간 STT를 실제 모델로 바꾸면 새로 시작하는 면접은 `stt: down`(수기 답변)이 되고 감사 로그에 `transcript.unsupported_audio`가 남는다. 마이크·WebRTC 입력(`live/audio.AudioSource`가 PCM을 내는 구현)이 붙으면 같은 교체가 그대로 쓰인다.
 
 ### 에이전트 (MCP 서버)
@@ -367,10 +367,18 @@ event: suggestion.delta
 data: {"batch_id":"…","suggestion_id":"…","text":"상단 슬롯 "}
 
 event: suggestion.done
-data: {"batch_id":"…","suggestion_id":"…","index":1,"competency":"데이터 기반 분석","source":"ai","question":"…","rationale":"원인 확정 과정의 검증 깊이를 확인합니다.","grounding":"상단 존 온도 편차가 커져 있었고, 히터 보정 후 산포가 원래 수준으로 돌아왔습니다"}
+data: {"batch_id":"…","suggestion_id":"…","index":1,"competency":"데이터 기반 분석","source":"ai","question":"…","rationale":"원인 확정 과정의 검증 깊이를 확인합니다.","grounding":"상단 존 온도 편차가 커져 있었고, 히터 보정 후 산포가 원래 수준으로 돌아왔습니다","checking":true}
+
+event: suggestion.start
+data: {"batch_id":"…","suggestion_id":"…","index":2,"competency":"공정·장비 이해","source":"ai"}
+
+event: suggestion.checked
+data: {"batch_id":"…","suggestion_id":"(index 1)"}
+
+…
 
 event: suggestion.discarded
-data: {"batch_id":"…","suggestion_id":"…","reason":"duplicate","duplicate_of":"이미 한 질문","similarity":0.93}
+data: {"batch_id":"…","suggestion_id":"(index 2)","reason":"duplicate","duplicate_of":"이미 한 질문","similarity":0.93}
 
 event: batch.done
 data: {"batch_id":"…","discarded":1}
@@ -378,8 +386,8 @@ data: {"batch_id":"…","discarded":1}
 
 - 질문 은행 후보(`source: bank`)가 먼저 0~2개, 완성된 채로(start → done, delta 없음) 온다. 승인된 질문 은행 질문이나 그 꼬리질문 예시 중 답변과 가까운 것이다(2장 "질문 은행"). `bank_item_id`와 하이브리드 검색 점수 `score`가 붙는다. 색인이 없거나 임베딩을 쓸 수 없으면 0개이고 AI 후보만 온다.
 - 이어서 AI 후보(`source: ai`) 2~3개. 후보마다 start → delta 여러 개 → done 순서. 첫 delta는 요청 후 2초 안(성능 목표). AI는 프롬프트에서 가까운 질문 은행 질문을 예시로 보고(`<example_questions>`), 먼저 보여 준 질문 은행 후보와 같은 뜻을 쓰지 않게 한다(`<already_suggested>`).
-- 이 면접과 이전 차수에서 이미 한 질문, 또는 앞서 보여 준 후보와 의미 유사도가 임베딩 역할의 `duplicate_threshold` 이상인 후보는 뺀다. 질문 은행 후보는 보여 주기 전에 빠지고, AI 후보는 다 쓰인 뒤 `suggestion.discarded`로 거둬들인다(프론트가 그 카드를 지운다). 빠진 후보도 `follow_up_suggestions`에 `discarded: duplicate`, `duplicate_of`, `similarity`로 남아 지표에 잡힌다.
-- `index`는 배치 안 순서이고, 거둬들인 후보 때문에 비는 번호가 있을 수 있다(화면은 목록의 위치로 번호를 붙인다).
+- 이 면접과 이전 차수에서 이미 한 질문, 또는 앞서 보여 준 후보와 의미 유사도가 임베딩 역할의 `duplicate_threshold` 이상인 후보는 뺀다. 질문 은행 후보는 보여 주기 전에 빠진다(벡터가 색인에 있어 임베딩이 필요 없다). AI 후보는 그 질문을 임베딩해야 해서, 기다리지 않고 먼저 보여 준 뒤 확인한다: `suggestion.done`에 `checking: true`, 확인이 끝나면 `suggestion.checked` 또는 `suggestion.discarded`. 그동안 다음 후보는 계속 흐르므로 `checked`/`discarded`는 다음 후보의 이벤트 사이에 끼어 올 수 있다(같은 배치 안에서 후보 순서대로). 프론트는 `checking`인 후보의 사용 버튼을 막아 두고(확인이 0.4초 넘게 걸리면 "확인 중"을 보임), `discarded`면 카드를 흐리게 "이미 한 질문과 비슷함"으로 표시했다가 한 줄로 접는다(펼쳐 볼 수 있고 쓸 수는 없다). 제안 행은 확인이 끝난 뒤에 저장되므로 확인 중인 후보로 `POST qa-items`를 보내면 422, 거둔 후보면 409다. 확인은 클라이언트가 연결을 끊어도 끝까지 돌아 행을 남긴다. 빠진 후보도 `follow_up_suggestions`에 `discarded: duplicate`, `duplicate_of`, `similarity`로 남아 지표에 잡힌다. 거둔 후보는 AI 후보 3개에 세지 않아, 모델이 더 쓰면 하나 더 보인다.
+- `index`는 배치 안 순서다. 화면은 쓸 수 있는 후보에만 차례로 번호를 붙이고, 접힌 후보에는 번호가 없다.
 - 저장: 후보마다 `source`, `latency_ms`(요청부터 카드가 뜰 때까지), 질문 은행 후보는 `bank_item_id`, `retrieval_score`, `model`(임베딩 모델), `prompt_version` retrieval-v0.1.
 - 모델은 후보를 태그 블록(`<suggestion><competency>…</competency><question>…</question><rationale>…</rationale><grounding>…</grounding></suggestion>`)으로 쓰고, 서버가 토큰 스트림을 받는 대로 이벤트로 바꾼다(`ai/followups.py`의 `SuggestionParser`, 태그가 청크 경계에서 잘려도 같은 결과). 역량 이름이 사전에 없으면 질문의 대상 역량으로 바꾼다.
 - `grounding`은 비식별 답변에서 그대로 따온 문장이어야 한다 (프론트가 인용으로 표시). 모델이 바꿔 쓴 인용이면 서버가 답변에서 가장 비슷한 문장으로 바꾼다. `rationale`은 생성 근거.
@@ -496,7 +504,7 @@ SQLite 마이그레이션 주의: batch 모드는 테이블을 복사한 뒤 원
 - **외부 클라우드 provider (승인 시 대안)**: Vertex AI의 Claude·Gemini, Speech-to-Text v2, Vertex 임베딩, Document AI는 카탈로그만 있고 구현하지 않는다. `config/providers.yaml`의 STT 기본값은 2026-10-28부터 로컬 Whisper(`faster_whisper`, 실시간 small, 사후 large-v3 + 재전사)이고, 화자분리 기본값은 아직 `google_stt_v2`(구현 전)다.
 - **검색 품질 (실제 LLM 뒤)**: 질문 은행 예시를 넣은 꼬리질문의 품질, AI 금지 질문 확인의 정확도, 기준점을 넣은 채점의 면접관 점수 일치도(12단계 게이트)는 fake LLM으로는 볼 수 없다. 실제 모델을 붙인 뒤 출처별 채택률(관리자 > 꼬리질문 지표)과 함께 잰다.
 - **답변 도중 질문 은행 후보**: 답변을 미리 임베딩해 두는 것까지 했다(답변이 닫히면 검색이 캐시에서 바로 된다, `live/prefetch.py`). 답변 도중 후보를 미리 보여 주는 것은 하지 않았다.
-- **임베딩 속도·메모리**: 이 노트북에서 답변 1건 약 0.9초, 질문 1,000건 재색인 약 2.6분, 서버 메모리 BGE-M3 1.6GB(+Whisper medium 2.5GB). int8 양자화나 GPU로 줄일지 실제 사용량을 보고 정한다([embedding-benchmark.md](embedding-benchmark.md)).
+- **임베딩 속도·메모리**: 이 노트북에서 int8(권장)은 답변 1건 0.28초, 질문 1,000건 재색인 약 46초, 서버 메모리 0.9GB(+Whisper medium 1.9GB). fp32는 0.44~0.9초, 1.5~2.6분, 1.6GB. GPU 서버에서의 속도와 실제 면접 답변에서의 int8 검색 차이는 남았다([embedding-benchmark.md](embedding-benchmark.md)).
 - **벡터 검색 엔진**: 지금은 메모리 내 전수 검색(수천 건). 수만 건이 되거나 여러 인스턴스가 되면 DB 엔진을 정한 뒤 pgvector 등으로 `VectorIndex`를 바꾼다. 여러 인스턴스면 색인 갱신을 다른 인스턴스에 알리는 방법도 필요하다.
 - **로그인·SSO**: 사내 SSO(앞단 인증은 실행 위치에 따라), `GET /api/me`를 세션에서. 지금은 `IA_DEV_INTERVIEWER`. 에이전트 호출은 `api/agent_access.py`에 그 자격증명을 확인하는 `AgentIdentity`를 더하고 `IA_AGENT_IDENTITY`로 고른다(바꿀 곳은 [agent-integration.md](agent-integration.md) 7장). 면접관 점수는 본인 것만 쓰게 막기(지금은 패널이면 누구 것이든 가능).
 - **WebRTC (11단계 나머지)**: 대면 면접의 브라우저 마이크는 붙었다(3.3). 비대면 면접의 참가자 트랙(LiveKit), 한 세션에 마이크 두 개(면접관·지원자 따로), 대면 면접 화자분리는 남았다. 남은 것 전체는 [audio-input.md](audio-input.md) 11장.
