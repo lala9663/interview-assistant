@@ -111,7 +111,7 @@ STT 서비스별 비교는 [stt.md](stt.md), 화자분리 모델은 [diarization
 | Whisper small·medium·large-v3·large-v3-turbo | STT 가중치 | MIT | 무료 | 가능 | 로컬 | 사용 중. `providers.yaml` 기본값은 실시간 small(GPU 없을 때, [audio-input.md](../audio-input.md) 8장), 사후 large-v3 + 재전사. 실시간 정확도만 보면 medium 이상 |
 | PyAV 19.0.1 (+ 함께 오는 FFmpeg 9.0.2) | 오디오 파일을 16kHz PCM으로 풀기. faster-whisper의 의존성 | BSD-3-Clause / FFmpeg는 7장 | 무료 | 확인 필요 (7장) | 로컬 | 사용 중 |
 | Silero VAD (faster-whisper에 포함, v6 ONNX) | 말 구간 찾기 | MIT | 무료 | 가능 | 로컬 | 사용 중 |
-| Google Speech-to-Text v2 (Chirp 3) | 실시간·사후 STT, 배치 화자분리 | 상용 | 유료, [stt.md](stt.md) | 계약 | 외부 클라우드 (Google, 리전 us·eu) | 외부 클라우드 대안 (`google_stt_v2`, 구현 전. `providers.yaml`의 화자분리 기본값으로 아직 남아 있음. STT 기본값은 2026-10-28 로컬 Whisper로 바꿈) |
+| Google Speech-to-Text v2 (Chirp 3) | 실시간·사후 STT, 배치 화자분리 | 상용 | 유료, [stt.md](stt.md) | 계약 | 외부 클라우드 (Google, 리전 us·eu) | 외부 클라우드 대안 (`google_stt_v2`, 구현 전. STT 기본값은 2026-10-28 로컬 Whisper로, 화자분리 기본값은 2026-10-29 `fake`로 바꿈) |
 | NAVER CLOVA Speech | 실시간·사후 STT | 상용 | 유료 | 계약 | 외부 (한국) | 검토만 (`providers.yaml` 대안 주석) |
 | Azure AI Speech, AWS Transcribe, 리턴제로, OpenAI 전사 API | STT | 상용 | 유료 | 계약 | 외부 | 검토만 |
 | pyannote.audio + speaker-diarization-community-1 | 로컬 화자분리 | MIT / CC-BY-4.0 (Hugging Face 약관 동의 후 받음) | 무료 | 가능 (출처 표시) | 로컬 | 후보 (`providers.yaml` 대안 주석) |

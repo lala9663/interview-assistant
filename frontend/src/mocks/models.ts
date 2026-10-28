@@ -494,7 +494,7 @@ const INITIAL: Record<ModelRole, ModelSpec> = {
   'stt.streaming': { impl: 'google_stt_v2', options: { model: 'chirp_3', language: 'ko-KR' } },
   'stt.batch': { impl: 'google_stt_v2', options: { model: 'chirp_3', language: 'ko-KR', diarization: true } },
   embedding: { impl: 'bge_m3', options: { model: 'bge-m3', max_length: 512, cpu_threads: 0, sparse_weight: 0.3, duplicate_threshold: 0.85, min_score: 0.55 } },
-  diarization: { impl: 'google_stt_v2', options: {} },
+  diarization: { impl: 'fake', options: {} },
   'document.reading': { impl: 'standard', options: { mode: 'auto', embedded_images: true, sensitivity: 'medium', dpi: 200, low_confidence: 0.8 } },
   'document.ocr': { impl: 'paddleocr', options: { model: 'ppocrv5-mobile', textline_orientation: false, doc_orientation: false, max_side: 2400, cpu_threads: 0 } },
   'document.pdf': { impl: 'pdfplumber', options: { min_text_chars: 30 } },

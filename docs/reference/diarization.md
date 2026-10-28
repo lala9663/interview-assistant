@@ -73,7 +73,7 @@ DER(화자분리 오류율) = (놓친 말 + 말이 아닌데 말로 본 것 + �
 방 마이크 하나일 때 모델 후보:
 
 1. **pyannote community-1 (로컬, CPU)**: 상업 사용 가능, 회사 밖으로 나가는 것이 없다. 이 노트북 CPU에서 1시간 녹음에 얼마나 걸리는지 먼저 잰다. `config/providers.yaml`에 대안으로 적혀 있다.
-2. **Chirp 3 배치 화자분리 (외부 클라우드 Google, 승인 시 대안)**: STT 사후를 Chirp로 하면 같은 호출에서 받는다. 음성 원본이 회사 밖으로 나간다. `providers.yaml`의 화자분리 기본값(`google_stt_v2`, 구현 전)으로 아직 남아 있다.
+2. **Chirp 3 배치 화자분리 (외부 클라우드 Google, 승인 시 대안)**: STT 사후를 Chirp로 하면 같은 호출에서 받는다. 음성 원본이 회사 밖으로 나간다. 2026-10-28까지 `providers.yaml`의 화자분리 기본값(`google_stt_v2`, 구현 전)이었고, 2026-10-29 `fake`로 바꿨다.
 3. **Nemotron-3-Diarization 또는 Streaming Sortformer (GPU 서버가 생기면)**: 실시간 화자분리가 꼭 필요할 때만. 한국어 성능을 먼저 잰다.
 
 쓰지 않는 것: 비상업 가중치(Sortformer v1, DiariZen), 목소리 등록, 회사 밖 화자분리 API(승인 전).

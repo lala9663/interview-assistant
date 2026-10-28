@@ -57,6 +57,11 @@ def test_default_stt_is_local_whisper():
     assert cfg.stt["batch"].options["retranscribe"] is True
 
 
+def test_default_diarization_stays_on_this_server():
+    cfg = load_providers(DEFAULT)
+    assert catalog.impl_info("diarization", cfg.diarization.impl).data_location is DataLocation.local
+
+
 def test_registered_but_unimplemented_impl_raises_clear_error():
     with pytest.raises(registry.UnknownProviderError, match="not implemented"):
         registry.resolve("llm", ProviderSpec(impl="anthropic_vertex", model="claude-opus-5-5"))

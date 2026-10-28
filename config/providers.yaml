@@ -43,9 +43,13 @@ providers:
     impl: bge_m3
     model: bge-m3-int8
     # 대안: { model: bge-m3 }(fp32 공식 원본 2.29GB) / { impl: vertex_embedding, model: gemini-embedding-001 }(외부 클라우드 Google, 구현 전)
+  # 화자분리: 아직 면접 흐름에서 쓰지 않는다(관리자 화면의 연결 테스트에서만 부른다). 화자는 마이크의 역할 기록
+  # (질문 중 / 답변 듣는 중)으로 붙인다(docs/audio-input.md). 구현된 것이 fake뿐이라 기본값도 fake다.
+  # 방 마이크 하나로 하는 대면 면접이 필요해지면 pyannote community-1(로컬)부터 잰다(docs/reference/diarization.md 6장).
   diarization:
-    impl: google_stt_v2
-    # 대안: { impl: pyannote }
+    impl: fake
+    # 대안(구현 전): { impl: pyannote }(로컬) / { impl: google_stt_v2 }(외부 클라우드 Google, 음성 원본이 회사 밖으로 나감)
+    #   google_stt_v2는 2026-10-21 "PoC는 GCP" 때의 기본값이었고 2026-10-29 fake로 바꿨다.
   # 서류 읽기 (관리자 > 모델 설정 > 서류 읽기). OCR 모델 파일은 관리자 화면의 "다운로드"로 받는다.
   documents:
     ocr:
