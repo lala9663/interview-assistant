@@ -1,5 +1,9 @@
 # 구조
 
+> 다루는 것: 저장소에서 무엇이 어디 있나, 그리고 AI 호출·검색·에이전트·차수·실시간 전사·지원서 수신이 코드에서 어떻게 흐르나.
+>
+> 상태: 구현됨 · 확인: 2026-10-30
+
 ## 저장소
 
 ```
@@ -29,20 +33,23 @@ src/interview_assistant/
   deid/                 # 비식별화 (업무정의서 9장, deidentification.md)
   documents/            # 서류 읽기, 원본 영역 전용 (document-reading.md): reading(쪽별 텍스트·OCR 선택, DocumentReader), quality(깨짐 판정), images(증명사진 판정), ocrfix(비슷한 글자), render(PDF 쪽 그림), 형식별 추출기 pdf·word·powerpoint·webpage·hwp·hwpx·image, legacy(LibreOffice 변환)
   providers/
-    base.py             # LLMProvider, STTProvider, EmbeddingProvider, DiarizationProvider, OCRProvider (공통: model, warm_up), 오디오 형식
+    base.py             # LLM·STT·임베딩·화자분리·OCR·VAD·답변 끝·잡음 억제 provider 인터페이스 (공통: model, warm_up), 오디오 형식
     registry.py         # impl 이름 -> 구현 클래스
-    catalog.py          # 관리자 화면이 고르는 목록: 역할, 데이터 위치, 옵션 스키마, 요구 조건(네트워크 없이)
-    weights.py          # 모델 가중치(Whisper, PaddleOCR, Tesseract 한국어 데이터): 커밋 고정·sha256, 이어받는 다운로드, 진행률
+    catalog.py          # 관리자 화면이 고르는 목록: 역할 14개, 데이터 위치, 옵션 스키마, 요구 조건(네트워크 없이)
+    weights.py          # 모델 가중치(Whisper, PaddleOCR, Tesseract 한국어 데이터, BGE-M3, Smart Turn): 커밋 고정·sha256, 이어받는 다운로드, 진행률
     programs.py         # 시스템 프로그램(Tesseract, LibreOffice) 찾기와 버전, 네트워크 없이
     audio.py            # 파일 URI, 16kHz PCM 디코딩(PyAV), 조각 내기, 내장 한국어 샘플(samples/, FLEURS CC BY 4.0)
+    llm/open_model_server.py  # 사내 오픈 웨이트 모델 서버(vLLM·Ollama 등)의 OpenAI 형식 API. openai.com 주소는 거부
+    llm/anthropic_api.py  # Claude API, 외부 개발 테스트용 (사내 반입 대상 아님)
     stt/faster_whisper.py  # 로컬 Whisper STT (CPU int8, 한국어, VAD, stream·transcribe)
-    embedding/bge_m3.py # 로컬 BGE-M3 임베딩 (ONNX Runtime CPU, 밀집 1024 + 희소, 같은 가중치는 인스턴스끼리 공유)
+    embedding/bge_m3.py # 로컬 BGE-M3 임베딩 (ONNX Runtime CPU, fp32·int8, 밀집 1024 + 희소, 같은 가중치는 인스턴스끼리 공유)
     ocr/paddle.py, ocr/tesseract.py  # 로컬 OCR (PP-OCRv5 한국어 CPU, Tesseract kor+eng)
+    vad/silero.py, turn/silence.py, turn/smart_turn.py, denoise/  # 마이크 경로: 말소리 구간, 답변 끝 판정, 잡음 억제(끔만 구현)
     isolated.py         # 네이티브 엔진을 작업 프로세스에서 돌리기 (PaddleOCR: 그 DLL이 faster-whisper와 충돌)
     samples/documents/  # 서류 읽기 연결 테스트용 가상 이력서
     fake.py             # 자격증명 없이 도는 구현 (speed로 지연 흉내)
     fake_tasks.py       # fake LLM이 앱 프롬프트에 규칙으로 답하는 부분 (모양만 그럴듯, 품질 아님)
-migrations/versions/    # Alembic 0001~0007
+migrations/versions/    # Alembic 마이그레이션. 테이블마다 정한 것과 이유는 api-contract.md 4장
 scripts/
   seed_demo.py          # 데모 데이터 시드
   grant_admin.py        # 면접관에게 관리자 권한 (0004 이전 DB용, SSO 전까지)
@@ -51,6 +58,8 @@ scripts/
   bench_whisper.py      # Whisper 크기별 속도·메모리·CER·스트리밍 지연 측정
   bench_ocr.py          # OCR 엔진별 쪽당 시간·메모리·CER 측정
   bench_embedding.py    # BGE-M3 로딩·임베딩·1,000건 색인·검색 시간, 메모리(단독, Whisper·PaddleOCR과 함께)
+  bench_live_audio.py   # 마이크 경로: 말 끝 → 답변 닫힘 → 첫 꼬리질문 카드 (audio-input.md 9장)
+  bench_turns.py        # 답변 끝 판정 비교: 침묵 기준 vs Smart Turn (audio-input.md 5장)
   eval_retrieval.py     # 한국어 검색 품질: 가상 답변 → 맞는 질문 상위 3개 적중률 (하이브리드 vs 의미만)
   check_leaks.py        # 비식별화 누출 검수 (텍스트 샘플 / --documents 파일 샘플, --ocr로 OCR 포함 / --report 검토 리포트)
   fake_recruiting_site.py  # 가짜 채용 사이트: 서명된 지원서 이벤트 약 500건(중복·순서 바뀜·철회·일부러 넣은 오류), 처리 결과·시간 보고

@@ -77,7 +77,7 @@ src/interview_assistant/
   deid/        비식별화                  documents/   서류 읽기 (텍스트·OCR)
   live/        실시간 전사·마이크          agent/       MCP 서버 (사내 에이전트 플랫폼용)
   models/      ORM 모델
-migrations/    Alembic (0001~0008)       scripts/     시드, 누출 검수, 측정 …
+migrations/    Alembic 마이그레이션         scripts/     시드, 누출 검수, 측정 …
 tests/         백엔드 테스트              frontend/    면접관 화면 (Vue 3)
 docs/          문서
 ```

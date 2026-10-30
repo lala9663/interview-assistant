@@ -1,10 +1,16 @@
 # 프론트엔드 (면접관 UI)
 
+> 다루는 것: `frontend/`의 스택, 화면 목록, 모의 API 모드와 백엔드 연결 모드, 검사·빌드, 의존성 규칙.
+>
+> 상태: 구현됨 · 확인: 2026-10-30
+
 `frontend/`. Vite + Vue 3 + TypeScript(strict, `vue-tsc`), Tailwind CSS v4 + shadcn-vue 방식 컴포넌트(Reka UI), TanStack Query(`@tanstack/vue-query`), Vue Router, MSW, Chart.js(`vue-chartjs`), vue-sonner, lucide 아이콘(`@lucide/vue`). 명령 팔레트는 Reka UI Listbox, 화면 전환 효과는 Vue `<Transition>`과 CSS만 쓴다. 테스트는 Vitest + Testing Library(Vue) + MSW(node), 린트는 eslint-plugin-vue + typescript-eslint. 폰트는 Pretendard(OFL)를 npm 패키지에서 자체 호스팅한다. Node 24 이상. 이전 React 버전은 git 이력(`93a1780`)에 있다.
 
 ## 화면
 
-대시보드, 공고·역량 사전(FR-02, 채용 사이트 공고 번호 연결, "전형" 탭: 차수 추가·순서·이름·설정, 차수별 역량 사전과 사전 질문), 서류 선별(FR-01·03, 수신 경로·진행 표시·차수 필터, 다음 차수를 기다리는 지원자는 상세에서 바로 면접 잡기: 차수·지원자 고정, 면접관·길이·기간 → 함께 비는 시간), 면접 목록, 실시간 면접(FR-04~08, 이전 차수 요약·이어 질문), 평가 결과(FR-07·08, N차 결정·확인할 점), 면접관 스케줄(FR-09, 차수부터 고르는 면접 잡기), 관리자 > 모델 설정(관리자만, [ai-models.md](ai-models.md)), 관리자 > 연동 현황(관리자만, 채용 사이트가 보낸 이벤트와 처리 결과). 다크 모드 기본(시스템 설정 따름), Ctrl/⌘+K 명령 팔레트.
+대시보드, 공고·역량 사전(FR-02, 채용 사이트 공고 번호 연결, "전형" 탭: 차수 추가·순서·이름·설정, 차수별 역량 사전과 사전 질문), 서류 선별(FR-01·03, 수신 경로·진행 표시·차수 필터, 다음 차수를 기다리는 지원자는 상세에서 바로 면접 잡기: 차수·지원자 고정, 면접관·길이·기간 → 함께 비는 시간), 면접 목록, 실시간 면접(FR-04~08, 이전 차수 요약·이어 질문), 평가 결과(FR-07·08, N차 결정·확인할 점), 면접관 스케줄(FR-09, 차수부터 고르는 면접 잡기), 질문 은행(직군·역량별 검수 질문과 평점 기준 예시, [question-bank.md](question-bank.md)), 관리자 > 모델 설정(관리자만, [ai-models.md](ai-models.md)), 관리자 > 연동 현황(관리자만, 채용 사이트가 보낸 이벤트와 처리 결과), 관리자 > 꼬리질문 지표(관리자만, 출처별 채택률·첫 후보까지 시간·걸러낸 수). 실시간 면접의 마이크는 [audio-input.md](audio-input.md). 다크 모드 기본(시스템 설정 따름), Ctrl/⌘+K 명령 팔레트.
+
+경로는 `frontend/src/router.ts`: `/`, `/postings`, `/postings/:postingId`, `/screening/:postingId?`, `/sessions`, `/sessions/:sessionId/live`, `/sessions/:sessionId/evaluation`, `/schedule`, `/question-bank`, `/admin/models`, `/admin/intake`, `/admin/follow-up-metrics`.
 
 차수 표기 규칙: 차수는 어느 화면에서나 같은 회색 배지(`RoundBadge`, 짧게 "1차", 헤더는 굵게 "2차 · 임원 면접"), 상태는 색 칩(`StepStatusChip`: 예정 회색, 진행 중 빨간 점, 평가 대기, 결정 대기 파랑, 합격 초록, 보류 노랑, 불합격 빨강)으로 따로. 목록 행의 진행 표시는 `ProgressTrail`("서류 ✓ · 1차 ✓ · 2차 ●"), 지원자 상세는 `RoundStepper`(서류 → 각 차수 → 최종, 단계마다 결과와 날짜). 차수에는 색을 쓰지 않는다.
 
@@ -12,7 +18,7 @@
 frontend/src/
   api/          # types.ts(모델과 1:1), endpoints, TanStack Query composable, SSE 파서
   mocks/        # 모의 API: 가상 데이터, 핸들러, 실시간 전사·꼬리질문 스트림 흉내, 모델 설정
-  features/     # 화면: dashboard, postings, screening, sessions, interview(실시간), evaluation, schedule, admin(모델 설정), intake(연동 현황)
+  features/     # 화면: dashboard, postings, screening, sessions, interview(실시간, audio/ 마이크), evaluation, schedule, bank(질문 은행), admin(모델 설정, 꼬리질문 지표), intake(연동 현황), misc
   components/   # 공통 컴포넌트와 ui/ (shadcn-vue 방식)
 ```
 
@@ -37,7 +43,7 @@ uv run uvicorn interview_assistant.main:app --reload   # 저장소 루트에서
 cd frontend && npm run dev:api                         # → http://localhost:5173
 ```
 
-서류 선별 화면의 "서류 업로드"로 PDF·DOCX·PPTX·HTML을 올리면 텍스트 추출 → 비식별화 → 프로필·선별 → 표에 새 가명(CAND-0021 …)으로 들어온다. 이름·연락처는 비식별화에만 쓰인다. 스캔본은 OCR이 없어 거부한다. 테스트용 가상 이력서는 `tests/fixtures/resumes/`에 있다.
+서류 선별 화면의 "서류 업로드"로 PDF·DOCX·PPTX·HTML·HWP·HWPX·구형 .doc/.ppt·JPG/PNG를 올리면 읽기 → 비식별화 → 프로필·선별 → 표에 새 가명(CAND-0021 …)으로 들어온다. 스캔본과 사진은 관리자가 정한 읽기 방식대로 OCR로 읽는다([document-reading.md](document-reading.md)). 이름·연락처는 비식별화에만 쓰인다. 테스트용 가상 이력서는 `tests/fixtures/resumes/`에 있다.
 
 ## 검사와 빌드
 
