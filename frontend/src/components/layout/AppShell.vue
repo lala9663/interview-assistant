@@ -8,9 +8,12 @@ import EmptyState from '@/components/common/EmptyState.vue'
 import { Button } from '@/components/ui/button'
 import { Kbd } from '@/components/ui/kbd'
 import { Tooltip } from '@/components/ui/tooltip'
+import { clockPhase, elapsedMs, formatClock } from '@/lib/session-clock'
+import { useNow } from '@/lib/use-now'
 import { cn } from '@/lib/utils'
 
 import CommandPalette from './CommandPalette.vue'
+import { interviewMode } from './interview-mode'
 import { navItemsFor } from './nav'
 import ThemeToggle from './ThemeToggle.vue'
 
@@ -26,6 +29,14 @@ const liveSession = computed(() => {
   const s = list.find((x) => x.interviewers.some((i) => i.interviewer_id === me.data?.id)) ?? list[0]
   return s && !route.path.endsWith(`${s.id}/live`) ? s : null
 })
+// Open far past its plan (lib/session-clock.ts): most likely left running, so the link says to end it.
+const now = useNow(60_000)
+const liveLeftOpen = computed(() => {
+  const ms = elapsedMs(liveSession.value?.started_at ?? null, now.value)
+  return clockPhase(ms) === 'long_open' ? formatClock(ms) : null
+})
+// 면접 모드: an interview room folds the sidebar and top bar away (its header brings them back).
+const focused = interviewMode.focused
 const paletteOpen = ref(false)
 const mainNav = computed(() => navItemsFor(me.data?.is_admin).filter((n) => !n.adminOnly))
 const adminNav = computed(() => navItemsFor(me.data?.is_admin).filter((n) => n.adminOnly))
@@ -55,7 +66,7 @@ const errorMessage = computed(() => (renderError.value instanceof Error ? render
     </EmptyState>
   </div>
   <div v-else class="flex min-h-screen">
-    <aside class="sticky top-0 flex h-screen w-14 shrink-0 flex-col border-r bg-sidebar lg:w-60">
+    <aside v-if="!focused" class="sticky top-0 flex h-screen w-14 shrink-0 flex-col border-r bg-sidebar lg:w-60">
       <div class="flex h-14 items-center px-3.5 lg:px-4">
         <RouterLink to="/" class="flex items-center gap-2.5 rounded-md outline-none focus-visible:ring-2 focus-visible:ring-ring/50">
           <span class="flex size-7 shrink-0 items-center justify-center rounded-lg bg-primary text-primary-foreground shadow-sm">
@@ -91,7 +102,11 @@ const errorMessage = computed(() => (renderError.value instanceof Error ? render
         </RouterLink>
         </template>
       </nav>
-      <Tooltip v-if="liveSession" content="진행 중인 면접으로 돌아가기" side="right">
+      <Tooltip
+        v-if="liveSession"
+        :content="liveLeftOpen ? `${liveLeftOpen} 열려 있는 면접입니다. 끝났다면 들어가서 종료하세요.` : '진행 중인 면접으로 돌아가기'"
+        side="right"
+      >
         <RouterLink
           :to="`/sessions/${liveSession.id}/live`"
           class="mx-2 mb-2 flex items-center gap-2 rounded-lg border border-[color-mix(in_oklch,var(--live)_35%,transparent)] bg-[color-mix(in_oklch,var(--live)_9%,transparent)] px-2.5 py-2 text-xs transition-colors hover:bg-[color-mix(in_oklch,var(--live)_14%,transparent)]"
@@ -100,6 +115,7 @@ const errorMessage = computed(() => (renderError.value instanceof Error ? render
           <span class="hidden min-w-0 lg:block">
             <span class="block font-medium text-live">진행 중 면접</span>
             <span class="block truncate font-mono text-muted-foreground">{{ liveSession.candidate.pseudonym }} · {{ liveSession.round.label }}</span>
+            <span v-if="liveLeftOpen" class="block truncate font-medium text-danger" data-testid="live-left-open">{{ liveLeftOpen }} · 종료 필요</span>
           </span>
         </RouterLink>
       </Tooltip>
@@ -122,7 +138,7 @@ const errorMessage = computed(() => (renderError.value instanceof Error ? render
       </div>
     </aside>
     <div class="flex min-w-0 flex-1 flex-col">
-      <header class="sticky top-0 z-30 flex h-14 shrink-0 items-center gap-3 border-b bg-background/80 px-4 backdrop-blur-md lg:px-6">
+      <header v-if="!focused" class="sticky top-0 z-30 flex h-14 shrink-0 items-center gap-3 border-b bg-background/80 px-4 backdrop-blur-md lg:px-6">
         <button
           type="button"
           class="flex h-8 w-full max-w-80 items-center gap-2 rounded-md border bg-card px-2.5 text-[13px] text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"

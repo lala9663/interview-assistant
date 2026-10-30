@@ -4,7 +4,8 @@ import { computed } from 'vue'
 
 import type { SessionDetail, StreamStatus } from '@/api/types'
 import { Tooltip } from '@/components/ui/tooltip'
-import { formatElapsed } from '@/lib/time'
+import { clockPhase, DEFAULT_PLANNED_MINUTES, elapsedMs, formatClock } from '@/lib/session-clock'
+import { formatTime, MINUTE } from '@/lib/time'
 import { useNow } from '@/lib/use-now'
 import { cn } from '@/lib/utils'
 
@@ -13,9 +14,14 @@ import type { Connection } from './use-transcript'
 const props = defineProps<{ detail: SessionDetail; status: StreamStatus | null; connection: Connection }>()
 
 const now = useNow(1000)
-const elapsed = computed(() => {
-  const started = props.detail.session.started_at ? new Date(props.detail.session.started_at).getTime() : null
-  return started ? formatElapsed(now.value.getTime() - started) : '00:00'
+const planned = DEFAULT_PLANNED_MINUTES
+const ms = computed(() => elapsedMs(props.detail.session.started_at, now.value))
+const phase = computed(() => clockPhase(ms.value, planned))
+const clock = computed(() => formatClock(ms.value, planned))
+const progress = computed(() => Math.min(100, (ms.value / (planned * MINUTE)) * 100))
+const clockHint = computed(() => {
+  const started = props.detail.session.started_at
+  return `예정 ${planned}분 (차수에 길이가 없어 면접 잡기와 같은 1시간)${started ? ` · ${formatTime(started)} 시작` : ''}`
 })
 const manual = computed(() => !props.detail.session.has_recording)
 const stt = computed<{ label: string; cls: string; hint: string; detail?: string | null }>(() => {
@@ -35,20 +41,40 @@ const stt = computed<{ label: string; cls: string; hint: string; detail?: string
 </script>
 
 <template>
-  <div v-if="manual" class="flex items-center gap-3 text-[12.5px] whitespace-nowrap">
-    <span class="flex items-center gap-1.5 rounded-md bg-[color-mix(in_oklch,var(--warning)_12%,transparent)] px-2 py-1 font-medium text-warning">
+  <div class="flex items-center gap-3 text-[12.5px] whitespace-nowrap">
+    <span
+      v-if="manual"
+      class="flex items-center gap-1.5 rounded-md bg-[color-mix(in_oklch,var(--warning)_12%,transparent)] px-2 py-1 font-medium text-warning"
+    >
       <PenLineIcon class="size-3.5" aria-hidden="true" />
       수기 모드 · 녹음 안 함
     </span>
-    <span class="font-mono font-semibold tabular" aria-label="경과 시간">{{ elapsed }}</span>
-  </div>
-  <div v-else class="flex items-center gap-3 text-[12.5px] whitespace-nowrap">
-    <span class="flex items-center gap-1.5 rounded-md bg-[color-mix(in_oklch,var(--live)_12%,transparent)] px-2 py-1 font-semibold text-live">
+    <span v-else class="flex items-center gap-1.5 rounded-md bg-[color-mix(in_oklch,var(--live)_12%,transparent)] px-2 py-1 font-semibold text-live">
       <span class="size-2 shrink-0 animate-live rounded-full bg-live" aria-hidden="true"></span>
       REC
-      <span class="font-mono tabular" aria-label="녹음 경과 시간">{{ elapsed }}</span>
     </span>
-    <Tooltip :content="stt.hint">
+    <Tooltip :content="clockHint">
+      <span tabindex="0" class="flex flex-col gap-1 outline-none" data-testid="session-clock" :data-phase="phase">
+        <span
+          :class="
+            cn(
+              'font-semibold tabular',
+              phase === 'over' && 'text-warning',
+              phase === 'long_open' && 'text-danger',
+            )
+          "
+          :aria-label="`경과 시간 ${clock}`"
+          >{{ clock }}</span
+        >
+        <span class="h-1 w-full overflow-hidden rounded-full bg-muted" aria-hidden="true">
+          <span
+            :class="cn('block h-full rounded-full transition-[width] duration-1000', phase === 'on_time' ? 'bg-foreground/45' : phase === 'over' ? 'bg-warning' : 'bg-danger')"
+            :style="{ width: `${progress}%` }"
+          ></span>
+        </span>
+      </span>
+    </Tooltip>
+    <Tooltip v-if="!manual" :content="stt.hint">
       <span tabindex="0" class="flex items-center gap-1.5 text-muted-foreground outline-none">
         <span :class="cn('size-2 shrink-0 rounded-full', stt.cls)" aria-hidden="true"></span>
         <span class="tabular">

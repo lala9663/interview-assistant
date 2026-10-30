@@ -86,7 +86,7 @@ const PROCESSING = [
 </script>
 
 <template>
-  <div class="border-b bg-card/30" data-testid="mic-panel">
+  <div class="@container border-b bg-card/30" data-testid="mic-panel">
     <div class="flex flex-wrap items-center gap-x-3 gap-y-2 px-4 py-2">
       <Button
         size="sm"
@@ -111,8 +111,9 @@ const PROCESSING = [
       </div>
 
       <Segmented :model-value="role" :disabled="!on" aria-label="마이크로 듣는 사람" @update:model-value="switchRole">
-        <SegmentedItem value="interviewer" data-testid="role-interviewer">질문 중 <Kbd class="hidden lg:inline-flex">Alt 1</Kbd></SegmentedItem>
-        <SegmentedItem value="candidate" data-testid="role-candidate">답변 듣는 중 <Kbd class="hidden lg:inline-flex">Alt 2</Kbd></SegmentedItem>
+        <!-- The key hints show when the column has room for them on one line (the room may be in three columns). -->
+        <SegmentedItem value="interviewer" data-testid="role-interviewer" aria-keyshortcuts="Alt+1">질문 중 <Kbd class="hidden @xl:inline-flex">Alt 1</Kbd></SegmentedItem>
+        <SegmentedItem value="candidate" data-testid="role-candidate" aria-keyshortcuts="Alt+2">답변 듣는 중 <Kbd class="hidden @xl:inline-flex">Alt 2</Kbd></SegmentedItem>
       </Segmented>
 
       <div class="ml-auto flex items-center gap-2">

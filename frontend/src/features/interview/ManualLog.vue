@@ -8,8 +8,8 @@ import { Badge } from '@/components/ui/badge'
 import { QUESTION_SOURCE_LABEL } from '@/lib/labels'
 import { cn } from '@/lib/utils'
 
-/** Manual mode: questions and typed answers (no recording / STT down). */
-const props = defineProps<{ qaItems: QAItem[] }>()
+/** Manual mode (no recording): the Q&A, questions and typed answers, the one place it shows in the room. */
+const props = defineProps<{ qaItems: QAItem[]; editedIds: ReadonlySet<string> }>()
 
 const box = ref<HTMLDivElement>()
 watch(
@@ -27,13 +27,14 @@ watch(
       <PenLineIcon class="size-5" aria-hidden="true" />
       <p>수기 모드입니다. 질문을 기록한 뒤 답변 요지를 직접 입력하세요.</p>
     </div>
-    <ol class="space-y-3">
-      <li v-for="q in qaItems" :key="q.id" class="rounded-lg border bg-card p-3.5">
+    <ol class="space-y-3" aria-label="Q&A 기록">
+      <li v-for="q in qaItems" :key="q.id" class="rounded-lg border bg-card p-3.5" :data-qa-seq="q.seq">
         <div class="mb-1.5 flex items-center gap-2">
           <span class="font-mono text-[11px] font-semibold text-muted-foreground">Q{{ q.seq }}</span>
           <Badge :variant="q.question_source === 'ai_suggested' ? 'brand' : 'outline'" class="py-0 text-[10.5px]">
             {{ QUESTION_SOURCE_LABEL[q.question_source] }}
           </Badge>
+          <Badge v-if="editedIds.has(q.id)" variant="outline" class="py-0 text-[10.5px]">수정함</Badge>
         </div>
         <p class="text-[14px] font-medium">{{ q.question }}</p>
         <p :class="cn('mt-2 text-[13.5px] leading-relaxed', !q.answer_deidentified && 'text-muted-foreground italic')">

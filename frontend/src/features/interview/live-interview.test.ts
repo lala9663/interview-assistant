@@ -20,15 +20,17 @@ async function suggestionsReady() {
   let panel: HTMLElement | null = null
   await waitFor(() => expect((panel = document.querySelector<HTMLElement>('section[aria-label="꼬리질문 제안"]'))).not.toBeNull(), WAIT)
   const ready = () =>
-    [...panel!.querySelectorAll<HTMLButtonElement>('li[data-source="ai"] button')].filter((b) => b.textContent?.trim() === '이 질문 사용' && !b.disabled)
+    [...panel!.querySelectorAll<HTMLButtonElement>('li[data-source="ai"] [data-testid="use-suggestion"]')].filter((b) => !b.disabled)
   await waitFor(() => expect(ready()).toHaveLength(3), { ...WAIT, timeout: 40_000, container: panel! })
 }
 
 const aiCards = () => screen.getAllByRole('listitem', { name: /꼬리질문 후보 \d+ \(AI 생성\)/ })
 
+/** The Q&A, in the center column only (the transcript, grouped by question). */
 function qaLog() {
   return screen.getByRole('list', { name: 'Q&A 기록' })
 }
+const questions = () => [...qaLog().querySelectorAll<HTMLElement>('li[data-qa-seq]')]
 
 describe('live interview (mock API over MSW)', { timeout: 60_000 }, () => {
   it('streams the answer, suggests follow-ups without asking them, and records the chosen one as a Q&A item', async () => {
@@ -38,7 +40,8 @@ describe('live interview (mock API over MSW)', { timeout: 60_000 }, () => {
     // Q1-Q3 already recorded; Q3's answer streams in, then three suggestions arrive.
     await suggestionsReady()
     expect(screen.getByText(/자동으로 묻지 않으며/)).toBeInTheDocument()
-    expect(within(qaLog()).getAllByRole('listitem')).toHaveLength(3)
+    expect(questions()).toHaveLength(3)
+    expect(screen.getAllByRole('list', { name: 'Q&A 기록' })).toHaveLength(1) // not repeated beside the suggestions
     expect(getDb().qaOf(LIVE)).toHaveLength(3)
 
     // Approved question-bank questions close to the answer come first, marked as such.
@@ -53,8 +56,8 @@ describe('live interview (mock API over MSW)', { timeout: 60_000 }, () => {
     const question = within(first).getByText(/히터 온도 때문이라고 확정하기 전에/).textContent!
     await user.click(within(first).getByRole('button', { name: '이 질문 사용' }))
 
-    await waitFor(() => expect(within(qaLog()).getAllByRole('listitem')).toHaveLength(4), WAIT)
-    const q4 = within(qaLog()).getAllByRole('listitem')[3]!
+    await waitFor(() => expect(questions()).toHaveLength(4), WAIT)
+    const q4 = questions()[3]!
     expect(q4).toHaveTextContent('Q4')
     expect(q4).toHaveTextContent('꼬리질문 후보')
     expect(q4).toHaveTextContent(question)

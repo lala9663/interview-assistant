@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ArrowLeftIcon, CircleStopIcon, PanelLeftIcon } from '@lucide/vue'
+import { ArrowLeftIcon, CircleStopIcon, PanelLeftCloseIcon, PanelLeftOpenIcon } from '@lucide/vue'
 import { computed } from 'vue'
 import { RouterLink } from 'vue-router'
 
@@ -8,6 +8,7 @@ import ModeBadge from '@/components/common/ModeBadge.vue'
 import PanelAvatars from '@/components/common/PanelAvatars.vue'
 import Pseudonym from '@/components/common/Pseudonym.vue'
 import RoundBadge from '@/components/common/RoundBadge.vue'
+import { interviewMode } from '@/components/layout/interview-mode'
 import {
   AlertDialog,
   AlertDialogAction,
@@ -20,23 +21,39 @@ import {
   AlertDialogTrigger,
 } from '@/components/ui/alert-dialog'
 import { Button } from '@/components/ui/button'
+import { Tooltip } from '@/components/ui/tooltip'
 
 import RecordingStatus from './RecordingStatus.vue'
 import type { Connection } from './use-transcript'
 
 const props = defineProps<{ detail: SessionDetail; status: StreamStatus | null; connection: Connection; ending: boolean }>()
-const emit = defineEmits<{ end: []; openCandidate: [] }>()
+const emit = defineEmits<{ end: [] }>()
+/** the end confirmation, also opened from the long-open banner */
+const endOpen = defineModel<boolean>('endOpen', { default: false })
 const answered = computed(() => props.detail.qa_items.filter((q) => q.answer_deidentified).length)
+const focused = interviewMode.focused
 </script>
 
 <template>
   <div class="flex h-14 shrink-0 items-center gap-3 border-b bg-card/50 px-4">
-    <Button as-child variant="ghost" size="icon-sm" aria-label="면접 목록으로">
-      <RouterLink to="/sessions"><ArrowLeftIcon /></RouterLink>
-    </Button>
-    <Button variant="ghost" size="icon-sm" class="xl:hidden" aria-label="지원자 정보와 사전 질문 열기" @click="emit('openCandidate')">
-      <PanelLeftIcon />
-    </Button>
+    <div class="flex items-center gap-0.5">
+      <Tooltip :content="focused ? '앱 메뉴를 펼칩니다' : '면접 모드: 앱 메뉴를 접고 면접 화면만 봅니다'">
+        <Button
+          variant="ghost"
+          size="icon-sm"
+          :aria-label="focused ? '메뉴 펼치기' : '메뉴 접기'"
+          :aria-expanded="!focused"
+          data-testid="menu-toggle"
+          @click="interviewMode.toggleMenu()"
+        >
+          <PanelLeftOpenIcon v-if="focused" />
+          <PanelLeftCloseIcon v-else />
+        </Button>
+      </Tooltip>
+      <Button as-child variant="ghost" size="icon-sm" aria-label="면접 목록으로">
+        <RouterLink to="/sessions"><ArrowLeftIcon /></RouterLink>
+      </Button>
+    </div>
     <div class="flex min-w-0 items-center gap-2.5">
       <Pseudonym :value="detail.card.candidate.pseudonym" class="whitespace-nowrap" />
       <span class="hidden truncate text-[13px] text-muted-foreground lg:block">{{ detail.posting.title }}</span>
@@ -46,7 +63,7 @@ const answered = computed(() => props.detail.qa_items.filter((q) => q.answer_dei
     </div>
     <div class="ml-auto flex items-center gap-4">
       <RecordingStatus :detail="detail" :status="status" :connection="connection" />
-      <AlertDialog>
+      <AlertDialog v-model:open="endOpen">
         <AlertDialogTrigger as-child>
           <Button variant="destructive" size="sm" :disabled="ending">
             <CircleStopIcon />

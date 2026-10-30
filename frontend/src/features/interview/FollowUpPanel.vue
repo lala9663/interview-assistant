@@ -1,12 +1,14 @@
 <script setup lang="ts">
 import { RefreshCwIcon, SparklesIcon } from '@lucide/vue'
-import { computed } from 'vue'
+import { computed, type ComponentPublicInstance } from 'vue'
 
 import { Button } from '@/components/ui/button'
+import { Kbd } from '@/components/ui/kbd'
 import { Skeleton } from '@/components/ui/skeleton'
 import { Tooltip } from '@/components/ui/tooltip'
 
 import type { FollowUpState, Suggestion } from './follow-ups'
+import { digitOf, roomShortcut, useTyping, useWindowKeys } from './room-keys'
 import SuggestionCard from './SuggestionCard.vue'
 
 const props = defineProps<{
@@ -15,8 +17,10 @@ const props = defineProps<{
   hasAnswer: boolean
   disabled: boolean
   pendingSuggestionId: string | null
+  /** on screen (the 꼬리질문 tab is open, or there are no tabs): number keys pick only cards in view */
+  visible: boolean
 }>()
-const emit = defineEmits<{ use: [s: Suggestion, text: string, edited: boolean]; retry: [] }>()
+const emit = defineEmits<{ use: [s: Suggestion, text: string, edited: boolean]; retry: []; reveal: [] }>()
 
 const streamingEmpty = computed(() => props.state.status === 'streaming' && props.state.suggestions.length === 0)
 // While streaming, room for the AI's 2-3 under whatever the question bank showed first.
@@ -26,6 +30,32 @@ const placeholders = computed(() => (props.state.status === 'streaming' ? Math.m
 const positions = computed(() => {
   let n = 0
   return props.state.suggestions.map((s) => (s.duplicateOf === null ? ++n : null))
+})
+
+/**
+ * 1-9 asks the card with that number, Shift+1-9 opens it for editing first: the same as its two buttons, so
+ * still only what the interviewer picks is ever asked. A card out of view (another tab) is not picked; the
+ * key brings the cards into view instead.
+ */
+const cards = new Map<string, InstanceType<typeof SuggestionCard>>()
+const cardRef = (id: string) => (el: Element | ComponentPublicInstance | null) => {
+  if (el) cards.set(id, el as InstanceType<typeof SuggestionCard>)
+  else cards.delete(id)
+}
+const usable = (s: Suggestion) =>
+  s.done && !s.checking && s.duplicateOf === null && !props.state.used && !props.disabled && props.pendingSuggestionId === null
+const typing = useTyping()
+const offered = computed(() => positions.value.filter((p) => p !== null).length)
+useWindowKeys((e) => {
+  const n = digitOf(e)
+  if (n === null || !roomShortcut(e)) return
+  const s = props.state.suggestions[positions.value.indexOf(n)]
+  if (!s) return
+  e.preventDefault()
+  if (!props.visible) return emit('reveal')
+  if (!usable(s)) return
+  if (e.shiftKey) void cards.get(s.id)?.startEdit()
+  else emit('use', s, s.text, false)
 })
 </script>
 
@@ -37,9 +67,7 @@ const positions = computed(() => {
           <SparklesIcon class="size-4 text-brand" aria-hidden="true" />
           꼬리질문 제안
         </h3>
-        <p class="mt-0.5 text-[11.5px] leading-snug text-muted-foreground">
-          검수된 질문 은행 후보가 먼저, AI 후보가 이어서 나옵니다. 자동으로 묻지 않으며, 면접관이 고르거나 고친 질문만 기록됩니다.
-        </p>
+        <p class="mt-0.5 text-[11.5px] leading-snug text-muted-foreground">자동으로 묻지 않으며, 면접관이 고르거나 고친 질문만 기록됩니다.</p>
       </div>
       <Tooltip v-if="(state.status === 'done' || state.status === 'error') && hasAnswer" content="같은 답변으로 후보를 다시 받습니다">
         <Button size="icon-xs" variant="ghost" :disabled="disabled" aria-label="다시 제안" @click="emit('retry')">
@@ -82,7 +110,9 @@ const positions = computed(() => {
         <SuggestionCard
           v-for="(s, i) in state.suggestions"
           :key="s.id"
+          :ref="cardRef(s.id)"
           :s="s"
+          :keys="!typing"
           :position="positions[i] ?? null"
           :used="state.used?.suggestionId === s.id"
           :used-seq="state.used?.suggestionId === s.id ? state.used.seq : null"
@@ -97,6 +127,13 @@ const positions = computed(() => {
           <Skeleton class="mt-2.5 h-3.5 w-4/5" />
         </li>
       </TransitionGroup>
+      <p v-if="offered > 0 && !state.used" class="mt-2 flex flex-wrap items-center gap-x-2 gap-y-1 text-[11.5px] text-muted-foreground" data-testid="suggestion-keys">
+        <template v-if="typing">입력 중에는 숫자 키가 쉽니다. <span class="inline-flex items-center gap-1"><Kbd>Esc</Kbd> 입력창에서 나오기</span></template>
+        <template v-else>
+          <span class="inline-flex items-center gap-1"><Kbd>1</Kbd>~<Kbd>{{ Math.min(offered, 9) }}</Kbd> 바로 사용</span>
+          <span class="inline-flex items-center gap-1"><Kbd>Shift</Kbd>+숫자 수정 후 사용</span>
+        </template>
+      </p>
       <p v-if="state.used && listening" class="mt-2 text-center text-[11.5px] text-muted-foreground">새 답변이 끝나면 다음 후보를 제안합니다.</p>
       <p v-if="state.discarded.length > 0" class="mt-2 text-[11.5px] text-muted-foreground" data-testid="discarded-note">
         이미 한 질문과 같은 뜻의 후보 {{ state.discarded.length }}개는 접었습니다.
