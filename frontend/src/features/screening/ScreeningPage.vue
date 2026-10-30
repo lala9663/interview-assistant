@@ -3,7 +3,7 @@ import { FileSearchIcon, UploadIcon } from '@lucide/vue'
 import { computed, ref, watchEffect } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 
-import { useApplications, usePostings } from '@/api/queries'
+import { useApplications, useMe, usePostings } from '@/api/queries'
 import EmptyState from '@/components/common/EmptyState.vue'
 import ErrorState from '@/components/common/ErrorState.vue'
 import Page from '@/components/common/Page.vue'
@@ -25,6 +25,16 @@ const postingId = computed(() => (typeof route.params.postingId === 'string' ? r
 const apps = useApplications(postingId)
 const selected = computed(() => (typeof route.query.app === 'string' ? route.query.app : null))
 const posting = computed(() => postings.data?.find((p) => p.id === postingId.value))
+const me = useMe()
+const sortStorageKey = computed(() => (me.data ? `screening-sort:${me.data.id}` : undefined))
+// The table's rows as filtered and sorted now: the sheet's previous/next walk this order.
+const order = ref<string[]>([])
+const at = computed(() => (selected.value ? order.value.indexOf(selected.value) : -1))
+const neighbours = computed(() => ({
+  prev: at.value > 0 ? order.value[at.value - 1]! : null,
+  next: at.value >= 0 && at.value < order.value.length - 1 ? order.value[at.value + 1]! : null,
+  position: at.value >= 0 ? { index: at.value + 1, total: order.value.length } : null,
+}))
 
 // /screening without a posting: open the first posting that has applications.
 watchEffect(() => {
@@ -50,7 +60,7 @@ const uploading = ref(false)
     <Page v-else><Skeleton class="h-96" /></Page>
   </template>
   <Page v-else>
-    <PageHeader eyebrow="FR-01 · FR-03" title="서류 선별" description="JD와 확정된 역량 사전 기준의 AI 적합도와 근거입니다. 통과·보류·탈락은 사람이 확정합니다.">
+    <PageHeader title="서류 선별" description="JD와 확정된 역량 사전 기준의 AI 적합도와 근거입니다. 통과·보류·탈락은 사람이 확정합니다.">
       <template #actions>
         <Select :model-value="postingId" @update:model-value="pick">
           <SelectTrigger class="w-80" aria-label="공고 선택">
@@ -82,9 +92,17 @@ const uploading = ref(false)
         "
       />
     </Card>
-    <ScreeningTable v-else :rows="apps.data" :selected-id="selected" @open="open" />
+    <ScreeningTable v-else :rows="apps.data" :selected-id="selected" :sort-storage-key="sortStorageKey" @open="open" @order="(ids) => (order = ids)" />
     <PrivacyNote class="mt-3" />
-    <ApplicationSheet :application-id="selected" :posting-id="postingId" @close="close" />
+    <ApplicationSheet
+      :application-id="selected"
+      :posting-id="postingId"
+      :prev-id="neighbours.prev"
+      :next-id="neighbours.next"
+      :position="neighbours.position"
+      @navigate="open"
+      @close="close"
+    />
     <UploadDialog
       :open="uploading"
       :posting-id="postingId"

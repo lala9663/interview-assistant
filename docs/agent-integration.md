@@ -91,7 +91,7 @@ uv sync --extra whisper --extra ocr --extra embedding --extra agent
 | `list_postings` | 공고·전형 차수 목록과 단계별 인원(서류, 차수별 대기·예정·진행·평가·결정·합격, 최종 후보) | `GET /api/postings` |
 | `get_posting` | JD, 차수별 진행 방식·권장 인원, 확정 역량 사전의 역량 이름·설명, 사전 질문 수 | `GET /api/postings/{id}`, `/rounds`, `/competency-sets` |
 | `search_applicants` | 공고별 지원자 적합도 순위, 서류 상태·현재 차수·최소 적합도·기술로 거르기 | `GET /api/postings/{id}/applications` |
-| `get_applicant_summary` | 비식별 프로필, AI 선별 근거(강점·확인 필요), 진행 단계, 면접, 결정 이력 | `GET /api/candidates`, `GET /api/applications/{id}` |
+| `get_applicant_summary` | 비식별 프로필, AI 선별 근거(JD 요건별 판단·근거·위치와 면접에서 확인할 점, 이전 지원서는 강점·확인 필요), AI 권고, 탈락 사유, 진행 단계, 면접, 결정 이력 | `GET /api/candidates`, `GET /api/applications/{id}` |
 | `get_evaluation_summary` | 차수별 AI 참고 점수와 면접관 점수(따로), 제출 여부, 결정·이력, 결정 가능 여부, 확인할 점 | `GET /api/applications/{id}`, `GET /api/sessions/{id}/evaluation` |
 | `find_common_free_time` | 면접관 여러 명의 공통 빈 시간 후보(가용 시간 안, 잡힌 면접 제외) | `GET /api/interviewers`, `POST /api/schedule/suggestions` |
 | `list_schedulable_applicants` | 다음 차수 면접을 잡아야 하는 지원자 | `GET /api/applications/schedulable` |

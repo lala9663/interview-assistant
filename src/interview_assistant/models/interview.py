@@ -198,6 +198,9 @@ class SessionInterviewer(Base):
     )
     # When this interviewer last submitted their competency scores for the session.
     submitted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    # AI scores stay hidden from an interviewer until they submit; set when they chose to see
+    # them earlier anyway (audited as evaluation.ai_revealed).
+    ai_revealed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
 
     session: Mapped[InterviewSession] = relationship(back_populates="interviewers")
     interviewer: Mapped[Interviewer] = relationship(back_populates="session_links")

@@ -163,7 +163,8 @@ def test_upload_extracts_deidentifies_screens_and_keeps_the_file(api, tmp_path):
     result = response.json()
     assert result["candidate"]["pseudonym"] == "CAND-0021"
     assert result["screening"]["status"] == "hold"  # people decide
-    assert "AI 권고" in result["screening"]["rationale"].splitlines()[0]
+    assert result["screening"]["recommendation"] in {"passed", "hold", "rejected"}
+    assert result["screening"]["assessment"]["requirements"]
     assert result["screening"]["model"] == "fake-llm-screening"
     assert result["document"]["format"] == "docx" and result["document"]["replacements"] > 0
 
@@ -321,6 +322,9 @@ def test_manual_mode_interview_from_consent_to_scores(api):
         api, f"/api/sessions/{SCHEDULED}/evaluation", lambda b: b["ai"]["status"] == "completed"
     )
     assert ev["ai"]["model"] == "fake-llm" and ev["ai"]["prompt_version"] == "score-v0.4"
+    # 김서연 is on the panel and has not scored yet: AI scores stay hidden until she chooses to see them.
+    assert ev["ai"]["hidden"] and ev["ai"]["scores"] == []
+    ev = api.post(f"/api/sessions/{SCHEDULED}/ai-scores/reveal").json()
     [score] = ev["ai"]["scores"]
     assert score["qa_item_id"] == qa["id"] and score["competency"] == preset["competency"]
     assert score["evidence"] in answered["answer_deidentified"]
@@ -481,6 +485,8 @@ def test_live_interview_transcript_follow_ups_and_scoring(api):
         api, f"/api/sessions/{LIVE}/evaluation", lambda b: b["ai"]["status"] == "completed"
     )
     answered = {q["id"]: q["answer_deidentified"] for q in ev["qa_items"]}
+    assert ev["ai"]["hidden"]  # 김서연 has not scored this session yet
+    ev = api.post(f"/api/sessions/{LIVE}/ai-scores/reveal").json()
     assert ev["ai"]["scores"]
     for score in ev["ai"]["scores"]:
         assert score["evidence"] in answered[score["qa_item_id"]]

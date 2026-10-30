@@ -99,12 +99,30 @@ class Application(Schema):
     created_at: Timestamp
 
 
+class RequirementCheck(BaseModel):
+    kind: Literal["required", "preferred"]  # 필수 / 우대
+    requirement: str
+    verdict: Literal["met", "unmet", "unclear"]  # 충족 / 미충족 / 확인 필요
+    evidence: str
+    source: str  # where in the document ("경력 · [회사-1]"); "" when nothing was found
+
+
+class ScreeningAssessment(BaseModel):
+    summary: str
+    requirements: list[RequirementCheck]
+    interview_checks: list[str]  # 면접에서 확인할 점
+
+
 class Screening(Schema):
     id: str
     application_id: str
     fit_score: float
+    # Plain text: summary, `+ ` lines, `- ` lines. Rows screened before screening-v0.5 have only this.
     rationale: str
+    assessment: ScreeningAssessment | None  # screening-v0.5 and later
+    recommendation: ScreeningStatus | None  # the AI's recommendation, reference only
     status: ScreeningStatus
+    reject_reason: str | None  # de-identified; set while status is rejected
     model: str | None
     prompt_version: str | None
     created_at: Timestamp
@@ -556,6 +574,9 @@ class AiEvaluation(BaseModel):
     model: str | None
     prompt_version: str | None
     samples: int
+    # True while the signed-in interviewer of this session has not submitted their own scores
+    # (and did not choose to see AI first): scores and summary are then empty.
+    hidden: bool = False
     scores: list[Score]
     summary: list[AiCompetencySummary]
 
@@ -890,6 +911,8 @@ class CompetenciesBody(BaseModel):
 
 class ScreeningUpdate(BaseModel):
     status: ScreeningStatus
+    # Required with `rejected` (why, in a sentence); ignored otherwise.
+    reason: str | None = None
 
 
 class UpdatePostingRequest(BaseModel):

@@ -14,7 +14,7 @@ from typing import Any
 
 COMPETENCY_PROMPT = "competency-v0.4"
 PROFILE_PROMPT = "profile-v0.1"
-SCREENING_PROMPT = "screening-v0.4"
+SCREENING_PROMPT = "screening-v0.5"
 FOLLOWUP_PROMPT = "followup-v0.4"
 SCORING_PROMPT = "score-v0.4"
 PRESET_PROMPT = "preset-v0.1"
@@ -197,24 +197,110 @@ def profile_prompt(*, document_text: str) -> str:
 
 # --- FR-03 서류 선별 ---------------------------------------------------------------------
 
+# v0.5: one verdict per JD requirement instead of free strengths/concerns, the recommendation in
+# its own field, points to check in the interview. The profile goes in as Korean lines, not JSON:
+# with JSON keys in the prompt, models wrote them into the rationale ("years_experience 7.2").
 SCREENING_SYSTEM = (
-    "당신은 JD와 역량 사전을 기준으로 서류를 검토하는 채용 담당자를 돕습니다. 적합도(0~100)와 "
-    "근거를 씁니다. 강점과 확인할 점은 서류의 사실과 JD 요건을 짝지어 한 줄씩 씁니다. 판단은 "
-    "사람이 확정하므로 권고만 합니다. " + DATA_NOTE
+    "당신은 JD와 역량 사전을 기준으로 서류를 검토하는 채용 담당자를 돕습니다. JD의 필수 요건과 "
+    "우대 사항을 하나씩 나눠, 요건마다 서류에 근거가 있는지 판단합니다. 판단은 사람이 확정하므로 "
+    "권고만 합니다. 모든 글은 채용 담당자가 바로 읽는 자연스러운 한국어 문장으로 씁니다. 영문 "
+    "필드 이름, 밑줄이 들어간 영문 이름, JSON 키는 글에 쓰지 마세요. 경력 기간은 '7년 2개월'처럼 "
+    "씁니다. " + DATA_NOTE
 )
 
 SCREENING_SCHEMA: dict[str, Any] = {
     "title": "ScreeningAssessment",
     "type": "object",
     "properties": {
-        "fit_score": {"type": "integer", "minimum": 0, "maximum": 100},
-        "summary": {"type": "string"},
-        "strengths": {"type": "array", "items": {"type": "string"}},
-        "concerns": {"type": "array", "items": {"type": "string"}},
-        "recommendation": {"type": "string", "enum": ["passed", "hold", "rejected"]},
+        "requirements": {
+            "type": "array",
+            "description": "JD의 필수 요건과 우대 사항. 요건 하나에 한 항목, JD에 적힌 순서대로.",
+            "items": {
+                "type": "object",
+                "properties": {
+                    "kind": {
+                        "type": "string",
+                        "enum": ["required", "preferred"],
+                        "description": "required = 필수 요건, preferred = 우대 사항",
+                    },
+                    "requirement": {
+                        "type": "string",
+                        "description": "JD의 요건을 짧게 옮긴 것 (예: 백엔드 개발 경력 4년 이상)",
+                    },
+                    "verdict": {
+                        "type": "string",
+                        "enum": ["met", "unmet", "unclear"],
+                        "description": (
+                            "met = 충족, unmet = 미충족, unclear = 서류만으로 판단하기 어려움"
+                        ),
+                    },
+                    "evidence": {
+                        "type": "string",
+                        "description": "판단 근거 한 문장. 서류에 관련 내용이 없으면 그렇다고 씁니다.",
+                    },
+                    "source": {
+                        "type": "string",
+                        "description": (
+                            "근거가 있는 서류 위치를 짧게 (예: 경력 · [회사-1], 프로젝트 · 결제 "
+                            "시스템, 자격증). 근거가 없으면 빈 문자열."
+                        ),
+                    },
+                },
+                "required": ["kind", "requirement", "verdict", "evidence", "source"],
+            },
+        },
+        "summary": {"type": "string", "description": "요건 판단을 바탕으로 한 1~2문장 요약"},
+        "fit_score": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 100,
+            "description": "JD 적합도 0~100",
+        },
+        "recommendation": {
+            "type": "string",
+            "enum": ["passed", "hold", "rejected"],
+            "description": "passed = 통과 권고, hold = 보류 권고, rejected = 탈락 권고",
+        },
+        "interview_checks": {
+            "type": "array",
+            "items": {"type": "string"},
+            "description": "면접에서 확인할 점 1~3개. 면접관이 바로 물을 수 있게 구체적으로.",
+        },
     },
-    "required": ["fit_score", "summary", "strengths", "concerns", "recommendation"],
+    "required": ["requirements", "summary", "fit_score", "recommendation", "interview_checks"],
 }
+
+
+def years_text(years: float | None) -> str:
+    """7.2 -> '7년 2개월', 7 -> '7년', 0.5 -> '6개월' (the UI's formatYears says it the same way)."""
+    if years is None:
+        return "알 수 없음"
+    months = round(years * 12)
+    y, m = divmod(months, 12)
+    if y and m:
+        return f"{y}년 {m}개월"
+    return f"{y}년" if y else f"{m}개월"
+
+
+def profile_text(profile: dict[str, Any]) -> str:
+    """The structured profile as labelled Korean lines (no JSON keys for a model to echo)."""
+    lines = [f"요약: {profile.get('summary') or '없음'}"]
+    years = profile.get("years_experience")
+    lines.append(f"총 경력: {years_text(float(years)) if years is not None else '알 수 없음'}")
+    lines.append(f"기술: {', '.join(profile.get('skills') or []) or '없음'}")
+    lines.append("경력:")
+    for e in profile.get("experience") or []:
+        lines.append(f"- {' · '.join(x for x in (e.get('company'), e.get('role'), e.get('period')) if x)}")
+        lines.extend(f"  - {h}" for h in e.get("highlights") or [])
+    lines.append("학력:")
+    for e in profile.get("education") or []:
+        lines.append(f"- {' · '.join(x for x in (e.get('school'), e.get('degree'), e.get('major')) if x)}")
+    lines.append("프로젝트:")
+    for p in profile.get("projects") or []:
+        tech = f" (기술: {', '.join(p['tech'])})" if p.get("tech") else ""
+        lines.append(f"- {p.get('name', '')}: {p.get('description', '')}{tech}")
+    lines.append(f"자격증: {', '.join(profile.get('certifications') or []) or '없음'}")
+    return "\n".join(lines)
 
 
 def screening_prompt(
@@ -229,9 +315,14 @@ def screening_prompt(
         [
             tagged("job_posting", "\n".join([tagged("title", title), tagged("jd", jd_text)])),
             tagged("competencies", competency_lines(competencies) or "확정된 역량 사전 없음"),
-            tagged("candidate_profile", json.dumps(profile, ensure_ascii=False, indent=1)),
+            tagged("candidate_profile", profile_text(profile)),
             tagged("document", document_text),
-            "필수 요건 충족 여부를 먼저 보고, 우대 사항과 역량 근거를 더해 적합도를 정하세요.",
+            "1. JD의 필수 요건과 우대 사항을 하나씩 판단하세요. 서류에 분명한 근거가 있으면 충족, "
+            "분명히 모자라면 미충족, 서류만으로 알 수 없으면 판단하기 어려움입니다. 근거는 서류의 "
+            "사실을 한 문장으로 쓰고, 그 사실이 서류의 어디에 있는지 적으세요.\n"
+            "2. 요건 판단을 바탕으로 요약, 적합도, 권고를 정하세요. 필수 요건이 미충족이면 적합도를 "
+            "낮게 봅니다.\n"
+            "3. 판단하기 어려운 요건과 더 깊이 봐야 할 경험을 면접에서 확인할 점으로 쓰세요.",
         ]
     )
 

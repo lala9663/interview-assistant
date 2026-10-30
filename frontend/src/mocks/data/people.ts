@@ -2,7 +2,7 @@
  * Fictional interviewers and candidates. Candidate data is de-identified as the backend would
  * store it: pseudonym only, schools/companies as tokens. No real names anywhere.
  */
-import type { CandidateProfile, ScreeningStatus } from '@/api/types'
+import type { CandidateProfile, RequirementCheck, ScreeningStatus } from '@/api/types'
 
 export interface InterviewerSeed {
   key: string
@@ -34,11 +34,22 @@ export interface CandidateSeed {
   summaryLine: string
   strengths: string[]
   concerns: string[]
+  /** Screened with screening-v0.5 (per-requirement verdicts); the others are older free-text rows. */
+  assessment?: { requirements: RequirementCheck[]; interviewChecks: string[]; recommendation: ScreeningStatus }
+  /** Why a person set 탈락 (rejected rows). */
+  rejectReason?: string
 }
 
 const exp = (company: string, role: string, period: string, ...highlights: string[]) => ({ company, role, period, highlights })
 const edu = (school: string, degree: string, major: string) => ({ school, degree, major })
 const prj = (name: string, description: string, ...tech: string[]) => ({ name, description, tech })
+const req = (kind: RequirementCheck['kind'], requirement: string, verdict: RequirementCheck['verdict'], evidence: string, source = ''): RequirementCheck => ({
+  kind,
+  requirement,
+  verdict,
+  evidence,
+  source,
+})
 
 export const CANDIDATES: CandidateSeed[] = [
   // ----- P1 메모리 공정개발 (11) -------------------------------------------------------------
@@ -51,6 +62,18 @@ export const CANDIDATES: CandidateSeed[] = [
     summaryLine: '식각·증착 양쪽 경험과 수율 개선 리딩 이력이 JD 필수·우대 요건 대부분과 맞습니다.',
     strengths: ['식각 4년 + 증착 3년, 필수 요건(3년 이상) 충족', 'NAND 채널홀 식각 수율 개선 TF 리딩 (우대 충족)', '가상 계측 모델 개발 경험 (우대: ML)'],
     concerns: ['최근 2년은 관리 업무 비중이 높아 실무 깊이 확인 필요'],
+    assessment: {
+      recommendation: 'passed',
+      requirements: [
+        req('required', '반도체 단위공정 경력 3년 이상', 'met', '식각 4년과 증착 3년, 합쳐 7년의 단위공정 경력이 있습니다.', '경력 · [회사-1], [회사-2]'),
+        req('required', '통계적 공정 관리와 실험계획법(DOE) 활용', 'met', 'DOE를 기술로 적었고 ALD 막 균일도를 개선했습니다.', '경력 · [회사-2]'),
+        req('required', '데이터 분석 도구 활용', 'met', 'Python과 JMP를 쓰고 가상 계측 모델을 직접 만들었습니다.', '프로젝트 · 가상 계측 모델'),
+        req('preferred', '수율 개선 프로젝트 리딩', 'met', '채널홀 식각 수율 개선 TF를 이끌어 수율을 3.4%p 올렸습니다.', '경력 · [회사-1]'),
+        req('preferred', '머신러닝 기반 이상 탐지·가상 계측', 'met', '가상 계측 모델로 측정 샘플링을 40% 줄였습니다.', '경력 · [회사-1]'),
+        req('preferred', '영어 기술 문서와 해외 장비사 협업', 'unclear', '서류에 관련 내용이 없습니다.'),
+      ],
+      interviewChecks: ['최근 2년 관리 업무 비중이 커진 뒤에도 공정 조건을 직접 다뤘는지', '해외 장비사와 협업해 본 경험이 있는지'],
+    },
     profile: {
       summary: 'NAND 식각·증착 7년. 채널홀 식각 수율 개선 TF 리딩, 가상 계측 모델 개발.',
       years_experience: 7,
@@ -73,6 +96,18 @@ export const CANDIDATES: CandidateSeed[] = [
     summaryLine: '포토 공정 경험은 충분하나 데이터 분석 도구 활용 근거가 약해 면접에서 확인이 필요합니다.',
     strengths: ['포토 공정 5년, 필수 요건 충족', '오버레이 개선 경험'],
     concerns: ['Python·JMP 등 분석 도구 활용 근거 없음', 'DOE 활용 사례가 서류에 없음'],
+    assessment: {
+      recommendation: 'hold',
+      requirements: [
+        req('required', '반도체 단위공정 경력 3년 이상', 'met', '포토 공정 경력이 5년입니다.', '경력 · [회사-1]'),
+        req('required', '통계적 공정 관리와 실험계획법(DOE) 활용', 'unclear', 'SPC는 기술에 있으나 DOE를 쓴 사례는 서류에 없습니다.', '기술'),
+        req('required', '데이터 분석 도구 활용', 'unmet', 'Python·JMP 같은 분석 도구를 쓴 근거가 서류에 없습니다.'),
+        req('preferred', '수율 개선 프로젝트 리딩', 'unclear', '오버레이 보정 레시피를 최적화했지만 프로젝트를 이끌었는지는 알 수 없습니다.', '경력 · [회사-1]'),
+        req('preferred', '머신러닝 기반 이상 탐지·가상 계측', 'unmet', '서류에 관련 내용이 없습니다.'),
+        req('preferred', '영어 기술 문서와 해외 장비사 협업', 'unclear', '서류에 관련 내용이 없습니다.'),
+      ],
+      interviewChecks: ['오버레이 보정 레시피를 최적화할 때 데이터를 어떤 도구와 방법으로 분석했는지', 'DOE를 직접 설계해 본 경험이 있는지'],
+    },
     profile: {
       summary: '포토 공정 5년. 오버레이 보정 레시피 최적화.',
       years_experience: 5,
@@ -111,6 +146,7 @@ export const CANDIDATES: CandidateSeed[] = [
     summaryLine: '반도체 공정 경력이 필수 요건(3년)에 못 미칩니다.',
     strengths: ['디스플레이 공정 2년'],
     concerns: ['반도체 단위공정 경력 없음', '통계·DOE 활용 근거 없음'],
+    rejectReason: '반도체 단위공정 경력이 없고 디스플레이 공정 2년이라 필수 경력 요건에 못 미칩니다.',
     profile: {
       summary: '디스플레이 증착 공정 2년.',
       years_experience: 2,
@@ -190,6 +226,7 @@ export const CANDIDATES: CandidateSeed[] = [
     summaryLine: '공정 개발 경력이 없고 JD 직무와 거리가 있습니다.',
     strengths: ['반도체 품질 검사 3년'],
     concerns: ['단위공정 개발 경력 없음', '분석 도구 활용 근거 없음'],
+    rejectReason: '품질 검사 직무 경력으로 공정 개발 경험이 없습니다.',
     profile: {
       summary: '반도체 출하 품질 검사 3년.',
       years_experience: 3,
@@ -228,6 +265,7 @@ export const CANDIDATES: CandidateSeed[] = [
     summaryLine: '경력 기간이 필수 요건에 못 미치고 공정 개발 근거가 부족합니다.',
     strengths: ['인턴십에서 식각 공정 보조'],
     concerns: ['정규 경력 1년', 'DOE·SPC 경험 없음'],
+    rejectReason: '정규 경력 1년으로 필수 요건(3년 이상)에 못 미칩니다.',
     profile: {
       summary: '식각 공정 보조 1년.',
       years_experience: 1,
@@ -267,6 +305,18 @@ export const CANDIDATES: CandidateSeed[] = [
     summaryLine: '대규모 트래픽 백엔드 설계와 GPU 추론 서빙 경험이 JD와 잘 맞습니다.',
     strengths: ['백엔드 7년, 필수 요건 충족', 'vLLM 기반 추론 게이트웨이 구축 (우대 충족)', 'Kubernetes 운영'],
     concerns: ['RDBMS 튜닝 사례가 서류에 적음'],
+    assessment: {
+      recommendation: 'passed',
+      requirements: [
+        req('required', '백엔드 개발 경력 4년 이상', 'met', '백엔드 개발 경력이 7년입니다.', '경력 · [회사-1], [회사-2]'),
+        req('required', '분산 시스템 설계와 운영 (Kubernetes, 메시지 큐)', 'met', 'Kubernetes와 Kafka로 추론 게이트웨이를 운영했습니다.', '경력 · [회사-1]'),
+        req('required', 'RDBMS 모델링과 성능 튜닝', 'unclear', 'PostgreSQL을 기술로 적었으나 모델링·튜닝 사례는 없습니다.', '기술'),
+        req('preferred', 'GPU 추론 서버 운영', 'met', 'vLLM 기반 추론 게이트웨이를 만들어 p95 지연을 40% 줄였습니다.', '경력 · [회사-1]'),
+        req('preferred', 'SLO 정의와 장애 회고', 'unclear', '서류에 관련 내용이 없습니다.'),
+        req('preferred', '오픈소스 기여', 'unclear', '서류에 관련 내용이 없습니다.'),
+      ],
+      interviewChecks: ['PostgreSQL 스키마 설계나 쿼리 튜닝을 직접 한 사례', '추론 게이트웨이의 목표 지연(SLO)을 어떻게 정하고 지켰는지'],
+    },
     profile: {
       summary: '백엔드 7년. LLM 추론 게이트웨이 구축, Kubernetes 운영.',
       years_experience: 7,
@@ -289,6 +339,18 @@ export const CANDIDATES: CandidateSeed[] = [
     summaryLine: '백엔드 경력은 충분하나 분산 시스템 운영 근거가 약해 보류합니다.',
     strengths: ['백엔드 5년, 필수 요건 충족', 'RDBMS 모델링 경험'],
     concerns: ['Kubernetes·메시지 큐 운영 근거 없음', '장애 대응 사례 없음'],
+    assessment: {
+      recommendation: 'hold',
+      requirements: [
+        req('required', '백엔드 개발 경력 4년 이상', 'met', '백엔드 개발 경력이 5년입니다.', '경력 · [회사-1]'),
+        req('required', '분산 시스템 설계와 운영 (Kubernetes, 메시지 큐)', 'unclear', '사내 관리 시스템을 개발했지만 Kubernetes나 메시지 큐를 운영한 근거는 없습니다.', '경력 · [회사-1]'),
+        req('required', 'RDBMS 모델링과 성능 튜닝', 'met', '사내 정산 시스템의 DB를 모델링했습니다.', '경력 · [회사-1]'),
+        req('preferred', 'GPU 추론 서버 운영', 'unmet', '서류에 관련 내용이 없습니다.'),
+        req('preferred', 'SLO 정의와 장애 회고', 'unclear', '장애 대응 사례가 서류에 없습니다.'),
+        req('preferred', '오픈소스 기여', 'unclear', '서류에 관련 내용이 없습니다.'),
+      ],
+      interviewChecks: ['정산 시스템을 여러 서버로 나눠 운영했는지, 그때 쓴 도구', '겪은 장애 하나와 그 뒤 바꾼 점'],
+    },
     profile: {
       summary: '백엔드 5년. 사내 관리 시스템 개발.',
       years_experience: 5,
@@ -327,6 +389,7 @@ export const CANDIDATES: CandidateSeed[] = [
     summaryLine: '경력 요건(4년)에 못 미치고 백엔드 설계 경험이 부족합니다.',
     strengths: ['프론트엔드 2년'],
     concerns: ['백엔드 경력 1년', '분산 시스템 경험 없음'],
+    rejectReason: '백엔드 경력이 1년으로 필수 요건(4년 이상)에 못 미칩니다.',
     profile: {
       summary: '프론트엔드 2년, 백엔드 1년.',
       years_experience: 3,
@@ -403,6 +466,7 @@ export const CANDIDATES: CandidateSeed[] = [
     summaryLine: '데이터 분석 직무 중심 경력으로 백엔드 요건과 맞지 않습니다.',
     strengths: ['SQL 활용'],
     concerns: ['백엔드 개발 경력 없음'],
+    rejectReason: '데이터 분석 직무 경력으로 백엔드 개발 경험이 없습니다.',
     profile: {
       summary: '데이터 분석 4년.',
       years_experience: 4,

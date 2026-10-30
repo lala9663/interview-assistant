@@ -8,6 +8,7 @@ import type {
   PostingStatus,
   QuestionSource,
   ProgressStep,
+  RequirementCheck,
   RoundRef,
   ScreeningStatus,
   SessionMode,
@@ -118,9 +119,22 @@ export function parseRationale(rationale: string) {
     if (!line) continue
     if (line.startsWith('+ ')) strengths.push(line.slice(2))
     else if (line.startsWith('- ')) concerns.push(line.slice(2))
-    else summary.push(line)
+    // Rows screened before screening-v0.5 ended the summary with "(AI 권고: 보류)"; it is shown as a badge.
+    else summary.push(line.replace(/\s*\(AI 권고: [^)]+\)/, ''))
   }
   return { summary: summary.join(' '), strengths, concerns }
+}
+
+export const REQUIREMENT_KIND_LABEL: Record<RequirementCheck['kind'], string> = { required: '필수', preferred: '우대' }
+export const VERDICT_LABEL: Record<RequirementCheck['verdict'], string> = { met: '충족', unmet: '미충족', unclear: '확인 필요' }
+
+/** Experience in one format everywhere: 7.2 → '7년 2개월', 7 → '7년', 0.5 → '6개월' (ai/prompts.py years_text). */
+export function formatYears(years: number): string {
+  const months = Math.round(years * 12)
+  const y = Math.floor(months / 12)
+  const m = months % 12
+  if (y && m) return `${y}년 ${m}개월`
+  return y ? `${y}년` : `${m}개월`
 }
 
 export const CHANNEL_LABEL: Record<ApplicationChannel, string> = {

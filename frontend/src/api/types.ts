@@ -150,13 +150,36 @@ export interface Application {
 }
 
 /** models.Screening */
+/** One JD requirement as screening-v0.5 judged it against the documents. */
+export interface RequirementCheck {
+  kind: 'required' | 'preferred'
+  requirement: string
+  verdict: 'met' | 'unmet' | 'unclear'
+  evidence: string
+  /** where in the documents ("경력 · [회사-1]"); '' when nothing was found */
+  source: string
+}
+
+export interface ScreeningAssessment {
+  summary: string
+  requirements: RequirementCheck[]
+  /** 면접에서 확인할 점 */
+  interview_checks: string[]
+}
+
 export interface Screening {
   id: string
   application_id: string
   fit_score: number
-  /** Free text. Lines starting with `+ ` are strengths, `- ` concerns, others summary. */
+  /** Plain text. Lines starting with `+ ` are strengths, `- ` concerns, others summary. Rows screened before screening-v0.5 have only this. */
   rationale: string
+  /** screening-v0.5 and later */
+  assessment: ScreeningAssessment | null
+  /** the AI's recommendation, reference only */
+  recommendation: ScreeningStatus | null
   status: ScreeningStatus
+  /** why a person set 탈락 (de-identified); set while status is rejected */
+  reject_reason: string | null
   model: string | null
   prompt_version: string | null
   created_at: string
@@ -808,6 +831,8 @@ export interface Evaluation {
     prompt_version: string | null
     /** number of samples aggregated per item (FR-07 다중 샘플) */
     samples: number
+    /** true while the signed-in interviewer of this session has not submitted (and did not choose 그래도 보기): scores and summary are empty */
+    hidden: boolean
     scores: Score[]
     summary: AiCompetencySummary[]
   }

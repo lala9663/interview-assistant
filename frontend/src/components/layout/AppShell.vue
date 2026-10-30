@@ -98,7 +98,6 @@ const errorMessage = computed(() => (renderError.value instanceof Error ? render
         >
           <component :is="item.icon" :class="cn('size-[17px] shrink-0', isActive(item.to) && 'text-brand')" aria-hidden="true" />
           <span class="hidden truncate lg:block">{{ item.label }}</span>
-          <span v-if="item.fr" class="ml-auto hidden text-[10.5px] font-normal text-muted-foreground/70 lg:block">{{ item.fr }}</span>
         </RouterLink>
         </template>
       </nav>

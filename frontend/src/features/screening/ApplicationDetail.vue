@@ -1,10 +1,10 @@
 <script setup lang="ts">
-import { ArrowRightIcon, BotIcon, BriefcaseIcon, CalendarIcon, CalendarPlusIcon, FolderGit2Icon, GavelIcon, GraduationCapIcon } from '@lucide/vue'
+import { ArrowRightIcon, BotIcon, BriefcaseIcon, CalendarIcon, CalendarPlusIcon, ChevronRightIcon, FolderGit2Icon, GavelIcon, GraduationCapIcon, ScanTextIcon } from '@lucide/vue'
 import { computed, ref } from 'vue'
 import { RouterLink } from 'vue-router'
 import { toast } from 'vue-sonner'
 
-import { useApplication, useSchedulable, useUpdateScreening } from '@/api/queries'
+import { useApplication, useMe, useSchedulable, useUpdateScreening } from '@/api/queries'
 import { SCREENING_STATUSES, type ScreeningStatus } from '@/api/types'
 import ChannelBadge from '@/components/common/ChannelBadge.vue'
 import DeidText from '@/components/common/DeidText.vue'
@@ -22,19 +22,23 @@ import { Separator } from '@/components/ui/separator'
 import { SheetDescription, SheetTitle } from '@/components/ui/sheet'
 import { Skeleton } from '@/components/ui/skeleton'
 import ApplicationBookDialog from '@/features/schedule/ApplicationBookDialog.vue'
-import { parseRationale, SCREENING_STATUS_LABEL, SESSION_MODE_LABEL } from '@/lib/labels'
+import { formatYears, SCREENING_STATUS_LABEL, SESSION_MODE_LABEL } from '@/lib/labels'
 import { formatDate, formatDateTime } from '@/lib/time'
 import { toastError } from '@/lib/toast'
 
 import ReadingSummary from './ReadingSummary.vue'
+import RejectReasonDialog from './RejectReasonDialog.vue'
 import RoundStepper from './RoundStepper.vue'
+import ScreeningRationale from './ScreeningRationale.vue'
 import SheetSection from './SheetSection.vue'
 
 const props = defineProps<{ applicationId: string; postingId: string }>()
 
 const q = useApplication(() => props.applicationId)
 const update = useUpdateScreening(() => props.postingId)
-const rationale = computed(() => (q.data?.screening ? parseRationale(q.data.screening.rationale) : null))
+const me = useMe()
+// Some pages were read from scanned images: worth knowing for everyone, unlike the reader details.
+const ocrUsed = computed(() => q.data?.document?.reading?.files.some((f) => f.ocr_pages.length > 0 || f.pictures_read > 0) ?? false)
 const roundOf = (roundId: string) => q.data?.progress.find((s) => s.round?.id === roundId)?.round ?? null
 const finalCandidate = computed(() => q.data?.progress.at(-1)?.status === 'passed')
 // Waiting for a round with no session yet (interviews.next_round). The schedulable row has the
@@ -44,17 +48,30 @@ const schedulable = useSchedulable(waiting)
 const next = computed(() => (waiting.value ? (schedulable.data?.find((a) => a.application_id === props.applicationId) ?? null) : null))
 const booking = ref(false)
 
-const change = (status: string) => {
+// 탈락 asks for a reason first; the status switch stays where it is until the change is saved.
+const rejecting = ref(false)
+const save = (next: ScreeningStatus, reason?: string) => {
   const d = q.data
-  if (!d?.screening || status === d.screening.status) return
-  const next = status as ScreeningStatus
+  if (!d?.screening) return
+  const reasonOnly = next === d.screening.status
   update.mutate(
-    { screeningId: d.screening.id, status: next },
+    { screeningId: d.screening.id, status: next, reason },
     {
-      onSuccess: () => toast.success(`${d.candidate.pseudonym} → ${SCREENING_STATUS_LABEL[next]}`, { description: '변경 내역은 감사 로그에 남습니다.' }),
+      onSuccess: () => {
+        rejecting.value = false
+        toast.success(reasonOnly ? `${d.candidate.pseudonym} 탈락 사유를 고쳤습니다` : `${d.candidate.pseudonym} → ${SCREENING_STATUS_LABEL[next]}`, {
+          description: '변경 내역은 감사 로그에 남습니다.',
+        })
+      },
       onError: toastError('상태를 바꾸지 못했습니다'),
     },
   )
+}
+const change = (status: string) => {
+  const d = q.data
+  if (!d?.screening || status === d.screening.status) return
+  if (status === 'rejected') rejecting.value = true
+  else save(status as ScreeningStatus)
 }
 </script>
 
@@ -89,7 +106,10 @@ const change = (status: string) => {
       마지막 차수에 합격한 최종 합격 후보입니다. 공식 결과는 채용 사이트에 기록합니다.
     </p>
 
-    <ReadingSummary v-if="q.data.document?.reading" :reading="q.data.document.reading" />
+    <p v-if="ocrUsed" class="flex items-start gap-1.5 text-xs text-muted-foreground" data-testid="ocr-note">
+      <ScanTextIcon class="mt-px size-3.5 shrink-0" aria-hidden="true" />
+      일부 내용은 스캔 이미지에서 글자를 읽어(OCR) 원문과 다를 수 있습니다.
+    </p>
 
     <p v-if="q.data.application.withdrawn_at" class="rounded-lg border bg-subtle px-3 py-2 text-[13px] text-muted-foreground" role="status">
       지원자가 채용 사이트에서 {{ formatDateTime(q.data.application.withdrawn_at) }}에 철회했습니다. 목록과 면접 잡기에서 빠졌습니다.
@@ -102,28 +122,19 @@ const change = (status: string) => {
           <SegmentedItem v-for="s in SCREENING_STATUSES" :key="s" :value="s">{{ SCREENING_STATUS_LABEL[s] }}</SegmentedItem>
         </Segmented>
       </div>
-      <p class="text-xs text-muted-foreground">AI 적합도는 참고용입니다. 통과·보류·탈락은 사람이 확정하고, 바꾼 내역은 감사 로그에 남습니다.</p>
+      <div v-if="q.data.screening.status === 'rejected'" class="rounded-lg border px-3 py-2 text-[13px]" data-testid="reject-reason">
+        <div class="flex items-center gap-2">
+          <span class="text-xs font-medium text-danger">탈락 사유</span>
+          <Button variant="link" size="xs" class="ml-auto text-xs" @click="rejecting = true">{{ q.data.screening.reject_reason ? '고치기' : '사유 남기기' }}</Button>
+        </div>
+        <p v-if="q.data.screening.reject_reason" class="mt-0.5"><DeidText :text="q.data.screening.reject_reason" /></p>
+        <p v-else class="mt-0.5 text-muted-foreground">기록된 사유가 없습니다 (사유를 받기 전에 탈락 처리된 지원서).</p>
+      </div>
+      <p class="text-xs text-muted-foreground">AI 적합도와 권고는 참고용입니다. 통과·보류·탈락은 사람이 확정하고, 바꾼 내역은 감사 로그에 남습니다.</p>
     </div>
 
-    <SheetSection v-if="rationale && q.data.screening" title="선별 근거" :icon="BotIcon">
-      <div class="rounded-lg border bg-subtle p-4">
-        <p class="text-[13.5px] leading-relaxed"><DeidText :text="rationale.summary" /></p>
-        <ul v-if="rationale.strengths.length > 0" class="mt-3 space-y-1.5 text-[13px]">
-          <li v-for="s in rationale.strengths" :key="s" class="flex gap-2">
-            <span class="font-semibold text-success" aria-label="강점">+</span>
-            <DeidText :text="s" />
-          </li>
-        </ul>
-        <ul v-if="rationale.concerns.length > 0" class="mt-2 space-y-1.5 text-[13px] text-muted-foreground">
-          <li v-for="s in rationale.concerns" :key="s" class="flex gap-2">
-            <span class="font-semibold text-warning" aria-label="확인 필요">−</span>
-            <DeidText :text="s" />
-          </li>
-        </ul>
-        <p class="mt-3 font-mono text-[11px] text-muted-foreground">
-          {{ q.data.screening.model }} · {{ q.data.screening.prompt_version }} · {{ formatDateTime(q.data.screening.created_at) }}
-        </p>
-      </div>
+    <SheetSection v-if="q.data.screening" title="선별 근거" :icon="BotIcon">
+      <ScreeningRationale :screening="q.data.screening" />
     </SheetSection>
 
     <template v-if="q.data.application.profile">
@@ -131,7 +142,7 @@ const change = (status: string) => {
       <SheetSection title="구조화 프로필">
         <p class="text-[13.5px] leading-relaxed"><DeidText :text="q.data.application.profile.summary" /></p>
         <div class="flex flex-wrap gap-1">
-          <Badge variant="outline">경력 {{ q.data.application.profile.years_experience }}년</Badge>
+          <Badge variant="outline">경력 {{ formatYears(q.data.application.profile.years_experience) }}</Badge>
           <Badge v-for="s in q.data.application.profile.skills" :key="s" variant="secondary">{{ s }}</Badge>
         </div>
       </SheetSection>
@@ -214,7 +225,29 @@ const change = (status: string) => {
         </ol>
       </SheetSection>
     </template>
+    <details v-if="me.data?.is_admin" class="group rounded-lg border text-xs" data-testid="processing-info">
+      <summary class="flex cursor-pointer list-none items-center gap-1.5 px-3 py-2 font-medium text-muted-foreground select-none hover:text-foreground">
+        <ChevronRightIcon class="size-3.5 transition-transform group-open:rotate-90" aria-hidden="true" />
+        처리 정보
+        <span class="font-normal">(관리자)</span>
+      </summary>
+      <div class="space-y-2 border-t px-3 py-2.5">
+        <p v-if="q.data.screening" class="font-mono text-[11px] text-muted-foreground">
+          선별 {{ q.data.screening.model }} · {{ q.data.screening.prompt_version }} · {{ formatDateTime(q.data.screening.created_at) }}
+        </p>
+        <ReadingSummary v-if="q.data.document?.reading" :reading="q.data.document.reading" />
+      </div>
+    </details>
     <PrivacyNote />
+    <RejectReasonDialog
+      :open="rejecting"
+      :pseudonym="q.data.candidate.pseudonym"
+      :initial="q.data.screening?.reject_reason"
+      :editing="q.data.screening?.status === 'rejected'"
+      :pending="update.isPending"
+      @close="rejecting = false"
+      @submit="(reason) => save('rejected', reason)"
+    />
     <ApplicationBookDialog :key="booking ? 'open' : 'closed'" :application="booking ? next : null" @close="booking = false" />
   </div>
 </template>

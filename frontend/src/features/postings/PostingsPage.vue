@@ -29,7 +29,7 @@ const stats = (p: PostingSummary) =>
 <template>
   <Page>
     <PageHeader
-      eyebrow="FR-02"
+      eyebrow="채용 준비"
       title="공고·역량 사전"
       description="공고마다 JD 원문과 역량 사전(1~5점 BARS)을 버전으로 관리합니다. 확정된 버전이 선별과 평가 기준이 됩니다."
     />

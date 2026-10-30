@@ -87,7 +87,7 @@ const onBlockClick = (a: Availability) => remove.mutate(a.id)
 <template>
   <Page v-if="interviewers.isError"><ErrorState :error="interviewers.error" @retry="interviewers.refetch()" /></Page>
   <Page v-else>
-    <PageHeader eyebrow="FR-09" title="면접관 스케줄" description="면접관 가용 시간(수기 입력)을 겹쳐 보고, 선택한 패널이 함께 비는 시간을 찾아 일정을 잡습니다." />
+    <PageHeader title="면접관 스케줄" description="면접관 가용 시간(수기 입력)을 겹쳐 보고, 선택한 패널이 함께 비는 시간을 찾아 일정을 잡습니다." />
     <div class="grid gap-4 lg:grid-cols-[300px_minmax(0,1fr)]">
       <div class="flex flex-col gap-4">
         <Card>

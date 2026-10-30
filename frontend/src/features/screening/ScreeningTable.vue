@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { ArrowDownIcon, ArrowUpIcon, ChevronsUpDownIcon, SearchIcon, SearchXIcon } from '@lucide/vue'
-import { computed, ref } from 'vue'
+import { computed, ref, watch } from 'vue'
 
 import type { ApplicationRow } from '@/api/types'
 import ChannelBadge from '@/components/common/ChannelBadge.vue'
@@ -14,23 +14,46 @@ import { Button } from '@/components/ui/button'
 import { Card } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
 import { Segmented, SegmentedItem } from '@/components/ui/segmented'
-import { SCREENING_STATUS_LABEL } from '@/lib/labels'
+import { formatYears, SCREENING_STATUS_LABEL } from '@/lib/labels'
 import { formatDateShort } from '@/lib/time'
 import { cn } from '@/lib/utils'
 
-import { countByStatus, filterRows, sortRows, stepOptions, type Sort, type SortKey, type StatusFilter, type StepFilter } from './table-logic'
+import { countByStatus, DEFAULT_SORT, filterRows, readSort, sortRows, stepOptions, type Sort, type SortKey, type StatusFilter, type StepFilter } from './table-logic'
 
-const props = defineProps<{ rows: ApplicationRow[]; selectedId: string | null }>()
-const emit = defineEmits<{ open: [applicationId: string] }>()
+/** `sortStorageKey`: where this user's sort choice is remembered (per user, this browser only). */
+const props = defineProps<{ rows: ApplicationRow[]; selectedId: string | null; sortStorageKey?: string }>()
+const emit = defineEmits<{ open: [applicationId: string]; order: [applicationIds: string[]] }>()
 
 const FILTERS: StatusFilter[] = ['all', 'passed', 'hold', 'rejected']
 const status = ref<StatusFilter>('all')
 const step = ref<StepFilter>('all')
 const query = ref('')
-const sort = ref<Sort>({ key: 'fit', dir: 'desc' })
+// 접수순 by default, so the list does not invite following the AI's ranking; 적합도 is one click away.
+const sort = ref<Sort>({ ...DEFAULT_SORT })
+watch(
+  () => props.sortStorageKey,
+  (key) => {
+    if (key) sort.value = readSort(key)
+  },
+  { immediate: true },
+)
+watch(sort, (value) => {
+  if (!props.sortStorageKey) return
+  try {
+    localStorage.setItem(props.sortStorageKey, JSON.stringify(value))
+  } catch {
+    // storage blocked: the choice lasts for this page only
+  }
+})
 const counts = computed(() => countByStatus(props.rows))
 const steps = computed(() => stepOptions(props.rows))
 const visible = computed(() => sortRows(filterRows(props.rows, status.value, query.value, step.value), sort.value))
+// The sheet's previous/next follow the list as filtered and sorted here.
+watch(
+  () => visible.value.map((r) => r.application_id),
+  (ids) => emit('order', ids),
+  { immediate: true },
+)
 
 const onSort = (key: SortKey) => {
   const s = sort.value
@@ -118,7 +141,7 @@ const HEADERS: { label: string; k?: SortKey; class?: string }[] = [
               <FitBar v-if="r.screening" :value="r.screening.fit_score" />
               <span v-else class="text-muted-foreground">선별 전</span>
             </td>
-            <td class="px-3 py-3 tabular">{{ r.years_experience != null ? `${r.years_experience}년` : '–' }}</td>
+            <td class="px-3 py-3 whitespace-nowrap tabular">{{ r.years_experience != null ? formatYears(r.years_experience) : '–' }}</td>
             <td class="px-3 py-3">
               <div class="flex max-w-64 flex-wrap gap-1">
                 <span v-for="s in r.top_skills" :key="s" class="rounded bg-muted px-1.5 py-0.5 text-[11.5px] text-muted-foreground">{{ s }}</span>

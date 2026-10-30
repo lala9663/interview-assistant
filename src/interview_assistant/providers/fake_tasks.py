@@ -394,53 +394,123 @@ def extract_profile(prompt: str, rng: random.Random) -> dict[str, Any]:
 # --- 서류 선별 ------------------------------------------------------------------------------
 
 _REQUIRED_YEARS = re.compile(r"(\d{1,2})\s*년\s*이상")
+_PROFILE_YEARS = re.compile(r"총 경력:\s*(?:(\d+)년)?\s*(?:(\d+)개월)?")
+# JD section headings: 필수 요건 / 자격 요건 and 우대 사항 / 우대 요건.
+_JD_SECTION = re.compile(r"^\s*(필수|자격|우대)\s*(?:요건|사항|조건)\s*$")
+
+
+def jd_requirements(jd: str) -> list[tuple[str, str]]:
+    """(kind, requirement) for every bullet under the JD's 필수/우대 headings, in order."""
+    out: list[tuple[str, str]] = []
+    kind = None
+    for line in jd.splitlines():
+        heading = _JD_SECTION.match(line)
+        if heading:
+            kind = "preferred" if heading.group(1) == "우대" else "required"
+        elif not line.strip():
+            continue
+        elif kind and line.lstrip().startswith(("-", "•", "·", "*")):
+            out.append((kind, line.strip(" -•·*\t")))
+        elif kind:
+            kind = None  # another section started
+    return out
+
+
+def _profile_years(profile: str) -> float:
+    m = _PROFILE_YEARS.search(profile)
+    if not m or not (m.group(1) or m.group(2)):
+        return 0.0
+    return int(m.group(1) or 0) + int(m.group(2) or 0) / 12
+
+
+def _profile_skills(profile: str) -> set[str]:
+    m = re.search(r"^기술:\s*(.*)$", profile, re.M)
+    return {s.strip().lower() for s in (m.group(1) if m else "").split(",") if s.strip() and s.strip() != "없음"}
+
+
+def _source_of(profile: str, words: list[str]) -> str:
+    """Where in the profile one of `words` appears, most specific first: 경력 · [회사-1],
+    프로젝트 · 이름, then the 기술 or 자격증 line."""
+    hit = lambda text: any(w.lower() in text.lower() for w in words)  # noqa: E731
+    section, where, lists = "", "", {}
+    for line in profile.splitlines():
+        head = re.match(r"^(\S+):\s*(.*)$", line)
+        if head and not line.startswith(" "):
+            section, where = head.group(1), ""
+            lists[section] = head.group(2)
+            continue
+        if line.startswith("- "):
+            where = line[2:].split(" · ")[0].split(":")[0].strip()
+        if section in ("경력", "프로젝트") and hit(line):
+            return f"{section} · {where}"
+    return next((name for name in ("기술", "자격증") if hit(lists.get(name, ""))), "")
 
 
 def assess_screening(prompt: str, rng: random.Random) -> dict[str, Any]:
     jd = tag(prompt, "jd") or ""
-    try:
-        profile = json.loads(tag(prompt, "candidate_profile") or "{}")
-    except json.JSONDecodeError:
-        profile = {}
-    years = float(profile.get("years_experience") or 0)
-    required = max((int(n) for n in _REQUIRED_YEARS.findall(jd)), default=0)
-    wanted = skills_in(jd)
-    have = {s.lower() for s in profile.get("skills") or []}
-    matched = [s for s in wanted if s.lower() in have]
-    missing = [s for s in wanted if s.lower() not in have]
+    profile = tag(prompt, "candidate_profile") or ""
+    years = _profile_years(profile)
+    have = _profile_skills(profile)
+    from interview_assistant.ai.prompts import years_text
 
-    years_part = 1.0 if required == 0 else min(1.0, years / required)
-    skill_part = len(matched) / len(wanted) if wanted else 0.5
-    fit = round(25 + 40 * years_part + 35 * skill_part + rng.uniform(-4, 4))
+    requirements = []
+    for kind, text in jd_requirements(jd):
+        need = _REQUIRED_YEARS.search(text)
+        wanted = skills_in(text)
+        matched = [w for w in wanted if w.lower() in have]
+        if need:
+            required = int(need.group(1))
+            verdict = "met" if years >= required else "unmet"
+            evidence = f"서류상 총 경력이 {years_text(years)}입니다." + (
+                "" if verdict == "met" else f" 요건({required}년)에 못 미칩니다."
+            )
+            source = "경력"
+        elif matched:
+            verdict = "met"
+            evidence = f"{', '.join(matched[:3])} 경험이 서류에 있습니다."
+            source = _source_of(profile, matched)
+        elif wanted:
+            verdict = "unmet" if kind == "required" else "unclear"
+            evidence = f"{', '.join(wanted[:3])} 경험이 서류에 드러나지 않습니다."
+            source = ""
+        else:
+            verdict = "unclear"
+            evidence = "서류만으로는 판단하기 어렵습니다."
+            source = ""
+        requirements.append(
+            {"kind": kind, "requirement": text, "verdict": verdict, "evidence": evidence, "source": source}
+        )
+
+    required = [r for r in requirements if r["kind"] == "required"]
+    preferred = [r for r in requirements if r["kind"] == "preferred"]
+    met_part = sum(r["verdict"] == "met" for r in required) / len(required) if required else 0.5
+    plus = sum(r["verdict"] == "met" for r in preferred) / len(preferred) if preferred else 0.0
+    fit = round(30 + 50 * met_part + 15 * plus + rng.uniform(-4, 4))
     fit = max(0, min(100, fit))
 
-    strengths, concerns = [], []
-    if required and years >= required:
-        strengths.append(f"경력 {years:g}년, 필수 요건({required}년 이상) 충족")
-    elif required:
-        concerns.append(f"경력 {years:g}년으로 필수 요건({required}년 이상)에 못 미침")
-    if matched:
-        strengths.append(f"JD 핵심 기술 경험: {', '.join(matched[:4])}")
-    if missing:
-        concerns.append(f"JD에 있는 {', '.join(missing[:3])} 경험이 서류에 드러나지 않음")
-    if not profile.get("experience"):
-        concerns.append("경력 사항을 서류에서 구조화하지 못함, 원문 확인 필요")
-
-    if fit >= 75:
-        recommendation, summary = "passed", "필수 요건과 핵심 기술이 JD와 대부분 맞습니다."
-    elif fit >= 55:
+    unmet = [r for r in required if r["verdict"] == "unmet"]
+    if fit >= 75 and not unmet:
+        recommendation, summary = "passed", "필수 요건을 모두 충족하고 우대 사항 근거도 있습니다."
+    elif unmet and fit < 55:
+        recommendation, summary = "rejected", "필수 요건 중 서류로 충족하지 못한 항목이 있습니다."
+    else:
         recommendation, summary = (
             "hold",
             "요건 일부는 맞지만 근거가 부족한 항목이 있어 확인이 필요합니다.",
         )
-    else:
-        recommendation, summary = "rejected", "필수 요건이나 핵심 기술 근거가 JD와 거리가 있습니다."
+    checks = [
+        f"'{r['requirement']}'에 해당하는 실제 사례와 본인 역할"
+        for r in requirements
+        if r["verdict"] == "unclear"
+    ]
+    if not re.search(r"^경력:\n- ", profile, re.M):
+        checks.append("경력 사항을 서류에서 구조화하지 못했습니다. 원문과 함께 확인")
     return {
-        "fit_score": fit,
+        "requirements": requirements,
         "summary": summary,
-        "strengths": strengths or ["서류에서 JD와 맞는 근거를 찾지 못함"],
-        "concerns": concerns,
+        "fit_score": fit,
         "recommendation": recommendation,
+        "interview_checks": checks[:3] or ["가장 큰 성과에서 본인이 맡은 역할과 결과를 확인"],
     }
 
 

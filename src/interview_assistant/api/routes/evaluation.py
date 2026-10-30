@@ -20,10 +20,12 @@ from interview_assistant.api.errors import conflict, invalid, not_found
 from interview_assistant.api.routes.sessions import get_session
 from interview_assistant.interviews import current_decision, is_last_round, session_competency_set
 from interview_assistant.models import (
+    AiScoringStatus,
     Application,
     CheckPoint,
     CheckPointSource,
     EvaluatorType,
+    InterviewSession,
     RoundDecision,
     Score,
     SessionStatus,
@@ -35,10 +37,32 @@ router = APIRouter(tags=["evaluation"])
 MAX_REASON = 1000
 
 
+def _view(db: Db, found: InterviewSession, runtime: RuntimeDep, me: Me) -> s.Evaluation:
+    return views.evaluation(db, found, model_name(runtime.pinned(found).ai.llm("primary")), me)
+
+
 @router.get("/sessions/{session_id}/evaluation", response_model=s.Evaluation)
-def evaluation(session_id: str, db: Db, runtime: RuntimeDep) -> s.Evaluation:
+def evaluation(session_id: str, db: Db, me: Me, runtime: RuntimeDep) -> s.Evaluation:
+    """AI scores are left out (`ai.hidden`) for an interviewer of the session who has not
+    submitted their own scores yet, so their judgement is made before seeing the AI's."""
+    return _view(db, get_session(db, session_id), runtime, me)
+
+
+@router.post("/sessions/{session_id}/ai-scores/reveal", response_model=s.Evaluation)
+def reveal_ai_scores(session_id: str, db: Db, me: Me, runtime: RuntimeDep) -> s.Evaluation:
+    """그래도 보기: an interviewer chooses to see the AI scores before submitting their own. The
+    choice is kept (they keep seeing them) and audited as evaluation.ai_revealed."""
     found = get_session(db, session_id)
-    return views.evaluation(db, found, model_name(runtime.pinned(found).ai.llm("primary")))
+    if found.ai_scoring_status is not AiScoringStatus.completed:
+        raise conflict("AI 채점이 끝난 뒤에 볼 수 있습니다.")
+    link = next((x for x in found.interviewers if x.interviewer_id == me.id), None)
+    if link is not None and link.submitted_at is None and link.ai_revealed_at is None:
+        link.ai_revealed_at = utcnow()
+        audit(db, me, "evaluation.ai_revealed", "interview_session", found.id, before_submitting=True)
+        db.commit()
+        db.expire_all()
+        found = get_session(db, session_id)
+    return _view(db, found, runtime, me)
 
 
 @router.put("/sessions/{session_id}/scores/{interviewer_id}", response_model=s.Evaluation)
@@ -100,8 +124,7 @@ def submit_scores(
     )
     db.commit()
     db.expire_all()
-    found = get_session(db, session_id)
-    return views.evaluation(db, found, model_name(runtime.pinned(found).ai.llm("primary")))
+    return _view(db, get_session(db, session_id), runtime, me)
 
 
 # --- N차 결정 and points to check ---------------------------------------------------------------
@@ -159,8 +182,7 @@ def decide(
         )
     db.commit()
     db.expire_all()
-    found = get_session(db, session_id)
-    return views.evaluation(db, found, model_name(runtime.pinned(found).ai.llm("primary")))
+    return _view(db, get_session(db, session_id), runtime, me)
 
 
 @router.get("/applications/{application_id}/decisions", response_model=list[s.RoundDecision])

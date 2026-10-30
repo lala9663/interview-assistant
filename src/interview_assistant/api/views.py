@@ -538,7 +538,19 @@ def ai_summary(scores: Sequence[Score]) -> list[s.AiCompetencySummary]:
     ]
 
 
-def evaluation(db: Session, session: InterviewSession, configured_model: str) -> s.Evaluation:
+def ai_hidden_for(session: InterviewSession, viewer: Interviewer | None) -> bool:
+    """AI scores stay hidden from an interviewer of the session until they submitted their own
+    scores, unless they chose to see them first (ai_revealed_at). Everyone else (an admin who is
+    not on the panel, whoever decides once all have submitted) sees them."""
+    if viewer is None:
+        return False
+    link = next((x for x in session.interviewers if x.interviewer_id == viewer.id), None)
+    return link is not None and link.submitted_at is None and link.ai_revealed_at is None
+
+
+def evaluation(
+    db: Session, session: InterviewSession, configured_model: str, viewer: Interviewer | None
+) -> s.Evaluation:
     application = session.application
     status = session.ai_scoring_status
     qa_order = {q.id: q.seq for q in session.qa_items}
@@ -549,6 +561,9 @@ def evaluation(db: Session, session: InterviewSession, configured_model: str) ->
     if status is not AiScoringStatus.completed:
         ai_scores = []
     model = ai_scores[0].model if ai_scores else None
+    hidden = ai_hidden_for(session, viewer)
+    if hidden:
+        ai_scores = []
     if model is None and status is not AiScoringStatus.not_started:
         model = configured_model
     return s.Evaluation(
@@ -563,6 +578,7 @@ def evaluation(db: Session, session: InterviewSession, configured_model: str) ->
             model=model,
             prompt_version=None if status is AiScoringStatus.not_started else SCORING_PROMPT,
             samples=SAMPLES,
+            hidden=hidden,
             scores=[s.Score.model_validate(x) for x in ai_scores],
             summary=ai_summary(ai_scores),
         ),

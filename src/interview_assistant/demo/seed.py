@@ -34,6 +34,7 @@ from interview_assistant.ai.prompts import (
     SCORING_PROMPT,
     SCREENING_PROMPT,
 )
+from interview_assistant.ai.screening import Assessment
 from interview_assistant.config import Settings
 from interview_assistant.deid.service import DeidService
 from interview_assistant.deid.types import KnownIdentity
@@ -82,6 +83,8 @@ from interview_assistant.models.base import iso_z, new_id
 KST = timezone(timedelta(hours=9))
 AI_MODEL = "fake-llm"
 SCREENING_MODEL = "fake-llm-screening"
+# Free-text rationale rows (before per-requirement verdicts).
+LEGACY_SCREENING_PROMPT = "screening-v0.4"
 
 _SURNAMES = "강 윤 한 서 임 오 송 전 문 류".split()
 _GIVEN = "도윤 서진 하람 지안 예린 시우 유나 태오 민서 건우".split()
@@ -337,20 +340,37 @@ class _Seeder:
                 profile=c["profile"],
                 created_at=applied,
             )
-            rationale = "\n".join(
-                [
-                    c["summaryLine"],
-                    *(f"+ {x}" for x in c["strengths"]),
-                    *(f"- {x}" for x in c["concerns"]),
-                ]
-            )
+            # Candidates with an `assessment` were screened with screening-v0.5; the rest are
+            # older free-text rows (the screen shows both).
+            seeded = c.get("assessment")
+            if seeded:
+                assessment = Assessment(
+                    fit_score=c["fit"],
+                    summary=c["summaryLine"],
+                    requirements=seeded["requirements"],
+                    recommendation=seeded["recommendation"],
+                    interview_checks=seeded["interviewChecks"],
+                )
+                rationale = assessment.rationale()
+            else:
+                rationale = "\n".join(
+                    [
+                        c["summaryLine"],
+                        *(f"+ {x}" for x in c["strengths"]),
+                        *(f"- {x}" for x in c["concerns"]),
+                    ]
+                )
+            status = ScreeningStatus(c["status"])
             application.screening = Screening(
                 id=screening_id(n),
                 fit_score=c["fit"],
                 rationale=rationale,
-                status=ScreeningStatus(c["status"]),
+                assessment=assessment.details() if seeded else None,
+                recommendation=seeded["recommendation"] if seeded else None,
+                status=status,
+                reject_reason=c.get("rejectReason") if status is ScreeningStatus.rejected else None,
                 model=SCREENING_MODEL,
-                prompt_version=SCREENING_PROMPT,
+                prompt_version=SCREENING_PROMPT if seeded else LEGACY_SCREENING_PROMPT,
                 created_at=applied + timedelta(minutes=90),
             )
             self.db.add(application)

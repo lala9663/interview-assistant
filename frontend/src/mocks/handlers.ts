@@ -487,13 +487,26 @@ export const handlers = [
     const db = getDb()
     const s = db.screenings.find((x) => x.id === params.id)
     if (!s) return notFound('선별 결과')
-    const body = (await request.json()) as { status: ScreeningStatus }
+    const body = (await request.json()) as { status: ScreeningStatus; reason?: string | null }
     if (!SCREENING_STATUSES.includes(body.status)) return invalid('status', 'passed, hold, rejected 중 하나여야 합니다.')
-    const from = s.status
-    s.status = body.status
-    if (from !== body.status) {
-      db.log({ actor_type: 'user', action: 'screening.status_changed', target_type: 'screening', target_id: s.id, details: { from, to: body.status } })
+    let reason: string | null = null
+    if (body.status === 'rejected') {
+      const text = body.reason?.trim() ?? ''
+      if (!text) return invalid('reason', '탈락 사유를 입력하세요.')
+      if (text.length > 500) return invalid('reason', '탈락 사유는 500자까지 쓸 수 있습니다.')
+      reason = mockDeidentify(text)
     }
+    const from = s.status
+    if (from === body.status && reason === s.reject_reason) return HttpResponse.json(s)
+    s.status = body.status
+    s.reject_reason = reason
+    db.log({
+      actor_type: 'user',
+      action: from !== body.status ? 'screening.status_changed' : 'screening.reason_changed',
+      target_type: 'screening',
+      target_id: s.id,
+      details: { from, to: body.status, ...(reason ? { reason } : {}) },
+    })
     return HttpResponse.json(s)
   }),
 
@@ -792,6 +805,20 @@ export const handlers = [
     await latency()
     const ev = getDb().evaluation(String(params.id))
     return ev ? HttpResponse.json(ev) : notFound('면접')
+  }),
+
+  http.post(`${API}/sessions/:id/ai-scores/reveal`, async ({ params }) => {
+    await latency()
+    const db = getDb()
+    const s = sessionOr404(db, String(params.id))
+    if (!s) return notFound('면접')
+    if (db.aiStatus(s.id) !== 'completed') return conflict('AI 채점이 끝난 뒤에 볼 수 있습니다.')
+    const key = `${s.id}:${db.me.id}`
+    if (db.panelOf(s.id).some((p) => p.interviewer_id === db.me.id) && !db.submittedAt.has(key) && !db.aiRevealedAt.has(key)) {
+      db.aiRevealedAt.set(key, new Date().toISOString())
+      db.log({ actor_type: 'user', action: 'evaluation.ai_revealed', target_type: 'interview_session', target_id: s.id, details: { before_submitting: true } })
+    }
+    return HttpResponse.json(db.evaluation(s.id))
   }),
 
   http.put(`${API}/sessions/:id/scores/:interviewerId`, async ({ params, request }) => {

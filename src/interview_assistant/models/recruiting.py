@@ -273,8 +273,17 @@ class Screening(IdMixin, TimestampMixin, Base):
         ForeignKey("applications.id", ondelete="CASCADE"), unique=True, nullable=False
     )
     fit_score: Mapped[float] = mapped_column(Float, nullable=False)
+    # Plain-text rendering (summary, `+ ` met, `- ` not met or to check) for readers that predate
+    # `assessment`; rows screened before screening-v0.5 have only this.
     rationale: Mapped[str] = mapped_column(Text, nullable=False)
+    # screening-v0.5: {summary, requirements: [{kind, requirement, verdict, evidence, source}],
+    # interview_checks} (ai/screening.py Assessment).
+    assessment: Mapped[dict[str, Any] | None] = mapped_column(JSON)
+    # The AI's 통과/보류/탈락 recommendation (passed / hold / rejected). Reference only.
+    recommendation: Mapped[str | None] = mapped_column(String(16))
     status: Mapped[ScreeningStatus] = mapped_column(enum_column(ScreeningStatus), nullable=False)
+    # Why a person set 탈락 (de-identified); cleared when the status moves away from 탈락.
+    reject_reason: Mapped[str | None] = mapped_column(Text)
     model: Mapped[str | None] = mapped_column(String(100))
     prompt_version: Mapped[str | None] = mapped_column(String(50))
 

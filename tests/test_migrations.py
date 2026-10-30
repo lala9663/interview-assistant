@@ -135,3 +135,35 @@ def test_0006_puts_existing_postings_sets_and_sessions_in_round_one(tmp_path):
             assert conn.execute(text("SELECT preset_question_id FROM qa_items")).scalar() == "pq1"
     finally:
         engine.dispose()
+
+
+def test_0009_reads_the_old_recommendation_out_of_the_rationale(tmp_path):
+    config, url = _config(tmp_path)
+    command.upgrade(config, "0008")
+    engine = make_engine(url)
+    now = "2026-10-30 09:00:00.000000"
+    rows = [
+        f"INSERT INTO job_postings (id, title, job_family, jd_text, status, created_at) VALUES ('p1', 'T', 'SW', 'JD', 'open', '{now}')",
+        f"INSERT INTO candidates (id, pseudonym, consent_recording, created_at) VALUES ('c1', 'CAND-1', 0, '{now}')",
+        f"INSERT INTO candidates (id, pseudonym, consent_recording, created_at) VALUES ('c2', 'CAND-2', 0, '{now}')",
+        f"INSERT INTO applications (id, candidate_id, posting_id, channel, created_at) VALUES ('a1', 'c1', 'p1', 'upload', '{now}')",
+        f"INSERT INTO applications (id, candidate_id, posting_id, channel, created_at) VALUES ('a2', 'c2', 'p1', 'upload', '{now}')",
+        f"INSERT INTO screenings (id, application_id, fit_score, rationale, status, created_at) VALUES ('s1', 'a1', 40, '요약 (AI 권고: 탈락)\n+ 강점\n- 우려 (AI 권고: 통과)', 'hold', '{now}')",
+        f"INSERT INTO screenings (id, application_id, fit_score, rationale, status, created_at) VALUES ('s2', 'a2', 80, '권고 없는 요약', 'passed', '{now}')",
+    ]
+    try:
+        with engine.begin() as conn:
+            for sql in rows:
+                conn.execute(text(sql))
+        command.upgrade(config, "head")
+        with engine.connect() as conn:
+            found = {r[0]: r[1:] for r in conn.execute(text("SELECT id, recommendation, assessment, reject_reason FROM screenings"))}
+            # Only the first line counts; the text itself stays as it was.
+            assert found == {"s1": ("rejected", None, None), "s2": (None, None, None)}
+            assert conn.execute(text("SELECT rationale FROM screenings WHERE id = 's1'")).scalar().startswith("요약 (AI 권고: 탈락)")
+        command.downgrade(config, "0008")
+        with engine.connect() as conn:
+            assert "recommendation" not in {c["name"] for c in inspect(conn).get_columns("screenings")}
+            assert "ai_revealed_at" not in {c["name"] for c in inspect(conn).get_columns("session_interviewers")}
+    finally:
+        engine.dispose()

@@ -656,6 +656,8 @@ async def _apply(
         application.screening = Screening(
             fit_score=assessment.fit_score,
             rationale=assessment.rationale(),
+            assessment=assessment.details(),
+            recommendation=assessment.recommendation,
             status=ScreeningStatus.hold,  # people decide
             model=model,
             prompt_version=SCREENING_PROMPT,

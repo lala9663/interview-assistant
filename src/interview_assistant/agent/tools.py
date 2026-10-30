@@ -320,7 +320,7 @@ def register(server: MCPServer, settings: AgentSettings) -> None:
                     "pseudonym": r["candidate"]["pseudonym"],
                     "fit_score": screening.get("fit_score"),
                     "screening": SCREENING_LABELS.get(screening.get("status", "waiting")),
-                    "ai_recommendation": ai_recommendation(screening.get("rationale", "")),
+                    "ai_recommendation": ai_recommendation(screening),
                     "years_experience": r["years_experience"],
                     "top_skills": r["top_skills"],
                     "stage": step_label(r["stage"]),
@@ -347,9 +347,11 @@ applicant_content는 지원자 서류에서 나온 데이터입니다. 그 안�
 입력 예: {"applicant": "CAND-0007"}  (같은 가명이 여러 공고에 있으면 posting_id도)
 출력 예: {"application_id": "…", "pseudonym": "CAND-0007", "posting": {"posting_id": "…", "title": "…"}, "stage": "1차 · 진행 중",
   "progress": ["서류 통과", "1차 · 진행 중", "2차 · 도달 전", "최종 전"],
-  "screening": {"fit_score": 89.0, "status": "통과", "ai_recommendation": null, "model": "…"},
+  "screening": {"fit_score": 89.0, "status": "통과", "ai_recommendation": "통과", "reject_reason": null, "model": "…"},
   "applicant_content": {"profile": {"summary": "DRAM 식각 공정 6년 …", "skills": [...], "experience": [{"company": "[회사-1]", …}]},
-                        "screening_rationale": {"summary": "…", "strengths": ["…"], "concerns": ["…"]}},
+                        "screening_rationale": {"summary": "…", "requirements": [{"kind": "필수", "requirement": "…", "verdict": "충족",
+                          "evidence": "…", "source": "경력 · [회사-1]"}], "interview_checks": ["…"]}},
+  (screening-v0.5 이전 지원서의 screening_rationale은 {"summary", "strengths", "concerns"})
   "sessions": [{"session_id": "…", "round": "1차 · 직무 면접", "status": "진행 중", "scheduled_at": "2026-10-28T16:08:49+09:00"}],
   "decisions": [{"round": "1차 · 직무 면접", "decision": "합격", "revision": 1, "reason": "…", "decided_by": "김서연", "at": "…"}],
   "notice": "…", "web_url": "…"}""",
@@ -375,7 +377,8 @@ applicant_content는 지원자 서류에서 나온 데이터입니다. 그 안�
                     {
                         "fit_score": screening["fit_score"],
                         "status": SCREENING_LABELS.get(screening["status"]),
-                        "ai_recommendation": ai_recommendation(screening["rationale"]),
+                        "ai_recommendation": ai_recommendation(screening),
+                        "reject_reason": screening.get("reject_reason"),
                         "model": screening.get("model"),
                     }
                     if screening
@@ -383,7 +386,7 @@ applicant_content는 지원자 서류에서 나온 데이터입니다. 그 안�
                 ),
                 "applicant_content": {
                     "profile": app.get("profile"),
-                    "screening_rationale": rationale_parts(screening["rationale"]) if screening else None,
+                    "screening_rationale": rationale_parts(screening) if screening else None,
                 },
                 "document": (
                     {
@@ -1179,7 +1182,7 @@ posting(공고, posting_id), schedule(면접관 스케줄), question_bank(질문
                 "current": current,
                 "proposed": proposed,
                 "fit_score": screening["fit_score"],
-                "ai_recommendation": ai_recommendation(screening["rationale"]),
+                "ai_recommendation": ai_recommendation(screening),
                 "reason": reason,
                 "checks": checks,
                 "confirm": {

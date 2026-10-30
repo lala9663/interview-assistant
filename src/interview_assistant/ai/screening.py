@@ -1,17 +1,23 @@
-"""FR-01·03: structure a de-identified document into a profile, then assess it against the JD and
+"""서류 선별: structure a de-identified document into a profile, then assess it against the JD and
 the approved competency dictionary. Two calls on the `screening` model role.
 
 The initial screening status is `hold` whatever the model recommends: 통과·보류·탈락 is a human
-decision (PATCH /api/screenings/{id}); the recommendation is written into the rationale.
+decision (PATCH /api/screenings/{id}); the recommendation is kept apart as reference.
+
+screening-v0.5 assesses requirement by requirement (필수/우대 → 충족/미충족/확인 필요 with evidence
+and where it is in the document) and lists what to check in the interview. Everything a person
+reads is plain Korean: the prompt keeps JSON keys out of the model's sight and `humanize` turns
+any field name that still slips into the text back into a Korean word.
 """
 
 from __future__ import annotations
 
 import json
+import re
 from dataclasses import dataclass
 from typing import Any, Literal
 
-from pydantic import BaseModel, Field, ValidationError
+from pydantic import BaseModel, Field, ValidationError, model_validator
 from sqlalchemy.orm import Session
 
 from interview_assistant.ai import AiOutputInvalid
@@ -31,20 +37,81 @@ from interview_assistant.domain import CandidateProfile
 from interview_assistant.models import JobPosting
 
 RECOMMENDATION_LABEL = {"passed": "통과", "hold": "보류", "rejected": "탈락"}
+KIND_LABEL = {"required": "필수", "preferred": "우대"}
+VERDICT_LABEL = {"met": "충족", "unmet": "미충족", "unclear": "확인 필요"}
+
+# Profile and schema field names a model may still echo, and what a person calls them.
+_FIELD_WORDS = {
+    "years_experience": "경력 연수",
+    "fit_score": "적합도",
+    "interview_checks": "면접 확인 사항",
+    "competencies": "역량",
+    "certifications": "자격증",
+    "experience": "경력",
+    "education": "학력",
+    "highlights": "주요 성과",
+    "projects": "프로젝트",
+    "skills": "기술",
+    "summary": "요약",
+}
+_SNAKE = re.compile(r"(?<![A-Za-z0-9_])(" + "|".join(k for k in _FIELD_WORDS if "_" in k) + r")(?![A-Za-z0-9_])")
+# A plain English field name counts only right before a Korean particle ("skills에", "competencies의").
+_BARE = re.compile(r"(?<![A-Za-z0-9_])(" + "|".join(k for k in _FIELD_WORDS if "_" not in k) + r")(?=[가-힣])")
+
+
+def humanize(text: str) -> str:
+    """Field names that slipped into model text, back in Korean ('years_experience 7.2' ->
+    '경력 연수 7.2')."""
+    text = _SNAKE.sub(lambda m: _FIELD_WORDS[m.group(1)], text)
+    return _BARE.sub(lambda m: _FIELD_WORDS[m.group(1)], text).strip()
+
+
+class RequirementCheck(BaseModel):
+    kind: Literal["required", "preferred"]
+    requirement: str
+    verdict: Literal["met", "unmet", "unclear"]
+    evidence: str = ""
+    source: str = ""
 
 
 class Assessment(BaseModel):
     fit_score: int = Field(ge=0, le=100)
     summary: str
-    strengths: list[str] = []
-    concerns: list[str] = []
+    requirements: list[RequirementCheck] = []
     recommendation: Literal["passed", "hold", "rejected"]
+    interview_checks: list[str] = []
+
+    @model_validator(mode="after")
+    def _plain_korean(self) -> Assessment:
+        self.summary = humanize(self.summary)
+        for r in self.requirements:
+            r.requirement, r.evidence, r.source = (
+                humanize(r.requirement),
+                humanize(r.evidence),
+                humanize(r.source),
+            )
+        self.interview_checks = [humanize(c) for c in self.interview_checks if c.strip()]
+        self.requirements = [r for r in self.requirements if r.requirement]
+        return self
+
+    def details(self) -> dict[str, Any]:
+        """What Screening.assessment stores (the API's `assessment`)."""
+        return {
+            "summary": self.summary,
+            "requirements": [r.model_dump() for r in self.requirements],
+            "interview_checks": self.interview_checks,
+        }
 
     def rationale(self) -> str:
-        """Line format the UI reads: summary, `+ ` strengths, `- ` concerns."""
-        head = f"{self.summary.strip()} (AI 권고: {RECOMMENDATION_LABEL[self.recommendation]})"
-        lines = [head, *(f"+ {s.strip()}" for s in self.strengths if s.strip())]
-        lines += [f"- {c.strip()}" for c in self.concerns if c.strip()]
+        """Plain text for readers that predate `details` (the interview's candidate card, the
+        agent): the summary, `+ ` met requirements, `- ` the rest and the points to check."""
+        lines = [self.summary]
+        for r in self.requirements:
+            line = f"{KIND_LABEL[r.kind]} {VERDICT_LABEL[r.verdict]} · {r.requirement}"
+            if r.evidence:
+                line += f": {r.evidence}"
+            lines.append(f"{'+' if r.verdict == 'met' else '-'} {line}")
+        lines += [f"- 면접에서 확인: {c}" for c in self.interview_checks]
         return "\n".join(lines)
 
 

@@ -1,9 +1,9 @@
 <script setup lang="ts">
-import { ArrowLeftIcon, BotIcon, ChartBarBigIcon, EyeOffIcon, LoaderIcon, MessageSquareTextIcon, TableIcon, UserRoundCheckIcon } from '@lucide/vue'
+import { ArrowLeftIcon, BotIcon, ChartBarBigIcon, EyeIcon, EyeOffIcon, LoaderIcon, MessageSquareTextIcon, TableIcon, UserRoundCheckIcon } from '@lucide/vue'
 import { computed, ref } from 'vue'
 import { RouterLink, useRoute } from 'vue-router'
 
-import { useEvaluation, useMe } from '@/api/queries'
+import { useEvaluation, useMe, useRevealAiScores } from '@/api/queries'
 import type { Score } from '@/api/types'
 import AiReferenceNotice from '@/components/common/AiReferenceNotice.vue'
 import AiScoringBadge from '@/components/common/AiScoringBadge.vue'
@@ -17,6 +17,17 @@ import PageHeader from '@/components/common/PageHeader.vue'
 import Pseudonym from '@/components/common/Pseudonym.vue'
 import RoundBadge from '@/components/common/RoundBadge.vue'
 import StepStatusChip from '@/components/common/StepStatusChip.vue'
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+  AlertDialogTrigger,
+} from '@/components/ui/alert-dialog'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
@@ -26,6 +37,7 @@ import { Skeleton } from '@/components/ui/skeleton'
 import { Switch } from '@/components/ui/switch'
 import { QUESTION_SOURCE_LABEL, ROLE_LABEL } from '@/lib/labels'
 import { formatDateTime, formatDuration, formatRelative } from '@/lib/time'
+import { toastError } from '@/lib/toast'
 
 import AiEvidence from './AiEvidence.vue'
 import CheckPointsCard from './CheckPointsCard.vue'
@@ -40,11 +52,16 @@ const sessionId = computed(() => String(route.params.sessionId ?? ''))
 const q = useEvaluation(sessionId)
 const me = useMe()
 const view = ref<'chart' | 'table'>('chart')
+// The server leaves AI scores out (ai.hidden) until the signed-in interviewer submits their own;
+// after that this switch can still hide them.
 const hideAi = ref(false)
+const reveal = useRevealAiScores(sessionId.value)
+const seeAnyway = () => reveal.mutate(undefined, { onError: toastError('AI 점수를 열지 못했습니다') })
 
 const competencies = computed(() => q.data?.competency_set?.competencies ?? [])
 const mine = computed(() => q.data?.interviewers.find((i) => i.interviewer.id === me.data?.id))
 const aiDone = computed(() => q.data?.ai.status === 'completed')
+const aiHidden = computed(() => q.data?.ai.hidden ?? false)
 const duration = computed(() => {
   const s = q.data?.session
   return s?.started_at && s.ended_at ? Math.round((new Date(s.ended_at).getTime() - new Date(s.started_at).getTime()) / 60000) : null
@@ -118,7 +135,7 @@ const scoresInRubricOrder = (scores: readonly Score[]) =>
                 <CardDescription>AI 점수와 면접관 점수를 나란히 보여 주며 합산하지 않습니다</CardDescription>
               </div>
               <div class="flex items-center gap-3">
-                <div class="flex items-center gap-2">
+                <div v-if="!aiHidden" class="flex items-center gap-2">
                   <Switch id="hide-ai" v-model="hideAi" />
                   <Label for="hide-ai" class="flex items-center gap-1 text-xs font-normal text-muted-foreground">
                     <EyeOffIcon class="size-3.5" aria-hidden="true" />
@@ -132,13 +149,17 @@ const scoresInRubricOrder = (scores: readonly Score[]) =>
               </div>
             </CardHeader>
             <CardContent>
-              <p v-if="!aiDone && !hideAi && q.data.ai.status === 'running'" class="mb-3 flex items-center gap-1.5 text-xs text-brand">
+              <p v-if="aiHidden" class="mb-3 flex items-center gap-1.5 text-xs text-muted-foreground" data-testid="ai-hidden-note">
+                <EyeOffIcon class="size-3.5" aria-hidden="true" />
+                내 점수를 제출하면 AI 막대가 함께 보입니다
+              </p>
+              <p v-else-if="!aiDone && !hideAi && q.data.ai.status === 'running'" class="mb-3 flex items-center gap-1.5 text-xs text-brand">
                 <LoaderIcon class="size-3.5 animate-spin" aria-hidden="true" />
                 AI 채점이 끝나면 AI 막대가 추가됩니다
               </p>
               <EmptyState v-if="competencies.length === 0" compact :icon="ChartBarBigIcon" title="확정된 역량 사전이 없습니다" />
-              <ScoreChart v-else-if="view === 'chart'" :ev="q.data" :hide-ai="hideAi || !aiDone" />
-              <ScoreTable v-else :ev="q.data" :hide-ai="hideAi || !aiDone" />
+              <ScoreChart v-else-if="view === 'chart'" :ev="q.data" :hide-ai="hideAi || !aiDone || aiHidden" />
+              <ScoreTable v-else :ev="q.data" :hide-ai="hideAi || !aiDone || aiHidden" />
             </CardContent>
           </Card>
         </FadeIn>
@@ -158,12 +179,43 @@ const scoresInRubricOrder = (scores: readonly Score[]) =>
               <Badge variant="outline">참고용</Badge>
             </CardHeader>
             <CardContent>
+              <div v-if="aiHidden" class="flex flex-col items-center gap-3 py-8 text-center" data-testid="ai-hidden">
+                <span class="flex size-10 items-center justify-center rounded-xl border bg-subtle">
+                  <EyeOffIcon class="size-[18px] text-muted-foreground" aria-hidden="true" />
+                </span>
+                <div>
+                  <p class="text-sm font-medium">내 점수를 먼저 제출하세요</p>
+                  <p class="mt-1 text-[13px] text-muted-foreground">
+                    AI 점수와 근거는 이 면접의 내 점수를 제출하면 열립니다. 먼저 보면 판단이 AI 쪽으로 기울 수 있습니다.
+                  </p>
+                </div>
+                <AlertDialog v-if="aiDone">
+                  <AlertDialogTrigger as-child>
+                    <Button variant="ghost" size="sm" class="text-muted-foreground" :disabled="reveal.isPending">
+                      <EyeIcon />
+                      그래도 보기
+                    </Button>
+                  </AlertDialogTrigger>
+                  <AlertDialogContent>
+                    <AlertDialogHeader>
+                      <AlertDialogTitle>제출 전에 AI 점수를 볼까요?</AlertDialogTitle>
+                      <AlertDialogDescription>
+                        내 점수를 정하기 전에 AI 점수를 보면 판단이 AI 쪽으로 기울 수 있습니다. 먼저 본 기록은 감사 로그에 남고, 이 면접에서는 계속 보입니다.
+                      </AlertDialogDescription>
+                    </AlertDialogHeader>
+                    <AlertDialogFooter>
+                      <AlertDialogCancel>취소</AlertDialogCancel>
+                      <AlertDialogAction @click="seeAnyway">그래도 보기</AlertDialogAction>
+                    </AlertDialogFooter>
+                  </AlertDialogContent>
+                </AlertDialog>
+              </div>
               <EmptyState
-                v-if="hideAi"
+                v-else-if="hideAi"
                 compact
                 :icon="EyeOffIcon"
                 title="AI 점수를 가렸습니다"
-                description="내 점수를 먼저 정하고 싶을 때 씁니다. 스위치를 끄면 다시 보입니다."
+                description="스위치를 끄면 다시 보입니다."
               />
               <div v-else-if="q.data.ai.status === 'running'" class="flex flex-col items-center gap-3 py-10 text-center">
                 <span class="flex size-10 items-center justify-center rounded-xl border border-brand-border bg-brand-soft">

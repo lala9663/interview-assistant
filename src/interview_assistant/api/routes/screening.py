@@ -1,4 +1,5 @@
-"""서류 선별 (FR-01, 03): applications, screening decisions, the candidate index, uploads.
+"""서류 선별 (FR-01, 03): applications, screening decisions (탈락 with a reason), the candidate
+index, uploads.
 
 Upload: one channel into intake/service.py, like the recruiting site. The original file goes to
 the raw zone on disk (uploads/, never served), its text is extracted and de-identified, hidden
@@ -30,6 +31,7 @@ from interview_assistant.models import (
     JobPosting,
     PostingStatus,
     Screening,
+    ScreeningStatus,
 )
 
 router = APIRouter(tags=["screening"])
@@ -82,22 +84,43 @@ def application(application_id: str, db: Db) -> s.ApplicationDetail:
     return views.application_detail(_application(db, application_id))
 
 
+MAX_REJECT_REASON = 500
+
+
 @router.patch("/screenings/{screening_id}", response_model=s.Screening)
-def update_screening(screening_id: str, body: s.ScreeningUpdate, db: Db, me: Me) -> s.Screening:
+def update_screening(
+    screening_id: str, body: s.ScreeningUpdate, db: Db, me: Me, runtime: RuntimeDep
+) -> s.Screening:
+    """탈락 needs a short reason; it is de-identified like any other free text, kept on the
+    screening while it stays 탈락 and written into the audit row."""
     found = db.get(Screening, screening_id)
     if found is None:
         raise not_found("선별 결과")
     before = found.status
+    reason = None
+    if body.status is ScreeningStatus.rejected:
+        text = (body.reason or "").strip()
+        if not text:
+            raise invalid("reason", "탈락 사유를 입력하세요.")
+        if len(text) > MAX_REJECT_REASON:
+            raise invalid("reason", f"탈락 사유는 {MAX_REJECT_REASON}자까지 쓸 수 있습니다.")
+        candidate = found.application.candidate
+        reason = runtime.deid.deidentify(db, text, candidate)
+    if before is body.status and reason == found.reject_reason:
+        return s.Screening.model_validate(found)
     found.status = body.status
-    if before is not body.status:
-        audit(
-            db,
-            me,
-            "screening.status_changed",
-            "screening",
-            found.id,
-            **{"from": before.value, "to": body.status.value},
-        )
+    found.reject_reason = reason
+    details: dict[str, str] = {"from": before.value, "to": body.status.value}
+    if reason is not None:
+        details["reason"] = reason
+    audit(
+        db,
+        me,
+        "screening.status_changed" if before is not body.status else "screening.reason_changed",
+        "screening",
+        found.id,
+        **details,
+    )
     db.commit()
     return s.Screening.model_validate(found)
 

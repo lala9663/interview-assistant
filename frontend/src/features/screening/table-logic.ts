@@ -9,6 +9,21 @@ export interface Sort {
   dir: 'asc' | 'desc'
 }
 
+/** 접수순 (oldest first): the default, not the AI fit score. */
+export const DEFAULT_SORT: Sort = { key: 'created', dir: 'asc' }
+const SORT_KEYS: readonly SortKey[] = ['fit', 'pseudonym', 'years', 'created']
+
+/** The sort this user picked last (localStorage), or the default. */
+export function readSort(storageKey: string): Sort {
+  try {
+    const saved = JSON.parse(localStorage.getItem(storageKey) ?? 'null') as Partial<Sort> | null
+    if (saved && SORT_KEYS.includes(saved.key as SortKey) && (saved.dir === 'asc' || saved.dir === 'desc')) return { key: saved.key as SortKey, dir: saved.dir }
+  } catch {
+    // unreadable or blocked storage: fall through to the default
+  }
+  return { ...DEFAULT_SORT }
+}
+
 export function stepOf(r: ApplicationRow): Exclude<StepFilter, 'all'> {
   return r.stage.kind === 'round' ? r.stage.round!.position : r.stage.kind
 }

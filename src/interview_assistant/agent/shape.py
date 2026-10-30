@@ -116,16 +116,41 @@ def round_label(round_: dict[str, Any] | None) -> str | None:
     return f"{round_['label']} · {round_['name']}"
 
 
-def ai_recommendation(rationale: str) -> str | None:
-    """The first line of a screening rationale ends with '(AI 권고: 통과)'."""
+def ai_recommendation(screening: dict[str, Any]) -> str | None:
+    """The AI's 통과/보류/탈락 recommendation. Rows screened before screening-v0.5 have none of
+    their own; their rationale's first line ended with '(AI 권고: 통과)'."""
+    if screening.get("recommendation"):
+        return SCREENING_LABELS.get(screening["recommendation"], screening["recommendation"])
+    rationale = screening.get("rationale") or ""
     m = re.search(r"\(AI 권고: ([^)]+)\)", rationale.splitlines()[0] if rationale else "")
     return m.group(1) if m else None
 
 
-def rationale_parts(rationale: str) -> dict[str, Any]:
-    """'+ ' lines are strengths, '- ' lines concerns, the rest the summary (api-contract.md)."""
+KIND_LABELS = {"required": "필수", "preferred": "우대"}
+VERDICT_LABELS = {"met": "충족", "unmet": "미충족", "unclear": "확인 필요"}
+
+
+def rationale_parts(screening: dict[str, Any]) -> dict[str, Any]:
+    """screening-v0.5 rows: summary, one verdict per JD requirement, points to check in the
+    interview. Older rows: '+ ' lines are strengths, '- ' lines concerns, the rest the summary."""
+    assessment = screening.get("assessment")
+    if assessment:
+        return {
+            "summary": assessment["summary"],
+            "requirements": [
+                {
+                    "kind": KIND_LABELS.get(r["kind"], r["kind"]),
+                    "requirement": r["requirement"],
+                    "verdict": VERDICT_LABELS.get(r["verdict"], r["verdict"]),
+                    "evidence": r["evidence"],
+                    "source": r["source"],
+                }
+                for r in assessment["requirements"]
+            ],
+            "interview_checks": assessment["interview_checks"],
+        }
     strengths, concerns, summary = [], [], []
-    for line in (rationale or "").splitlines():
+    for line in (screening.get("rationale") or "").splitlines():
         line = line.strip()
         if line.startswith("+ "):
             strengths.append(line[2:])

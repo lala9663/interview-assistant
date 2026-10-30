@@ -116,13 +116,19 @@
 | POST | `/api/postings/{id}/applications` | multipart: `file`, `name`(필수), `phone`, `email`, `birthdate`, `aliases`, `addresses`, `schools`, `companies` (여러 값은 줄바꿈) | 201 `UploadResult` {application_id, candidate{id,pseudonym}, screening, document} | 5 |
 | GET | `/api/applications/{id}` | | `ApplicationDetail` {application, candidate, posting, screening, sessions[], document, stage, progress[], decisions[]} | 5, 차수 |
 | GET | `/api/applications/{id}/decisions` | | `RoundDecision[]` 모든 차수의 모든 개정, 최신순 | 차수 |
-| PATCH | `/api/screenings/{id}` | `{status}` | `Screening`. 사람이 바꾼 상태, 감사 로그 `screening.status_changed` {from, to} | 5 |
+| PATCH | `/api/screenings/{id}` | `{status, reason?}` | `Screening`. 사람이 바꾼 상태. `rejected`(탈락)는 `reason` 필수(비거나 500자 넘으면 422 `reason`), 비식별화해 `reject_reason`에 두고 다른 상태로 바뀌면 지운다. 감사 로그 `screening.status_changed` {from, to, reason(탈락일 때)}, 탈락 그대로 사유만 고치면 `screening.reason_changed` | 5 |
 | GET | `/api/candidates` | | `CandidateIndexItem[]` (명령 팔레트 검색용) | 5 |
 | GET | `/api/applications/schedulable?round=` | | `SchedulableApplication[]` 다음 차수를 기다리는 지원서 {application_id, candidate, posting, fit_score, round, mode·recommended_interviewers(그 차수 기본값), since(이전 단계를 통과한 시각)}. 1차: 서류 통과 + 그 차수 세션 없음, N차: N-1차 합격 + 그 차수 세션 없음. `round`(1 = 1차)로 거른다 | 6, 차수 |
 
 정렬·필터는 공고당 수십 건이라 지금은 프론트에서 한다. 수백 건이 되면 `?status=&q=&sort=`를 추가한다.
 
-`Screening.rationale`은 줄 단위 텍스트다. `+ `로 시작하면 강점, `- `로 시작하면 확인 필요, 나머지는 요약. 구조화 컬럼이 생기면 이 규칙은 버린다.
+`Screening` = {id, application_id, fit_score, rationale, assessment, recommendation, status, reject_reason, model, prompt_version, created_at}.
+
+- `assessment`(screening-v0.5부터) = {summary, requirements[], interview_checks[]}. `requirements[]`는 JD의 필수 요건·우대 사항 하나에 한 줄: {kind `required`(필수)/`preferred`(우대), requirement, verdict `met`(충족)/`unmet`(미충족)/`unclear`(확인 필요), evidence(한 문장), source(근거가 있는 서류 위치, 예: "경력 · [회사-1]", 없으면 "")}. `interview_checks[]`는 면접에서 확인할 점. 화면은 요건 표로 보여 준다.
+- `recommendation`: AI 권고(`passed`/`hold`/`rejected`), 참고용. 사람이 정하는 `status`와 따로 둔다. v0.5 전 지원서는 근거 첫 줄 끝 `(AI 권고: 통과)`에서 읽어 마이그레이션 0009가 채웠다(없으면 `null`).
+- `rationale`: 사람이 읽는 평문. 줄 단위로 `+ `는 강점(충족한 요건), `- `는 확인 필요(미충족·확인 필요 요건, "면접에서 확인: …"), 나머지는 요약. v0.5 전 지원서는 이것만 있다(`assessment: null`). 실시간 면접의 지원자 요약 카드와 에이전트 도구가 이것을 읽는다.
+- `reject_reason`: 사람이 탈락으로 바꿀 때 쓴 사유(비식별). 탈락일 때만 값이 있다.
+- 선별 프롬프트는 프로필을 JSON이 아니라 한국어 줄("총 경력: 7년 2개월", "기술: …")로 넣는다. JSON 키가 보이면 모델이 근거에 `years_experience 7.2` 같은 필드 이름을 썼다. 그래도 섞여 나온 필드 이름은 `ai/screening.py`의 `humanize`가 한국어로 바꾼다(밑줄 든 이름은 어디서나, `skills` 같은 단어는 바로 뒤에 조사가 붙을 때만).
 
 `progress` = 서류 → 각 차수 → 최종의 `ProgressStep` {kind screening/round/final, round, status, at, session_id}. `stage`는 그중 지금 단계(통과하지 않은 첫 단계, 모두 통과면 최종). 차수의 `status`는 그 차수의 취소 아닌 최근 세션과 현재 결정에서 나온다(`interviews.py`):
 
@@ -146,9 +152,9 @@
 1. 파일(최대 10MB)을 형식 판별 후 읽는다(PDF·DOCX·PPTX·HTML·HWP·HWPX·구형 .doc/.ppt·JPG/PNG). 처리를 시작할 때의 서류 읽기 설정(관리자 > 모델 설정, 아래)으로 쪽마다 텍스트 층 또는 OCR을 고른다([document-reading.md](document-reading.md)). 읽을 수 없으면 422로 거부하고 아무것도 남기지 않는다: 받지 않는 형식, 암호 파일, 손상된 파일, 변환기 없음(.doc/.ppt), OCR 필요(읽기 방식 "텍스트만"), OCR 실패. 판정은 `intake/service.py`의 `read_attachments` 한 곳이다(사이트 첨부와 같다).
 2. 양식 값(이름 등)을 `KnownIdentity`로 `Candidate.encrypted_identity`에 봉인하고 새 가명(CAND-0021 …)을 붙인다. 이 값은 비식별화에만 쓰인다.
 3. 파일명·속성·본문·표·머리글·노트·링크·숨은 텍스트까지 블록 단위로 비식별화한다. 숨은 텍스트 블록(흰 글씨, 0.5pt, `display:none` 등)은 키워드 채우기·지시문 주입 위험이 있어 선별 프롬프트에서 뺀다. 개수만 `document.hidden_blocks`로 알려 준다.
-4. `screening` 역할 모델로 두 번 호출한다: 프로필 구조화(profile-v0.1) → JD·확정 역량 사전 기준 평가(screening-v0.4). 응답은 스키마로 검증하고, 형식이 틀리면 502로 전체를 되돌린다(만들던 지원자도 지운다, 실패도 감사 로그). 두 호출 사이에 커밋해, 모델을 기다리는 동안 쓰기 트랜잭션을 열어 두지 않는다(SQLite에서 다른 쓰기가 막히지 않게).
+4. `screening` 역할 모델로 두 번 호출한다: 프로필 구조화(profile-v0.1) → JD·확정 역량 사전 기준 평가(screening-v0.5, JD 요건마다 판단·근거·위치, 권고, 면접에서 확인할 점). 응답은 스키마로 검증하고, 형식이 틀리면 502로 전체를 되돌린다(만들던 지원자도 지운다, 실패도 감사 로그). 두 호출 사이에 커밋해, 모델을 기다리는 동안 쓰기 트랜잭션을 열어 두지 않는다(SQLite에서 다른 쓰기가 막히지 않게).
 5. 원본 파일은 `uploads/{candidate_id}/{application_id}.{확장자}`에 저장한다(파일 이름에 실명 없음, git 제외, 서빙하지 않음). `Application.source_file_uri`에만 경로가 남는다.
-6. 선별 상태는 AI 권고와 관계없이 `hold`로 시작한다. 통과·보류·탈락은 사람이 정하고(PATCH), AI 권고는 근거 첫 줄 끝 `(AI 권고: 통과)`에 적는다.
+6. 선별 상태는 AI 권고와 관계없이 `hold`로 시작한다. 통과·보류·탈락은 사람이 정하고(PATCH, 탈락은 사유 필수), AI 권고는 `recommendation`에 따로 둔다.
 
 `document` = `{format, blocks, hidden_blocks, images_dropped, replacements, reading}` (개수만, 텍스트 없음). 시드 지원자는 파일이 없어 `null`이다. `reading`은 읽은 방법이다: `{revision, mode, embedded_images, sensitivity, tools[], files[]}`, 파일마다 `{format, converted_from, pages, ocr_pages[], ocr_confidence(OCR한 쪽 중 최저), pictures_read, photos_dropped, garbled_pages[]}`. 서류 읽기 설정 전에 들어온 지원서는 `reading`이 없다. 상세 패널의 "서류 읽기" 줄이 이것을 보여 준다.
 
@@ -188,7 +194,8 @@
 
 | 메서드 | 경로 | 요청 | 응답 | 단계 |
 | --- | --- | --- | --- | --- |
-| GET | `/api/sessions/{id}/evaluation` | | `Evaluation` {session, candidate, posting, round, competency_set, qa_items, ai{status, model, prompt_version, samples, scores[], summary[]}, interviewers[{interviewer, role, submitted_at, scores[]}], decision, check_points[]} | 8, 차수 |
+| GET | `/api/sessions/{id}/evaluation` | | `Evaluation` {session, candidate, posting, round, competency_set, qa_items, ai{status, model, prompt_version, samples, hidden, scores[], summary[]}, interviewers[{interviewer, role, submitted_at, scores[]}], decision, check_points[]}. 로그인한 사람이 이 면접의 면접관이고 아직 점수를 내지 않았으면 `ai.hidden: true`, `scores`·`summary`는 빈 배열(아래) | 8, 차수 |
+| POST | `/api/sessions/{id}/ai-scores/reveal` | | `Evaluation`. "그래도 보기": 점수를 내기 전에 AI 점수를 본다. AI 채점이 끝나기 전이면 409. 처음 한 번만 `session_interviewers.ai_revealed_at`을 남기고 감사 로그 `evaluation.ai_revealed` {before_submitting: true}. 이후 그 면접에서는 계속 보인다 | 평가 |
 | PUT | `/api/sessions/{id}/scores/{interviewer_id}` | `{scores: [{competency, score(1~5 정수), comment}]}` | `Evaluation`. 확정 역량 전부 필요(422), 역량에 없는 이름 422, completed 아니면 409, 패널이 아니면 409. 같은 면접관의 이전 점수는 교체 | 8 |
 | POST | `/api/sessions/{id}/decision` | `{decision: passed/hold/rejected, reason}` | `Evaluation`. N차 결정. 사유 필수(422, 1000자). 면접관 전원 제출 전·종료 전 409, 다음 차수 세션이 이미 있으면 409(결정을 바꿀 수 없음), 그 면접의 면접관도 관리자도 아니면 403. 바꾸면 새 개정(revision+1)으로 쌓이고 이전 것은 남는다. 사유는 비식별화. 감사 로그 `round.decided` 또는 `round.decision_changed` {from, to, revision, round, final} | 차수 |
 | POST | `/api/sessions/{id}/check-points` | `{text, competency?}` | 201 `CheckPoint` (source interviewer, 비식별화). 종료된 면접만(409), 그 면접 역량이 아니면 422. 감사 로그 `check_point.created` | 차수 |
@@ -198,6 +205,7 @@
 
 `CheckPoint` = {id, session_id, source interviewer/ai, competency, text, evidence, qa_item_id, author_id, author_name, model, created_at}. AI 것은 AI 채점이 끝나기 전에 같은 백그라운드 작업에서 뽑는다(checkpoint-v0.1): 답변마다 근거가 약한 곳 최대 3개, `evidence`는 비식별 답변에서 그대로 복사한 문장이어야 저장한다. 실패해도 채점은 완료된다.
 
+- AI 점수는 면접관이 자기 점수를 내기 전에는 보내지 않는다(`ai.hidden`). 먼저 보면 판단이 AI 쪽으로 기울 수 있어서다. 제출하면(`PUT …/scores/…`) 응답부터 보이고, 그 전에 보려면 `POST …/ai-scores/reveal`(감사 로그). 패널이 아닌 사람(예: 패널 밖 관리자)과 결정하는 사람은 다 본다. 결정은 면접관 전원이 낸 뒤에만 열리므로 결정할 때는 누구나 AI 점수를 본다. AI가 뽑은 확인할 점(`check_points`)은 점수가 아니라 가리지 않는다.
 - AI 점수와 면접관 점수는 같은 `Score` 테이블, `evaluator_type`으로 나눈다. API는 둘을 다른 필드(`ai.scores`, `interviewers[].scores`)로 주고, 둘을 섞은 값(합계, 평균, 가중 평균)은 어디에도 내려보내지 않는다.
 - AI 점수는 답변(QA) 단위라 `qa_item_id`가 있고, 면접관 점수는 세션·역량 단위라 `qa_item_id`가 `null`이다(4장).
 - `ai.summary[]` = 역량별 AI 항목 점수의 평균(소수 1자리, 반올림)과 그중 가장 낮은 신뢰도, 항목 수. AI 점수만 들어간다. 프론트 `lib/scoring.ts`의 `summarizeAiScores`와 같은 규칙이다.

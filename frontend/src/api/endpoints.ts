@@ -117,7 +117,8 @@ export const endpoints = {
   application: (id: string, signal?: AbortSignal) => api.get<ApplicationDetail>(`/applications/${id}`, signal),
   schedulableApplications: (signal?: AbortSignal) => api.get<SchedulableApplication[]>('/applications/schedulable', signal),
   decisions: (applicationId: string, signal?: AbortSignal) => api.get<RoundDecision[]>(`/applications/${applicationId}/decisions`, signal),
-  updateScreening: (id: string, status: ScreeningStatus) => api.patch<Screening>(`/screenings/${id}`, { status }),
+  /** `reason` is required with 'rejected' (탈락 사유) */
+  updateScreening: (id: string, status: ScreeningStatus, reason?: string) => api.patch<Screening>(`/screenings/${id}`, { status, reason: reason ?? null }),
   candidates: (signal?: AbortSignal) => api.get<CandidateIndexItem[]>('/candidates', signal),
 
   sessions: (status?: SessionStatus, signal?: AbortSignal) =>
@@ -136,6 +137,8 @@ export const endpoints = {
   carryoverQuestions: (sessionId: string) => api.post<SessionDetail>(`/sessions/${sessionId}/carryover-questions`),
 
   evaluation: (sessionId: string, signal?: AbortSignal) => api.get<Evaluation>(`/sessions/${sessionId}/evaluation`, signal),
+  /** 그래도 보기: see the AI scores before submitting your own (recorded in the audit log) */
+  revealAiScores: (sessionId: string) => api.post<Evaluation>(`/sessions/${sessionId}/ai-scores/reveal`),
   submitScores: (sessionId: string, interviewerId: string, body: SubmitInterviewerScoresRequest) =>
     api.put<Evaluation>(`/sessions/${sessionId}/scores/${interviewerId}`, body),
   decide: (sessionId: string, body: DecisionRequest) => api.post<Evaluation>(`/sessions/${sessionId}/decision`, body),

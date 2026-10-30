@@ -9,7 +9,7 @@ import { renderPlain, renderRoute } from '@/test/render'
 
 import ScreeningPage from './ScreeningPage.vue'
 import ScreeningTable from './ScreeningTable.vue'
-import { countByStatus, filterRows, sortRows, stepOptions } from './table-logic'
+import { countByStatus, filterRows, readSort, sortRows, stepOptions } from './table-logic'
 
 const R1 = { id: 'r1', position: 1, label: '1차', name: '직무 면접', is_last: false }
 const R2 = { id: 'r2', position: 2, label: '2차', name: '임원 면접', is_last: true }
@@ -35,7 +35,10 @@ function row(n: number, status: ScreeningStatus, fit: number, skills: string[] =
       application_id: `app-${n}`,
       fit_score: fit,
       rationale: '요약',
+      assessment: null,
+      recommendation: null,
       status,
+      reject_reason: null,
       model: null,
       prompt_version: null,
       created_at: '2026-10-01T00:00:00Z',
@@ -81,7 +84,7 @@ describe('<ScreeningTable>', () => {
     await user.click(screen.getByRole('radio', { name: /보류/ }))
     const rows = screen.getAllByTestId('screening-row')
     expect(rows).toHaveLength(2)
-    expect(rows.map((r) => within(r).getByText(/CAND-/).textContent)).toEqual(['CAND-0004', 'CAND-0002'])
+    expect(rows.map((r) => within(r).getByText(/CAND-/).textContent)).toEqual(['CAND-0002', 'CAND-0004'])
     for (const r of rows) expect(within(r).getByText('보류')).toBeInTheDocument()
 
     await user.click(screen.getByRole('radio', { name: /탈락/ }))
@@ -89,6 +92,43 @@ describe('<ScreeningTable>', () => {
 
     await user.click(screen.getByRole('radio', { name: /서류 전체/ }))
     expect(screen.getAllByTestId('screening-row')).toHaveLength(5)
+  })
+
+  it('lists in 접수순 by default, not by the AI fit score; 적합도 sorting is one click away', async () => {
+    const user = userEvent.setup()
+    renderPlain(ScreeningTable, { rows: [...ROWS].reverse(), selectedId: null, onOpen: vi.fn() })
+    const names = () => screen.getAllByTestId('screening-row').map((r) => within(r).getByText(/CAND-/).textContent)
+    expect(names()).toEqual(['CAND-0001', 'CAND-0002', 'CAND-0003', 'CAND-0004', 'CAND-0005'])
+    expect(screen.getByRole('columnheader', { name: /접수/ })).toHaveAttribute('aria-sort', 'ascending')
+    expect(screen.getByRole('columnheader', { name: /적합도/ })).toHaveAttribute('aria-sort', 'none')
+
+    await user.click(screen.getByRole('button', { name: /적합도/ }))
+    expect(names()).toEqual(['CAND-0001', 'CAND-0005', 'CAND-0004', 'CAND-0002', 'CAND-0003'])
+  })
+
+  it('remembers the sort choice per user', async () => {
+    const user = userEvent.setup()
+    localStorage.clear()
+    const first = renderPlain(ScreeningTable, { rows: ROWS, selectedId: null, onOpen: vi.fn(), sortStorageKey: 'screening-sort:u1' })
+    await user.click(screen.getByRole('button', { name: /적합도/ }))
+    expect(readSort('screening-sort:u1')).toEqual({ key: 'fit', dir: 'desc' })
+    first.unmount()
+
+    const again = renderPlain(ScreeningTable, { rows: ROWS, selectedId: null, onOpen: vi.fn(), sortStorageKey: 'screening-sort:u1' })
+    expect(screen.getByRole('columnheader', { name: /적합도/ })).toHaveAttribute('aria-sort', 'descending')
+    again.unmount()
+    // Another user starts from 접수순; unreadable storage falls back to it too.
+    renderPlain(ScreeningTable, { rows: ROWS, selectedId: null, onOpen: vi.fn(), sortStorageKey: 'screening-sort:u2' })
+    expect(screen.getByRole('columnheader', { name: /접수/ })).toHaveAttribute('aria-sort', 'ascending')
+    localStorage.setItem('screening-sort:u3', '{broken')
+    expect(readSort('screening-sort:u3')).toEqual({ key: 'created', dir: 'asc' })
+    localStorage.clear()
+  })
+
+  it('shows experience years in one format', () => {
+    renderPlain(ScreeningTable, { rows: [{ ...ROWS[0]!, years_experience: 7.2 }, { ...ROWS[1]!, years_experience: 7 }], selectedId: null, onOpen: vi.fn() })
+    const cells = screen.getAllByTestId('screening-row').map((r) => within(r).getAllByRole('cell')[2]!.textContent)
+    expect(cells).toEqual(['7년 2개월', '7년'])
   })
 
   it('shows where each candidate is: a short trail, the round badge apart from the status chip', () => {

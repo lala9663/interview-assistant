@@ -59,7 +59,7 @@ const EV: Evaluation = {
     created_at: '2026-10-01T00:00:00Z',
   },
   qa_items: [],
-  ai: { status: 'completed', model: 'm', prompt_version: 'v', samples: 3, scores: aiScores, summary: summarizeAiScores(aiScores) },
+  ai: { status: 'completed', model: 'm', prompt_version: 'v', samples: 3, hidden: false, scores: aiScores, summary: summarizeAiScores(aiScores) },
   interviewers: [
     {
       interviewer: { id: 'iv1', employee_no: 'E1', name: '면접관A', job_family: null, department: null, is_admin: false, created_at: '' },

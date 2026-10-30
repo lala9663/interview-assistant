@@ -74,7 +74,6 @@ const myPending = (s: SessionSummary) => {
 <template>
   <Page>
     <PageHeader
-      eyebrow="FR-04 ~ FR-08"
       title="면접"
       description="면접 세션을 열어 실시간 보조를 받고, 끝난 면접은 평가 화면에서 AI 참고 점수와 면접관 점수를 따로 확인합니다."
     >

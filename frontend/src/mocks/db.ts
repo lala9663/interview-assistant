@@ -43,6 +43,7 @@ import type {
   SchedulableApplication,
   Score,
   Screening,
+  ScreeningAssessment,
   SessionBrief,
   SessionDetail,
   SessionInterviewer,
@@ -69,6 +70,21 @@ export const SCORING_PROMPT = 'score-v0.4'
 export const FOLLOWUP_PROMPT = 'followup-v0.4'
 export const CHECKPOINT_PROMPT = 'checkpoint-v0.1'
 export const SCREENING_MODEL = 'claude-haiku-5-5'
+export const SCREENING_PROMPT = 'screening-v0.5'
+
+const KIND_LABEL = { required: '필수', preferred: '우대' } as const
+const VERDICT_LABEL = { met: '충족', unmet: '미충족', unclear: '확인 필요' } as const
+
+/** The plain-text rationale the backend keeps next to a structured assessment (ai/screening.py Assessment.rationale). */
+export function rationaleOf(a: ScreeningAssessment): string {
+  const lines = [a.summary]
+  for (const r of a.requirements) {
+    const line = `${KIND_LABEL[r.kind]} ${VERDICT_LABEL[r.verdict]} · ${r.requirement}${r.evidence ? `: ${r.evidence}` : ''}`
+    lines.push(`${r.verdict === 'met' ? '+' : '-'} ${line}`)
+  }
+  for (const c of a.interview_checks) lines.push(`- 면접에서 확인: ${c}`)
+  return lines.join('\n')
+}
 export const SCORING_SAMPLES = 3
 /** How long mock AI scoring "runs" after a session ends. */
 export const AI_SCORING_MS = 7000
@@ -152,6 +168,8 @@ export class MockDb {
   audit: AuditLog[] = []
   aiScoring = new Map<string, { status: AiScoringStatus; startedAt: number }>()
   submittedAt = new Map<string, string>()
+  /** `${sessionId}:${interviewerId}` -> when they chose to see AI scores before submitting */
+  aiRevealedAt = new Map<string, string>()
   /** interviewer scores are per session (qa_item_id null): score id -> session id */
   scoreSession = new Map<string, string>()
   documents = new Map<string, UploadResult['document']>()
@@ -624,16 +642,26 @@ export class MockDb {
       created_at: iso(now),
     }
     const fit = 50 + Math.round(hash01(`${filename}:fit`) * 40)
-    const screening = {
+    const assessment: ScreeningAssessment = {
+      summary: fit >= 75 ? '필수 요건을 대부분 충족하고 우대 사항 근거도 있습니다.' : '요건 일부는 맞지만 근거가 부족한 항목이 있어 확인이 필요합니다.',
+      requirements: [
+        { kind: 'required', requirement: '직무 관련 경력 3년 이상', verdict: 'met', evidence: '서류상 총 경력이 4년입니다.', source: '경력 · [회사-1]' },
+        { kind: 'required', requirement: '데이터 분석 도구 활용', verdict: 'met', evidence: 'Python과 SQL을 기술로 적었습니다.', source: '기술' },
+        { kind: 'preferred', requirement: '프로젝트 리딩 경험', verdict: 'unclear', evidence: '서류만으로는 판단하기 어렵습니다.', source: '' },
+      ],
+      interview_checks: ["'프로젝트 리딩 경험'에 해당하는 실제 사례와 본인 역할"],
+    }
+    const screening: Screening = {
       id: newId(),
       application_id: application.id,
       fit_score: fit,
-      rationale: `서류를 JD와 대조했습니다 (AI 권고: ${fit >= 75 ? '통과' : '보류'})
-+ 필수 요건 일부 충족
-- 경력 근거 확인 필요`,
-      status: 'hold' as const,
+      rationale: rationaleOf(assessment),
+      assessment,
+      recommendation: fit >= 75 ? 'passed' : 'hold',
+      status: 'hold',
+      reject_reason: null,
       model: SCREENING_MODEL,
-      prompt_version: 'screening-v0.4',
+      prompt_version: SCREENING_PROMPT,
       created_at: iso(now),
     }
     const ext = filename.split('.').pop()?.toLowerCase() ?? ''
@@ -751,7 +779,10 @@ export class MockDb {
     const qa = this.qaOf(id)
     const qaIds = new Set(qa.map((q) => q.id))
     const all = this.scores.filter((x) => (x.qa_item_id ? qaIds.has(x.qa_item_id) : this.scoreSession.get(x.id) === id))
-    const ai = status === 'completed' ? all.filter((x) => x.evaluator_type === 'ai') : []
+    // Hidden from a panel interviewer until they submit (or chose 그래도 보기); whoever decides sees all.
+    const mine = `${id}:${this.me.id}`
+    const hidden = this.panelOf(id).some((p) => p.interviewer_id === this.me.id) && !this.submittedAt.has(mine) && !this.aiRevealedAt.has(mine)
+    const ai = status === 'completed' && !hidden ? all.filter((x) => x.evaluator_type === 'ai') : []
     return {
       session: s,
       candidate: { id: c.id, pseudonym: c.pseudonym },
@@ -764,6 +795,7 @@ export class MockDb {
         model: status === 'not_started' ? null : AI_MODEL,
         prompt_version: status === 'not_started' ? null : SCORING_PROMPT,
         samples: SCORING_SAMPLES,
+        hidden,
         scores: ai,
         summary: summarizeAiScores(ai),
       },
@@ -976,15 +1008,23 @@ function seed(db: MockDb) {
       deleted_at: null,
       created_at: iso(applied),
     })
-    const rationale = [c.summaryLine, ...c.strengths.map((s) => `+ ${s}`), ...c.concerns.map((s) => `- ${s}`)].join('\n')
+    // Candidates with an `assessment` were screened with screening-v0.5; the rest are older free-text rows.
+    const assessment: ScreeningAssessment | null = c.assessment
+      ? { summary: c.summaryLine, requirements: c.assessment.requirements, interview_checks: c.assessment.interviewChecks }
+      : null
     db.screenings.push({
       id: `f7a8b9c0-0000-4000-9000-${String(c.n).padStart(12, '0')}`,
       application_id: applicationIdOf(c.n),
       fit_score: c.fit,
-      rationale,
+      rationale: assessment
+        ? rationaleOf(assessment)
+        : [c.summaryLine, ...c.strengths.map((s) => `+ ${s}`), ...c.concerns.map((s) => `- ${s}`)].join('\n'),
+      assessment,
+      recommendation: c.assessment?.recommendation ?? null,
       status: c.status,
+      reject_reason: c.status === 'rejected' ? (c.rejectReason ?? null) : null,
       model: SCREENING_MODEL,
-      prompt_version: 'screening-v0.4',
+      prompt_version: assessment ? SCREENING_PROMPT : 'screening-v0.4',
       created_at: iso(addMinutes(applied, 90)),
     })
   }

@@ -197,8 +197,8 @@ export function useUpdateScreening(postingId: MaybeRefOrGetter<string>) {
   const qc = useQueryClient()
   return reactive(
     useMutation({
-      mutationFn: ({ screeningId, status }: { screeningId: string; status: ScreeningStatus }) =>
-        endpoints.updateScreening(screeningId, status),
+      mutationFn: ({ screeningId, status, reason }: { screeningId: string; status: ScreeningStatus; reason?: string }) =>
+        endpoints.updateScreening(screeningId, status, reason),
       onSuccess: () => {
         void qc.invalidateQueries({ queryKey: qk.applications(toValue(postingId)) })
         void qc.invalidateQueries({ queryKey: ['applications'] })
@@ -404,6 +404,19 @@ function useAfterDecision(sessionId: string) {
 export function useDecide(sessionId: string) {
   const after = useAfterDecision(sessionId)
   return reactive(useMutation({ mutationFn: (body: DecisionRequest) => endpoints.decide(sessionId, body), onSuccess: (ev) => after(ev) }))
+}
+
+export function useRevealAiScores(sessionId: string) {
+  const qc = useQueryClient()
+  return reactive(
+    useMutation({
+      mutationFn: () => endpoints.revealAiScores(sessionId),
+      onSuccess: (ev) => {
+        qc.setQueryData(qk.evaluation(sessionId), ev)
+        void qc.invalidateQueries({ queryKey: ['activity'] })
+      },
+    }),
+  )
 }
 
 export function useCheckPointMutations(sessionId: string) {

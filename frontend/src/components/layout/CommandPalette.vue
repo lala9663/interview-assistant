@@ -43,7 +43,7 @@ function matches(value: string, keywords: readonly string[] = []) {
   return `${value} ${keywords.join(' ')}`.toLowerCase().includes(q)
 }
 
-const navItems = computed(() => navItemsFor(me.data?.is_admin).filter((n) => matches(`nav ${n.label}`, [n.keywords ?? '', n.fr ?? ''])))
+const navItems = computed(() => navItemsFor(me.data?.is_admin).filter((n) => matches(`nav ${n.label}`, [n.keywords ?? ''])))
 const sessionItems = computed(() =>
   (sessions.data ?? [])
     .filter((s) => s.status === 'in_progress' || s.status === 'scheduled' || s.status === 'completed')
@@ -103,8 +103,7 @@ const headingClass = 'px-2.5 pt-3 pb-1.5 text-[11px] font-medium text-muted-fore
             <ListboxItem v-for="n in navItems" :key="n.to" :value="`nav:${n.to}`" :class="itemClass" @select="go(n.to)">
               <component :is="n.icon" />
               <span class="flex-1">{{ n.label }}</span>
-              <span v-if="n.fr" class="text-[11px] text-muted-foreground">{{ n.fr }}</span>
-              <span v-else-if="n.adminOnly" class="text-[11px] text-muted-foreground">관리자</span>
+              <span v-if="n.adminOnly" class="text-[11px] text-muted-foreground">관리자</span>
             </ListboxItem>
           </ListboxGroup>
 

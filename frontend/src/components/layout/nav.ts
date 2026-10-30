@@ -15,8 +15,7 @@ export interface NavItem {
   to: string
   label: string
   icon: Component
-  /** FR ids the screen covers (shown in the command palette) */
-  fr?: string
+  /** extra search words for the command palette (requirement ids such as FR-02 included; never shown) */
   keywords?: string
   /** shown to admins only (the API answers 403 to everyone else anyway) */
   adminOnly?: boolean
@@ -24,10 +23,10 @@ export interface NavItem {
 
 export const NAV_ITEMS: NavItem[] = [
   { to: '/', label: '대시보드', icon: LayoutDashboardIcon, keywords: 'dashboard home 홈 현황' },
-  { to: '/postings', label: '공고·역량 사전', icon: BriefcaseBusinessIcon, fr: 'FR-02', keywords: 'posting jd competency bars 역량' },
-  { to: '/screening', label: '서류 선별', icon: FileSearchIcon, fr: 'FR-01·03', keywords: 'screening 지원자 candidate' },
-  { to: '/sessions', label: '면접', icon: MicIcon, fr: 'FR-04~08', keywords: 'interview session live 평가 evaluation' },
-  { to: '/schedule', label: '면접관 스케줄', icon: CalendarDaysIcon, fr: 'FR-09', keywords: 'schedule calendar 일정 가용' },
+  { to: '/postings', label: '공고·역량 사전', icon: BriefcaseBusinessIcon, keywords: 'posting jd competency bars 역량 FR-02' },
+  { to: '/screening', label: '서류 선별', icon: FileSearchIcon, keywords: 'screening 지원자 candidate FR-01 FR-03' },
+  { to: '/sessions', label: '면접', icon: MicIcon, keywords: 'interview session live 평가 evaluation FR-04 FR-05 FR-06 FR-07 FR-08' },
+  { to: '/schedule', label: '면접관 스케줄', icon: CalendarDaysIcon, keywords: 'schedule calendar 일정 가용 FR-09' },
   {
     to: '/question-bank',
     label: '질문 은행',
