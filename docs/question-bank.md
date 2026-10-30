@@ -1,6 +1,10 @@
 # 질문 은행과 평점 기준 예시
 
-2026-10-27 · 직군·역량별로 채용 담당자가 검수한 질문(질문 은행)과, 역량의 점수마다 수준을 보여 주는 가상 답변(평점 기준 예시). 둘 다 BGE-M3로 임베딩해 꼬리질문·채점·역량 사전 초안에 쓴다. API는 [api-contract.md](api-contract.md) "질문 은행·평점 기준 예시", 모델 선택 근거는 [model-selection.md](model-selection.md) 6장, 측정은 [embedding-benchmark.md](embedding-benchmark.md).
+> 다루는 것: 직군·역량별로 채용 담당자가 검수한 질문(질문 은행)과, 역량의 점수마다 수준을 보여 주는 가상 답변(평점 기준 예시). 어디에 쓰고 쓰지 않는지, 금지 질문 규칙, CSV 형식.
+>
+> 상태: 구현됨 · 확인: 2026-10-30
+
+둘 다 BGE-M3로 임베딩해 꼬리질문·채점·역량 사전 초안에 쓴다. API는 [api-contract.md](api-contract.md) "질문 은행·평점 기준 예시", 모델 선택 근거는 [model-selection.md](model-selection.md) 6장, 측정은 [embedding-benchmark.md](embedding-benchmark.md).
 
 ## 1. 어디에 쓰고, 어디에 쓰지 않나
 

@@ -1,6 +1,10 @@
 # BGE-M3 측정 (이 노트북)
 
-2026-10-27 · 로컬 임베딩 BGE-M3를 이 PC에서 직접 잰 값. 고른 이유는 [model-selection.md](model-selection.md) 6장, 쓰는 곳은 [question-bank.md](question-bank.md).
+> 다루는 것: 로컬 임베딩 BGE-M3를 이 노트북에서 직접 잰 속도·메모리·한국어 검색 적중률, int8 비교(권장), 꼬리질문 지연.
+>
+> 상태: 구현됨(측정 2026-10-27, int8·지연 2026-10-28) · 확인: 2026-10-30
+
+처음 측정(아래 "조건"~"실측")은 fp32다. 지금 권장은 int8이고 그 비교는 "int8 양자화". 고른 이유는 [model-selection.md](model-selection.md) 6장, 쓰는 곳은 [question-bank.md](question-bank.md).
 
 ## 조건
 

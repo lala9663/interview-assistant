@@ -1,6 +1,10 @@
 # 로컬 Whisper 측정 (faster-whisper, CPU)
 
-2026-10-26 · `scripts/bench_whisper.py`로 측정. 관리자 > 모델 설정의 `faster_whisper` provider가 실제로 쓰는 코드 경로(`providers/stt/faster_whisper.py`)를 그대로 돌렸다.
+> 다루는 것: 이 노트북(GPU 없음)에서 잰 Whisper 크기별 속도·메모리·정확도와, 실시간이 느린 이유.
+>
+> 상태: 구현됨(측정 2026-10-26) · 확인: 2026-10-30
+
+`scripts/bench_whisper.py`로 측정했다. 관리자 > 모델 설정의 `faster_whisper` provider가 실제로 쓰는 코드 경로(`providers/stt/faster_whisper.py`)를 그대로 돌렸다.
 
 ## 조건
 
@@ -46,7 +50,7 @@ Whisper(CTranslate2)는 호출할 때마다 30초 창 전체를 인코딩한다.
 - 부분 전사는 호출 비용의 두 배보다 자주 만들지 않는다. 이 CPU에서는 medium부터 사실상 확정 전사만 나온다(small은 부분 전사가 나온다).
 - 디코딩이 밀리면 그사이 끝난 발화를 한 번에 디코딩해 30초 창 비용을 나눠 낸다. 지연이 계속 쌓이지 않고 한두 번 호출 시간 안에 머문다.
 - 부분 전사를 1.5초마다 만들던 첫 구현은 medium에서 지연이 10초 → 130초로 계속 늘었다(호출 하나가 5초인데 1.5초마다 새 호출). 지금 방식으로 28.9초 클립의 확정 지연이 약 10초에서 멈춘다.
-- 측정용 소스는 디코딩하는 동안에도 말하는 속도로 큐에 쌓인다. 실제 마이크·WebRTC 입력(`AudioSource`)도 이렇게 디코딩과 따로 받아 큐에 쌓아야 한다.
+- 측정용 소스는 디코딩하는 동안에도 말하는 속도로 큐에 쌓인다. 마이크 입력(`live/microphone.py`의 `MicrophoneSource`)도 디코딩과 따로 받아 큐에 쌓는다.
 
 ## 권장
 
@@ -56,6 +60,7 @@ Whisper(CTranslate2)는 호출할 때마다 30초 창 전체를 인코딩한다.
   2. GPU가 있는 서버: faster-whisper는 CUDA에서 훨씬 빠르다(여기서는 재지 못함). 같은 provider에 device 옵션을 열고 CUDA 런타임을 깔면 된다.
   3. 외부 클라우드 스트리밍 STT(Google Chirp 등, 승인 시 대안): 진짜 스트리밍 API라 지연이 짧지만 음성 원본이 회사 밖으로 나간다.
   4. 확정 지연을 감수하고 medium을 쓴다. 꼬리질문은 답변이 끝난 뒤에 요청하므로 확정 지연만큼 늦어진다.
+- **PoC 기본값(2026-10-28)**: GPU가 없어 1번을 골랐다. 실시간 small, 정확한 기록은 STT 사후 large-v3의 면접 뒤 녹음 재전사로 남긴다. 마이크 경로로 다시 재 보니 medium은 답변 닫힘까지 11~30초라 실시간을 못 따라갔다([audio-input.md](audio-input.md) 8·9장).
 - 메모리: 두 역할을 다 Whisper로 두면(medium + large-v3) 약 5GB를 상시 쓴다. 16GB 노트북에서는 다른 작업과 함께 여유가 크지 않다.
 
 역할별 선택 기준과 회사 확인 항목은 [모델 선택 메모](model-selection.md).

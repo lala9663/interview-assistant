@@ -1,6 +1,10 @@
 # 로컬 OCR 측정 (PaddleOCR, Tesseract, CPU)
 
-2026-10-26 · `scripts/bench_ocr.py`로 측정. 관리자 > 모델 설정의 OCR provider(`providers/ocr/`)를 서류 읽기 경로(`DocumentReader`, 자동 방식) 그대로 돌렸다. 쪽 그림 만들기, 증명사진 판정, 비슷한 글자 고치기까지 포함한 시간이다. 규칙은 [document-reading.md](document-reading.md).
+> 다루는 것: 이 노트북(GPU 없음)에서 잰 PaddleOCR·Tesseract의 쪽당 속도·메모리·한국어 정확도.
+>
+> 상태: 구현됨(측정 2026-10-26) · 확인: 2026-10-30
+
+`scripts/bench_ocr.py`로 측정했다. 관리자 > 모델 설정의 OCR provider(`providers/ocr/`)를 서류 읽기 경로(`DocumentReader`, 자동 방식) 그대로 돌렸다. 쪽 그림 만들기, 증명사진 판정, 비슷한 글자 고치기까지 포함한 시간이다. 규칙은 [document-reading.md](document-reading.md).
 
 ## 조건
 
