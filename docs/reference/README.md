@@ -1,6 +1,10 @@
 # 참고 자료
 
-2026-10-27 · 모델·라이브러리를 고르거나 음성 입력을 붙일 때 다시 찾게 되는 비교와 배경 지식을 모은 폴더다. 여기 있는 것은 "무엇이 있고 각각 어떤가"이고, "우리는 무엇으로 정했나"와 "이 PC에서 재 보니 얼마였나"는 기존 문서에 있다.
+> 다루는 것: 모델·라이브러리를 고르거나 음성 입력을 손볼 때 다시 찾는 비교와 배경 지식 폴더의 안내.
+>
+> 상태: 구현됨 · 작성 2026-10-27 · 확인: 2026-10-30
+
+모델·라이브러리를 고르거나 음성 입력을 붙일 때 다시 찾게 되는 비교와 배경 지식을 모은 폴더다. 여기 있는 것은 "무엇이 있고 각각 어떤가"이고, "우리는 무엇으로 정했나"와 "이 PC에서 재 보니 얼마였나"는 기존 문서에 있다.
 
 | 문서 | 답하는 질문 |
 | --- | --- |
@@ -16,6 +20,7 @@
 | 종류 | 문서 | 여기와의 관계 |
 | --- | --- | --- |
 | 결정 메모 | [model-selection.md](../model-selection.md) | 역할별 기준, 실시간 STT 선택지, 면접 방식별 오디오, BGE-M3 결정. 여기는 그 결정의 배경 비교다. 결정이 바뀌면 그쪽을 고친다 |
+| 마이크 경로 | [audio-input.md](../audio-input.md) | 실제로 구현한 마이크 입력, 답변 끝 판정 비교·기본값, 이 노트북 측정. [audio-quality.md](audio-quality.md)는 그 배경이다 |
 | 측정값 | [whisper-benchmark.md](../whisper-benchmark.md), [ocr-benchmark.md](../ocr-benchmark.md), [embedding-benchmark.md](../embedding-benchmark.md) | 이 노트북에서 잰 숫자의 원본. 여기서는 인용만 하고 출처를 적는다 |
 | 사용법 | [ai-models.md](../ai-models.md), [document-reading.md](../document-reading.md), [question-bank.md](../question-bank.md) | 관리자 화면, 설치, 규칙. 여기서는 다시 쓰지 않고 링크한다 |
 | 보안 | [deidentification.md](../deidentification.md), [site-intake-spec.md](../site-intake-spec.md) | 비식별화와 연동 규칙. 외부 서비스 비교에서 "무엇이 회사 밖으로 나가나"는 이 원칙에 비추어 적었다 |

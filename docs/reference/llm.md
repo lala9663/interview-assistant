@@ -1,12 +1,17 @@
 # LLM 비교: 사내에서 돌릴 오픈 웨이트 모델
 
-2026-10-28 · 한국어 면접 작업(꼬리질문, 서류 선별, 답변 채점, 역량 사전 초안)에 쓸 오픈 웨이트 모델을 비교한다. 앱은 사내에 설치한 모델 서버(vLLM·Ollama·SGLang)의 OpenAI 형식 API에 `open_model_server` provider로 붙는다. 설정법은 [ai-models.md](../ai-models.md), 역할별 기준은 [model-selection.md](../model-selection.md).
+> 다루는 것: 한국어 면접 작업에 쓸 오픈 웨이트 LLM의 라이선스, 출처 국가, GPU 메모리, 한국어 근거, 작업별 권장, 사내에서 재는 법.
+>
+> 상태: 계획(사내 모델 미정, 실제 모델로 잰 값 없음) · 공개 자료 확인 2026-10-28 · 확인: 2026-10-30
+
+한국어 면접 작업(꼬리질문, 서류 선별, 답변 채점, 역량 사전 초안)에 쓸 오픈 웨이트 모델을 비교한다. 앱은 사내에 설치한 모델 서버(vLLM·Ollama·SGLang)의 OpenAI 형식 API에 `open_model_server` provider로 붙는다. 설정법은 [ai-models.md](../ai-models.md), 역할별 기준은 [model-selection.md](../model-selection.md).
 
 전제(2026-10-28 사용자 확인):
 
 - OpenAI 서비스는 쓸 수 없다. GCP(Vertex AI의 Claude 포함)도 쓰지 않는다.
-- 오픈소스 모델은 쓸 수 있을 것이다.
+- 오픈소스 모델은 쓸 수 있을 것이다. 사내에서 줄 모델은 Gemma 4로 예상한다(크기·양자화·서빙 도구는 확인 필요, [internal-environment-checklist.md](../internal-environment-checklist.md) 1장). Gemma 4로 정해지면 이 문서는 크기를 고를 때와, 다른 모델을 고를 수 있을 때의 참고다.
 - 실행 위치와 GPU 유무는 아직 모른다.
+- 외부 개발 환경에서는 Claude API(`anthropic_api`)로 가상 데이터만 시험할 수 있다. 사내 반입 대상이 아니다([ai-models.md](../ai-models.md)).
 
 이 문서의 숫자는 모두 공개 자료다. 이 저장소에서 실제 모델로 잰 값은 아직 없다(실제 모델 미확인). 결정은 4장의 방법으로 사내 GPU에서 다시 재서 한다.
 

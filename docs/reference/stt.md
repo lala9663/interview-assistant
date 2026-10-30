@@ -1,6 +1,10 @@
 # STT 비교
 
-2026-10-27 · 한국어 면접 전사에 쓸 수 있는 STT 선택지. 역할별 기준과 PoC 조합은 [model-selection.md](../model-selection.md) 1·3·5장, 이 PC에서 잰 Whisper 값은 [whisper-benchmark.md](../whisper-benchmark.md), 앞단(마이크·VAD·답변 끝)은 [audio-quality.md](audio-quality.md).
+> 다루는 것: 한국어 면접 전사에 쓸 수 있는 STT 선택지의 정확도·지연·데이터 위치·가격.
+>
+> 상태: 결정됨(PoC는 로컬 Whisper, [model-selection.md](../model-selection.md) 7장) · 가격·약관 확인 2026-10-27 · 확인: 2026-10-30
+
+한국어 면접 전사에 쓸 수 있는 STT 선택지다. 역할별 기준과 PoC 조합은 [model-selection.md](../model-selection.md) 1·3·5장, 이 PC에서 잰 Whisper 값은 [whisper-benchmark.md](../whisper-benchmark.md), 앞단(마이크·VAD·답변 끝)은 [audio-quality.md](audio-quality.md).
 
 ## 1. 무엇을 보나
 
@@ -155,7 +159,7 @@
 | STT 사후 | **로컬 Whisper large-v3** (지금 설정 가능). 외부 클라우드가 승인되면 그 배치 STT(Chirp 3 등)와 같은 녹음으로 비교 | 이 PC 샘플 CER 0%, 무료, 음성이 회사 밖으로 나가지 않는다. 1시간 녹음에 약 1시간 10분이라 배치로 충분하다. 빨리 받아야 하면 turbo |
 | STT 실시간, GPU 서버가 있을 때 | **로컬 Whisper medium·turbo를 GPU로** | 보안상 가장 좋다. GPU 속도는 재야 한다. 스트리밍 흉내 방식이라 0.5초 부분 전사는 장담 못 한다 |
 | STT 실시간, 승인된 외부 클라우드가 있을 때 | **그 클라우드의 스트리밍 STT**. Google이면 Chirp 3, Azure 계약이 있으면 Azure(한국 리전·컨테이너 선택지) | 진짜 스트리밍이다. Chirp 3는 us·eu 처리라 리전 요건부터 확인한다 |
-| STT 실시간, 둘 다 없을 때 | 로컬 Whisper medium on CPU, 확정까지 8초 이상 감수 | small은 한국어 오류가 커서(13%) 꼬리질문 품질을 망친다 |
+| STT 실시간, 둘 다 없을 때 (지금 PoC 기본) | **로컬 Whisper small(빔 1) + STT 사후 large-v3로 면접 뒤 녹음 재전사** (2026-10-28) | medium은 마이크 경로에서 답변 닫힘까지 11~30초라 실시간을 따라가지 못했다([audio-input.md](../audio-input.md) 9장). small은 오류가 많아(13%) 실시간 전사와 꼬리질문이 덜 정확하고, 정확한 기록은 재전사로 남긴다 |
 | 국내 업체 | 리턴제로 구축형은 회사 서버에 둘 수 있으면 비교 후보. CLOVA·리턴제로 클라우드는 보안 승인 뒤 | 한국어 특화. 공개 한국어 정확도 수치가 없어 같은 녹음으로 재야 한다 |
 | 피할 것 | AWS는 계정에 AI 서비스 거부 정책이 없으면 쓰지 않는다. OpenAI는 실시간 처리가 해외뿐이고 모델 종료가 예정되어 PoC 후보에서 뺀다 | 학습 사용 기본값, 데이터 거주 |
 

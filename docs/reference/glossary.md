@@ -1,6 +1,10 @@
 # 용어집
 
-2026-10-27 · 이 프로젝트의 코드와 문서에서 실제로 쓰는 표기를 모았다. 위치는 대표 하나만 적는다(코드 경로는 `src/interview_assistant/` 기준). 같은 뜻에 표기가 둘이면 문서에서 더 많이 쓰는 쪽을 앞에 둔다.
+> 다루는 것: 이 프로젝트의 코드와 문서에서 실제로 쓰는 용어의 뜻과 위치.
+>
+> 상태: 구현됨 · 작성 2026-10-27 · 확인: 2026-10-30
+
+이 프로젝트의 코드와 문서에서 실제로 쓰는 표기를 모았다. 위치는 대표 하나만 적는다(코드 경로는 `src/interview_assistant/` 기준). 같은 뜻에 표기가 둘이면 문서에서 더 많이 쓰는 쪽을 앞에 둔다.
 
 ## 채용·평가
 
@@ -20,7 +24,7 @@
 | 이전 차수 점수 공개 | show previous scores | N차 화면에 이전 차수 점수를 보일지. 기본 꺼짐(기준점 효과를 피하려고) | `interview_rounds.show_previous_scores` |
 | 서류 선별 | screening | 비식별 서류로 프로필을 만들고 JD·역량 기준 적합도와 근거를 낸다. 통과·탈락은 사람이 정한다 | `ai/screening.py`, `screenings` |
 | 가명 | pseudonym | 화면에 보이는 지원자 이름 대신 쓰는 번호(CAND-0021 …) | `candidates.pseudonym` |
-| FR-01~09 | functional requirement | 업무정의서의 요구사항 번호 | [README.md](../../README.md) "기능" |
+| FR-01~09 | functional requirement | 업무정의서의 요구사항 번호 | [README.md](../../README.md) "9개 요구사항과 상태" |
 
 ## 비식별화·보안
 
@@ -44,8 +48,8 @@
 
 | 용어 | 영어 | 뜻 | 위치 |
 | --- | --- | --- | --- |
-| provider | provider | LLM·STT·임베딩·화자분리·OCR의 구현 하나. 인터페이스 뒤에 두고 관리자 화면에서 바꿔 낀다 | `providers/base.py`, `providers/registry.py` |
-| 역할 | role | provider를 쓰는 자리: `llm.primary`, `llm.screening`, `stt.streaming`(실시간), `stt.batch`(사후), `embedding`, `diarization`, 그리고 서류 읽기 다섯 | `providers/catalog.py`, [ai-models.md](../ai-models.md) |
+| provider | provider | LLM·STT·임베딩·화자분리·OCR·VAD·답변 끝 판정의 구현 하나. 인터페이스 뒤에 두고 관리자 화면에서 바꿔 낀다 | `providers/base.py`, `providers/registry.py` |
+| 역할 | role | provider를 쓰는 자리: `llm.primary`, `llm.screening`, `stt.streaming`(실시간), `stt.batch`(사후), `embedding`, `diarization`, 서류 읽기 다섯(`document.*`), 음성 입력 셋(`audio.vad`, `audio.turn`, `audio.denoise`). 모두 14개 | `providers/catalog.py`, [ai-models.md](../ai-models.md) |
 | 카탈로그 | catalog | 관리자 화면이 고르는 목록: 역할, 데이터 위치, 옵션, 요구 조건(네트워크 없이 확인) | `providers/catalog.py` |
 | fake provider | fake provider | 자격증명 없이 도는 구현. 흐름과 화면 확인용이고 내용의 품질은 없다 | `providers/fake.py`, `config/providers.fake.yaml` |
 | revision 고정 | pinning | 모델 설정을 바꿀 때마다 전역 revision이 오른다. 면접 세션은 시작할 때의 revision(`ai_config_revision`)에 고정되어 실시간 전사·꼬리질문·채점까지 그 provider로 끝난다. 서류 처리도 시작할 때의 스냅샷 하나로 끝난다 | `ai_models/manager.py`, `runtime.py`의 `pinned` |
@@ -76,10 +80,10 @@
 | 실시간 대비 | RTFx | 이 저장소의 정의는 음성 길이 ÷ 처리 시간(1보다 크면 말보다 빠름). Open ASR Leaderboard의 RTFx와 같고, 흔히 쓰는 RTF(처리 시간 ÷ 음성 길이)와는 방향이 반대다 | [whisper-benchmark.md](../whisper-benchmark.md) |
 | 30초 창 | 30-second window | Whisper 인코더가 호출마다 30초를 통째로 인코딩하는 것. 짧은 발화도 비용이 같아 CPU 실시간이 느린 이유 | `providers/stt/faster_whisper.py` |
 | 16kHz 모노 PCM16 | `PCM16_16K` | STT에 넣는 오디오 형식(16비트, 초당 16,000샘플, 한 채널) | `providers/base.py` |
-| 오디오 소스 | `AudioSource` | 마이크·WebRTC 트랙을 16kHz PCM으로 내는 입력. 지금은 대본을 읽는 가상 지원자뿐 | `live/audio.py` |
-| VAD | voice activity detection | 소리 중 사람 말이 있는 구간을 찾는 것. faster-whisper에 든 Silero VAD를 쓴다 | `vad_min_silence_ms` 옵션 |
+| 오디오 소스 | `AudioSource` | 전사 허브에 소리를 넣는 입력. 대본을 읽는 가상 지원자(`live/audio.py`)와 브라우저 마이크(`MicrophoneSource`, 16kHz PCM). WebRTC 트랙은 아직 없다 | `live/audio.py`, `live/microphone.py` |
+| VAD | voice activity detection | 소리 중 사람 말이 있는 구간을 찾는 것. faster-whisper에 든 Silero VAD를 쓴다. 마이크 경로는 VAD로 말소리만 STT에 넣는다 | `audio.vad` 역할, Whisper의 `vad_min_silence_ms` 옵션 |
 | 발화 끝 | end of utterance | VAD가 일정 시간(기본 500ms) 침묵을 보면 그 발화를 끝으로 보고 확정 전사를 낸다 | 같은 옵션 |
-| 답변 끝 판단, 답변 닫힘 | end-of-turn detection | 지원자가 답변을 다 했다고 보고 그 Q&A의 답변을 닫는 것(`qa.answered`). 닫히면 꼬리질문을 요청한다. 발화 끝보다 길게 기다린다(약 2초 예상, 미정) | [api-contract.md](../api-contract.md) 3.1, [audio-quality.md](audio-quality.md) |
+| 답변 끝 판단, 답변 닫힘 | end-of-turn detection | 지원자가 답변을 다 했다고 보고 그 Q&A의 답변을 닫는 것(`qa.answered`). 닫히면 꼬리질문을 요청한다. 기본은 Smart Turn v3(말이 1초 멈추면 판정, 기준 0.8, 모델 파일이 없으면 침묵 2초) | `audio.turn` 역할, [audio-input.md](../audio-input.md) 5장 |
 | 기술 용어 힌트 | initial prompt, phrase hint | 자주 나오는 용어를 STT에 미리 알려 그 표기로 받아 적게 하는 것 | `initial_prompt` 옵션 |
 | AEC / NS / AGC | acoustic echo cancellation / noise suppression / automatic gain control | 에코 제거, 잡음 억제, 자동 음량. 브라우저 마이크 옵션으로 켠다 | [audio-quality.md](audio-quality.md) |
 | 화자분리 | speaker diarization | 녹음에서 "누가 언제 말했나"를 화자1·화자2로 나누는 것. 그 화자가 누구인지는 따로 잇는다 | `diarization` 역할, [diarization.md](diarization.md) |
@@ -110,9 +114,9 @@
 | 멱등 | idempotency | 같은 이벤트를 여러 번 받아도 한 번만 반영. `event_id`와 내용 지문으로 본다 | `intake/events.py`, `intake_events`, 명세 5장 |
 | 받지 않는 항목 | forbidden items | 가족·신체·출신지·혼인 등 받으면 안 되는 칸. 오면 422로 거절 | 명세 6장 |
 | 대조 | reconcile | 놓친 이벤트를 사이트와 맞춰 보는 절차. 명세만 있고 구현 안 함 | 명세 9.2 |
-| SSE | server-sent events | 서버 → 브라우저 한 방향 스트림. 실시간 전사와 꼬리질문에 쓴다(WebSocket 안 씀) | [api-contract.md](../api-contract.md) 3장, `frontend/src/api/sse.ts` |
+| SSE | server-sent events | 서버 → 브라우저 한 방향 스트림. 실시간 전사와 꼬리질문에 쓴다. WebSocket은 마이크 음성을 올리는 데만 쓴다 | [api-contract.md](../api-contract.md) 3장, `frontend/src/api/sse.ts` |
 | 모의 API | mock API (MSW) | 백엔드 없이 브라우저가 `/api`에 답하는 모드(`npm run dev`). `npm run dev:api`는 실제 백엔드 | `frontend/src/mocks/`, [frontend.md](../frontend.md) |
-| extra | optional dependencies | `uv sync --extra whisper --extra ocr --extra embedding`. extra 없이 `uv sync`를 돌리면 이 패키지들이 지워진다 | `pyproject.toml` |
+| extra | optional dependencies | `uv sync --extra whisper --extra ocr --extra embedding --extra agent`. extra 없이 `uv sync`를 돌리면 이 패키지들이 지워진다 | `pyproject.toml`, [setup.md](../setup.md) |
 | 시드 | seed | 데모 데이터를 DB에 넣는 것 | `scripts/seed_demo.py` |
 | N단계 | step N | 구현 순서의 0~12단계(10 STT 배치, 11 비대면 실시간, 12 평가셋·게이트 1) | [implementation-order.md](../implementation-order.md) |
 | 게이트 1 | gate 1 | 12단계의 통과 기준 4개: 면접관 점수 일치도, 비식별 누출률, 1건당 비용, 모델 교체 검증 | 같은 문서 |

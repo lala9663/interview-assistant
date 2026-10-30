@@ -1,6 +1,10 @@
 # 음성 품질
 
-2026-10-27 · 전사 품질은 STT 모델보다 그 앞(마이크, 에코, 잡음, 말 구간 자르기)에서 많이 갈린다. 이 문서는 마이크·WebRTC 입력(11단계)을 붙일 때 정할 것과 그 근거를 모은다. 모델 비교는 [stt.md](stt.md), 화자 나누기는 [diarization.md](diarization.md), 이 PC에서 잰 Whisper 값은 [whisper-benchmark.md](../whisper-benchmark.md).
+> 다루는 것: 전사 품질을 마이크부터 좌우하는 것(입력 형식, 에코, 잡음, 말 구간 자르기, 답변 끝 판단, 환각)과 품질을 재는 법.
+>
+> 상태: 구현됨(마이크 경로, [audio-input.md](../audio-input.md)), 일부 계획(WebRTC, 잡음 억제 측정) · 작성 2026-10-27 · 확인: 2026-10-30
+
+전사 품질은 STT 모델보다 그 앞(마이크, 에코, 잡음, 말 구간 자르기)에서 많이 갈린다. 이 문서는 마이크 입력의 설정과 그 근거를 모은다. 실제로 구현한 경로와 기본값은 [audio-input.md](../audio-input.md)에 있고, 비대면 WebRTC 입력(11단계)은 아직이다. 모델 비교는 [stt.md](stt.md), 화자 나누기는 [diarization.md](diarization.md), 이 PC에서 잰 Whisper 값은 [whisper-benchmark.md](../whisper-benchmark.md).
 
 ## 1. 지금 상태
 

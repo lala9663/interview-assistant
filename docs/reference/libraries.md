@@ -1,6 +1,10 @@
 # 라이브러리·모델·클라우드 서비스
 
-2026-10-27 · 이 프로젝트가 쓰거나 검토한 것 전부(2026-10-28 GCP 전제 철회 반영). 고른 이유는 [model-selection.md](../model-selection.md), 측정은 `*-benchmark.md`, 사용법은 [ai-models.md](../ai-models.md).
+> 다루는 것: 이 프로젝트가 쓰거나 검토한 라이브러리·모델·클라우드 서비스의 라이선스, 비용, 데이터 위치, 상태.
+>
+> 상태: 구현됨(쓰는 것의 목록) · 버전과 상태 확인: 2026-10-30 · 가격·라이선스 출처 확인: 2026-10-27
+
+2026-10-28 GCP 전제 철회를 반영했다. 고른 이유는 [model-selection.md](../model-selection.md), 측정은 `*-benchmark.md`, 사용법은 [ai-models.md](../ai-models.md).
 
 읽는 법:
 
@@ -19,15 +23,16 @@
 | FastAPI, Starlette | 0.156.4, 1.9.0 | REST·SSE API | MIT, BSD-3-Clause | 사용 중 |
 | Uvicorn | 0.54.0 | ASGI 서버 | BSD-3-Clause | 사용 중 |
 | Pydantic, pydantic-settings | 2.14.1, 2.16.1 | 스키마, 환경변수 설정 | MIT | 사용 중 |
-| SQLAlchemy, Alembic | 2.1.5, 1.20.0 | ORM, 마이그레이션(0001~0007) | MIT | 사용 중 |
+| SQLAlchemy, Alembic | 2.1.5, 1.20.0 | ORM, 마이그레이션 | MIT | 사용 중 |
 | cryptography | 50.0.2 | 컬럼 암호화(Fernet) | Apache-2.0 또는 BSD-3-Clause | 사용 중 |
 | PyYAML | 6.0.2 | 설정 파일 | MIT | 사용 중 |
 | python-multipart | 0.0.32 | 업로드·사이트 첨부 multipart | Apache-2.0 | 사용 중 |
 | NumPy | 2.3.5 | 메모리 벡터 검색 | BSD-3-Clause | 사용 중 |
-| anthropic (`gcp` extra) | 설치 안 됨 (PyPI 최신 2.3.0) | Vertex AI의 Claude 호출 | Apache-2.0 (PyPI) | 쓰지 않음 (2026-10-28 GCP 철회. 외부 클라우드 승인 시 대안) |
+| anthropic (`claude` extra) | 1.13.0 | Claude API 직접 호출(`anthropic_api`, 외부 개발 테스트용) | MIT | 외부 개발 환경에서만 사용. 사내 반입 대상 아님. `gcp` extra의 `anthropic[vertex]`(Vertex AI의 Claude)는 쓰지 않음 (2026-10-28 GCP 철회) |
+| mcp (`agent` extra) | 2.3.0 | MCP 서버 (사내 에이전트 플랫폼용, [agent-integration.md](../agent-integration.md)) | MIT | 사용 중 |
 | google-cloud-speech (`gcp` extra) | 설치 안 됨 (PyPI 최신 2.41.0) | Speech-to-Text v2 | Apache-2.0 (PyPI) | 외부 클라우드 대안 (승인 시, 10·11단계) |
 | pytest, pytest-asyncio | 9.1.1, 1.4.0 | 테스트 (dev) | MIT, Apache-2.0 | 사용 중 |
-| httpx, httpx2 | 0.28.1, 2.16.0 | 테스트 클라이언트 (dev) | BSD-3-Clause | 사용 중 |
+| httpx2, httpx | 2.16.0, 0.28.1 | 사내 모델 서버 호출(httpx2, `open_model_server`), 테스트 클라이언트 | BSD-3-Clause | 사용 중 |
 | reportlab, Pillow | 5.0.1, 13.0.0 | 가상 이력서 만들기 (dev), 그림 처리 | BSD, MIT-CMU | 사용 중 |
 
 ## 2. 프론트엔드
@@ -120,10 +125,10 @@ STT 서비스별 비교는 [stt.md](stt.md), 화자분리 모델은 [diarization
 | NVIDIA NeMo + Streaming Sortformer v2 / Nemotron-3-Diarization | GPU 실시간 화자분리 | Apache-2.0 / CC-BY-4.0, OpenMDW-1.1 | 무료 | 가능 | 로컬 (GPU) | 검토만. GPU 서버가 생기면 |
 | NVIDIA Sortformer v1, DiariZen | 화자분리 | Apache-2.0·MIT / CC BY-NC 4.0 | 무료 | **불가** | 로컬 | 쓰지 않음. 가중치가 비상업 전용 |
 | WhisperX | 전사 + 단어 시각 + 화자분리 묶음 | BSD-2-Clause / pyannote 약관 | 무료 | 가능 | 로컬 | 검토만 |
-| Pipecat Smart Turn v3.2 | 소리로 답변 끝 판단 | BSD-2-Clause / 같음 (8MB) | 무료 | 가능 | 로컬 | 후보 (마이크 입력 때 시험) |
+| Pipecat Smart Turn v3.2 | 소리로 답변 끝 판단 | BSD-2-Clause / 같음 (8.7MB) | 무료 | 가능 | 로컬 | 사용 중 (`smart_turn`, 답변 끝 판정 기본, 2026-10-28) |
 | LiveKit turn detector | 텍스트로 답변 끝 판단 | LiveKit Model License | 무료 | LiveKit Agents 안에서만 | 로컬 | **쓰지 않음**. 라이선스가 LiveKit Agents 밖 사용을 막는다 |
 | LiveKit 서버, client-sdk-js, Agents | 비대면 WebRTC 통화 | Apache-2.0 | 무료 (자체 운영) | 가능 | 로컬 (자체 서버) | 후보 (11단계) |
-| 브라우저 AEC·NS·AGC (WebRTC 오디오 처리) | 에코 제거, 잡음 억제, 자동 음량 | 브라우저 내장 | 무료 | 가능 | 로컬 (브라우저) | 후보 (11단계) |
+| 브라우저 AEC·NS·AGC (WebRTC 오디오 처리) | 에코 제거, 잡음 억제, 자동 음량 | 브라우저 내장 | 무료 | 가능 | 로컬 (브라우저) | 사용 중 (AEC 켬, NS·AGC 끔이 기본, [audio-input.md](../audio-input.md) 2장) |
 | RNNoise | 서버 잡음 억제 | BSD-3-Clause | 무료 | 가능 | 로컬 | 후보, 기본 끔 |
 | DeepFilterNet | 서버 잡음 억제 | MIT 또는 Apache-2.0 | 무료 | 가능 | 로컬 | 후보, 기본 끔 |
 
