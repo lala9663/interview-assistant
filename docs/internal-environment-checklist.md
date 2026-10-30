@@ -1,6 +1,10 @@
 # 사내 환경 확인 체크리스트
 
-2026-10-28 · 원본: [Claude Doc](https://claude.ai/artifact/6Q9Kf1kRcjAUgCa7phVCso) (답은 원본이나 인쇄본에 채우고, 바뀌면 이 사본도 고친다)
+> 다루는 것: 첫 반입 전에 사내에서 손으로 채워 오는 양식. 사내 LLM, 서버 OS·Python, 컨테이너·GPU, DB, 네트워크·미러, 사용자 PC, 인증·연동, 반입·반출 규정.
+>
+> 상태: 계획(빈 양식, 아직 채우지 않음) · 작성 2026-10-28 · 확인: 2026-10-30
+
+원본은 저장소 밖 [Claude Doc](https://claude.ai/artifact/6Q9Kf1kRcjAUgCa7phVCso)이고 사내에서는 열리지 않는다. 사내에서는 이 사본을 인쇄해 답을 채운다. 양식이 바뀌면 이 사본도 고친다.
 
 ## 쓰는 법
 
@@ -46,7 +50,7 @@
 | 1 | 개발자가 패키지를 직접 설치할 권한이 있는가 (관리자 권한, 신청 절차) | 설치 방식을 정한다 | |
 | 2 | uv를 쓸 수 있는가 (안 되면 pip) | 설치 안내서를 그에 맞춘다 | |
 | 2 | 서버 메모리와 CPU 코어 수 | Whisper·BGE-M3·OCR을 한 서버에서 돌릴 수 있는가 (이 노트북 16GB에서는 돌아감) | |
-| 2 | 디스크 여유 공간 | 모델 파일만 수십 GB(Whisper large-v3 약 3GB, BGE-M3 약 2GB, LLM은 그 이상) | |
+| 2 | 디스크 여유 공간 | 모델 파일만 수 GB(Whisper large-v3 약 3GB, small 0.5GB, BGE-M3 int8 0.6GB, OCR 모델 0.1GB)에 LLM은 수십 GB | |
 | 3 | 서버 시간대·로케일 (한글 Windows면 CP949) | 파일명·로그의 한글 깨짐 | |
 | 3 | LibreOffice·Tesseract 같은 프로그램을 설치할 수 있는가 | 구형 .doc/.ppt 변환에 LibreOffice가 필요 | |
 
