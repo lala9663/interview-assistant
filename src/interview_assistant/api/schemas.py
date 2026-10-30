@@ -1047,6 +1047,18 @@ class CreateAvailabilityRequest(BaseModel):
     end_at: AwareDatetime
 
 
+class UpdateAvailabilityRequest(BaseModel):
+    start_at: AwareDatetime | None = None
+    end_at: AwareDatetime | None = None
+
+
+class ClearAvailabilityRequest(BaseModel):
+    """The part of a block to take out; what is left stays (one or two blocks)."""
+
+    start_at: AwareDatetime
+    end_at: AwareDatetime
+
+
 class ScheduleSuggestionRequest(BaseModel):
     model_config = ConfigDict(populate_by_name=True)
 

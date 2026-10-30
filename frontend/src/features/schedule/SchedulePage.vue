@@ -11,12 +11,13 @@ import PageHeader from '@/components/common/PageHeader.vue'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent } from '@/components/ui/card'
 import { Checkbox } from '@/components/ui/checkbox'
+import { Kbd } from '@/components/ui/kbd'
 import { Label } from '@/components/ui/label'
 import { Segmented, SegmentedItem } from '@/components/ui/segmented'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Skeleton } from '@/components/ui/skeleton'
 import { Switch } from '@/components/ui/switch'
-import { addDays, addMinutes, formatDate, formatDuration, formatTime, startOfKstWeek } from '@/lib/time'
+import { addDays, formatDate, formatDuration, formatTime, startOfKstWeek } from '@/lib/time'
 import { toastError } from '@/lib/toast'
 import { cn } from '@/lib/utils'
 
@@ -34,7 +35,7 @@ const minSel = ref<number | null>(null)
 const highlight = ref<ScheduleSuggestion | null>(null)
 const booking = ref<ScheduleSuggestion | null>(null)
 const editMine = ref(false)
-const { create, remove } = useAvailabilityMutations()
+const { create, update, clear, remove } = useAvailabilityMutations()
 
 const weekStart = computed(() => addDays(startOfKstWeek(new Date()), weekOffset.value * 7))
 const from = computed(() => weekStart.value.toISOString())
@@ -74,14 +75,19 @@ function onFamily(v: unknown) {
   picked.value = null
   highlight.value = null
 }
-function onCellClick(start: Date) {
+// Each edit shows at once (the server's merge rule applied in the cache) and is undone if refused.
+function onCreate(start: Date, end: Date) {
   if (!me.data) return
   create.mutate(
-    { interviewer_id: me.data.id, start_at: start.toISOString(), end_at: addMinutes(start, 60).toISOString() },
+    { interviewer_id: me.data.id, start_at: start.toISOString(), end_at: end.toISOString() },
     { onError: toastError('가용 시간을 추가하지 못했습니다') },
   )
 }
-const onBlockClick = (a: Availability) => remove.mutate(a.id)
+const onUpdate = (a: Availability, start: Date, end: Date) =>
+  update.mutate({ id: a.id, start_at: start.toISOString(), end_at: end.toISOString() }, { onError: toastError('가용 시간을 바꾸지 못했습니다') })
+const onClear = (a: Availability, start: Date, end: Date) =>
+  clear.mutate({ id: a.id, start_at: start.toISOString(), end_at: end.toISOString() }, { onError: toastError('가용 시간을 비우지 못했습니다') })
+const onRemove = (a: Availability) => remove.mutate(a.id, { onError: toastError('가용 시간을 삭제하지 못했습니다') })
 </script>
 
 <template>
@@ -201,9 +207,15 @@ const onBlockClick = (a: Availability) => remove.mutate(a.id)
             </div>
           </div>
         </div>
-        <p v-if="editMine" class="flex items-center gap-1.5 border-b bg-subtle px-4 py-2 text-xs text-muted-foreground">
-          <MousePointerClickIcon class="size-3.5" aria-hidden="true" />빈 칸을 누르면 1시간이 추가되고, 내 블록을 누르면 삭제됩니다. 캘린더 연동은 Phase 2입니다.
-        </p>
+        <div v-if="editMine" class="flex gap-1.5 border-b bg-subtle px-4 py-2 text-xs leading-relaxed text-muted-foreground">
+          <MousePointerClickIcon class="mt-0.5 size-3.5 shrink-0" aria-hidden="true" />
+          <p>
+            빈 칸을 누르면 1시간, 끌면 끈 만큼 추가됩니다. 내 블록은 위아래 끝을 끌어 30분씩 늘이거나 줄이고, 가운데를 끌어 옮기며, 누르면 30분 비우기·삭제
+            메뉴가 열립니다. 닿거나 겹치는 내 블록은 하나로 합쳐집니다.
+            <span class="hidden sm:inline">키보드: 블록에서 <Kbd>↑</Kbd><Kbd>↓</Kbd> 옮기기, <Kbd>Shift</Kbd>+<Kbd>↑</Kbd><Kbd>↓</Kbd> 길이, <Kbd>Delete</Kbd> 삭제.</span>
+            캘린더 연동은 Phase 2입니다.
+          </p>
+        </div>
         <div class="p-3">
           <ErrorState v-if="avail.isError" :error="avail.error" @retry="avail.refetch()" />
           <Skeleton v-else-if="!avail.data || !interviewers.data" class="h-[620px]" />
@@ -216,8 +228,10 @@ const onBlockClick = (a: Availability) => remove.mutate(a.id)
             :min-count="minCount"
             :highlight="highlight"
             :edit-for="editMine ? (me.data?.id ?? null) : null"
-            @cell-click="onCellClick"
-            @block-click="onBlockClick"
+            @create="onCreate"
+            @update="onUpdate"
+            @clear="onClear"
+            @remove="onRemove"
           />
         </div>
       </Card>

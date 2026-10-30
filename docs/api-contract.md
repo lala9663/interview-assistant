@@ -219,9 +219,13 @@
 | --- | --- | --- | --- | --- |
 | GET | `/api/interviewers` | | `Interviewer[]` | 후순위 |
 | GET | `/api/availabilities?from=&to=` | | `Availability[]` 구간과 겹치는 것 | 후순위 |
-| POST | `/api/availabilities` | `{interviewer_id, start_at, end_at}` | 201 `Availability` (source manual). end ≤ start면 422 | 후순위 |
+| POST | `/api/availabilities` | `{interviewer_id, start_at, end_at}` | 201 `Availability` (source manual). 같은 면접관의 닿거나 겹치는 블록을 합친 결과(합쳐진 블록은 지움). end ≤ start면 422 | 후순위 |
+| PATCH | `/api/availabilities/{id}` | `{start_at?, end_at?}` | `Availability` 늘이기·줄이기·옮기기. 닿거나 겹치게 된 같은 면접관의 블록을 합치고 id는 그대로. end ≤ start면 422 | 후순위 |
+| POST | `/api/availabilities/{id}/clear` | `{start_at, end_at}` | `Availability[]` 블록에서 그 구간을 뺀 나머지(0~2개, 앞 조각이 id 유지). 블록과 안 겹치면 그대로 | 후순위 |
 | DELETE | `/api/availabilities/{id}` | | 204 | 후순위 |
 | POST | `/api/schedule/suggestions` | `{interviewer_ids, from, to, duration_minutes, min_interviewers?}` | `ScheduleSuggestion[]` {start_at, end_at, interviewer_ids} 최대 8개, 이른 순 | 후순위 |
+
+가용 시간 블록: 한 면접관의 블록은 서로 닿거나 겹치지 않는다. 만들거나(POST) 고칠 때(PATCH) 그 블록에 닿거나 겹치는 같은 면접관의 블록을 하나로 합치고(`schedule.py` `absorb`, 프론트 `lib/schedule.ts` `absorbInto`와 같은 규칙), 이전에 쌓인 겹친 행은 마이그레이션 0010이 합쳤다. 다른 면접관의 블록과는 합치지 않는다. 감사 로그: `availability.created`(합쳤으면 `merged`: 지운 id들, 잘라 낸 뒷조각이면 `split_from`), `availability.updated`(`from`·`to` 구간, `merged`, 부분 삭제면 `cleared`), `availability.deleted`(부분 삭제로 다 지워졌으면 `cleared`). 활동 피드에는 나오지 않는다.
 
 후보 계산: 선택한 면접관 중 `min_interviewers`명 이상이 동시에 비는 구간을 구하고, 30분 단위로 맞춘 `duration_minutes` 슬롯을 낸다. 과거 시각은 제외. 프론트 `lib/schedule.ts`의 `commonFreeIntervals`/`suggestSlots`와 같은 규칙이고(`schedule.py`), 그리드의 "공통 빈 시간" 표시는 프론트가 같은 함수로 그린다. 서버는 여기에 더해 예정·진행 중인 면접 시간(시작부터 60분)을 그 면접관의 빈 시간에서 뺀다. 그리드는 가용 시간 원본을 그리므로 잡힌 면접 칸도 비어 보인다(남은 과제).
 

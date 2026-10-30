@@ -16,6 +16,7 @@ class ResizeObserverStub {
 globalThis.ResizeObserver ??= ResizeObserverStub as unknown as typeof ResizeObserver
 Element.prototype.scrollIntoView ??= vi.fn()
 Element.prototype.hasPointerCapture ??= () => false
+Element.prototype.setPointerCapture ??= () => {}
 Element.prototype.releasePointerCapture ??= () => {}
 
 // Mock API timings collapse to ~0 so streaming tests run fast.

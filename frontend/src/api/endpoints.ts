@@ -20,6 +20,7 @@ import type {
   CandidateIndexItem,
   CandidateNote,
   CheckPoint,
+  ClearAvailabilityRequest,
   Competency,
   CompetencySet,
   CreateAvailabilityRequest,
@@ -64,6 +65,7 @@ import type {
   SessionSummary,
   SubmitInterviewerScoresRequest,
   TranscriptHistory,
+  UpdateAvailabilityRequest,
   UpdatePostingRequest,
   UpdateRoundRequest,
   UploadApplicationRequest,
@@ -149,7 +151,11 @@ export const endpoints = {
   interviewers: (signal?: AbortSignal) => api.get<Interviewer[]>('/interviewers', signal),
   availabilities: (from: string, to: string, signal?: AbortSignal) =>
     api.get<Availability[]>(`/availabilities?from=${encodeURIComponent(from)}&to=${encodeURIComponent(to)}`, signal),
+  /** Merged with the interviewer's blocks it touches (one block comes back) */
   createAvailability: (body: CreateAvailabilityRequest) => api.post<Availability>('/availabilities', body),
+  updateAvailability: (id: string, body: UpdateAvailabilityRequest) => api.patch<Availability>(`/availabilities/${id}`, body),
+  /** What is left of the block: 0–2 blocks */
+  clearAvailability: (id: string, body: ClearAvailabilityRequest) => api.post<Availability[]>(`/availabilities/${id}/clear`, body),
   deleteAvailability: (id: string) => api.delete<void>(`/availabilities/${id}`),
   scheduleSuggestions: (body: ScheduleSuggestionRequest) => api.post<ScheduleSuggestion[]>('/schedule/suggestions', body),
 

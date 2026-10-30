@@ -576,3 +576,99 @@ def test_availability_crud_and_suggestions_skip_booked_interviews(api):
         api.post("/api/schedule/suggestions", json={**ask, "interviewer_ids": []}).status_code
         == 422
     )
+
+
+def _at(hm: str) -> str:
+    """2027-03-02 at hh:mm UTC, as the API writes it."""
+    return f"2027-03-02T{hm}:00.000Z"
+
+
+def _mine(api, interviewer_id: str) -> list[tuple[str, str]]:
+    listed = api.get(f"/api/availabilities?from={_at('00:00')}&to=2027-03-03T00:00:00Z").json()
+    return [(x["start_at"], x["end_at"]) for x in listed if x["interviewer_id"] == interviewer_id]
+
+
+def _details(api, action: str, key: str) -> list[dict]:
+    return [x.details for x in _audits(api, action) if key in (x.details or {})]
+
+
+def test_an_interviewers_blocks_merge_when_they_touch_and_never_overlap(api):
+    people = {i["name"]: i["id"] for i in api.get("/api/interviewers").json()}
+    choi, kim = people["최유진"], people["김서연"]
+
+    def add(who: str, start: str, end: str) -> dict:
+        body = {"interviewer_id": who, "start_at": _at(start), "end_at": _at(end)}
+        response = api.post("/api/availabilities", json=body)
+        assert response.status_code == 201
+        return response.json()
+
+    # One hour per click, as the grid did: 10:00, 10:30 (overlaps), 11:30 (touches) KST.
+    first = add(choi, "01:00", "02:00")
+    second = add(choi, "01:30", "02:30")
+    third = add(choi, "02:30", "03:30")
+    assert (third["start_at"], third["end_at"]) == (_at("01:00"), _at("03:30"))
+    assert _mine(api, choi) == [(_at("01:00"), _at("03:30"))]
+    # Another interviewer's block at the same time stays theirs.
+    add(kim, "01:00", "02:00")
+    assert _mine(api, kim) == [(_at("01:00"), _at("02:00"))]
+    created = [x.details for x in _audits(api, "availability.created") if x.target_id == choi]
+    assert created[-3:] == [
+        {"availability_id": first["id"]},
+        {"availability_id": second["id"], "merged": [first["id"]]},
+        {"availability_id": third["id"], "merged": [second["id"]]},
+    ]
+
+    # A block apart, then the first one grown down to it: one block again, the id kept.
+    apart = add(choi, "05:00", "06:00")
+    grown = api.patch(f"/api/availabilities/{third['id']}", json={"end_at": _at("05:00")})
+    assert grown.status_code == 200 and grown.json()["id"] == third["id"]
+    assert _mine(api, choi) == [(_at("01:00"), _at("06:00"))]
+    [log] = [x for x in _audits(api, "availability.updated") if x.target_id == choi]
+    assert log.target_type == "interviewer" and log.actor_id is not None
+    assert log.details == {
+        "availability_id": third["id"],
+        "from": [_at("01:00"), _at("03:30")],
+        "to": [_at("01:00"), _at("06:00")],
+        "merged": [apart["id"]],
+    }
+
+    # Moved (both ends), a no-op (no audit row), backwards, unknown.
+    moved = {"start_at": _at("02:00"), "end_at": _at("04:00")}
+    shrunk = api.patch(f"/api/availabilities/{third['id']}", json=moved).json()
+    assert (shrunk["start_at"], shrunk["end_at"]) == (_at("02:00"), _at("04:00"))
+    count = len(_audits(api, "availability.updated"))
+    assert api.patch(f"/api/availabilities/{third['id']}", json={}).status_code == 200
+    assert len(_audits(api, "availability.updated")) == count
+    backwards = api.patch(f"/api/availabilities/{third['id']}", json={"end_at": _at("02:00")})
+    assert backwards.status_code == 422
+    assert api.patch("/api/availabilities/nope", json={}).status_code == 404
+
+
+def test_clearing_part_of_a_block_shortens_splits_or_deletes_it(api):
+    choi = next(i["id"] for i in api.get("/api/interviewers").json() if i["name"] == "최유진")
+    body = {"interviewer_id": choi, "start_at": _at("00:00"), "end_at": _at("04:00")}
+    block = api.post("/api/availabilities", json=body).json()
+
+    def clear(start: str, end: str, id_: str = block["id"]):
+        cut = {"start_at": _at(start), "end_at": _at(end)}
+        return api.post(f"/api/availabilities/{id_}/clear", json=cut)
+
+    # The middle hour: two blocks, the first keeps the id.
+    left, right = clear("01:00", "02:00").json()
+    assert left["id"] == block["id"] and right["id"] != block["id"]
+    assert _mine(api, choi) == [(_at("00:00"), _at("01:00")), (_at("02:00"), _at("04:00"))]
+    assert _details(api, "availability.created", "split_from") == [
+        {"availability_id": right["id"], "split_from": block["id"]}
+    ]
+    [updated] = _details(api, "availability.updated", "cleared")
+    assert updated["to"] == [_at("00:00"), _at("01:00")]
+
+    # Outside the block: nothing changes. The rest of it: the block goes.
+    assert [x["id"] for x in clear("05:00", "06:00").json()] == [block["id"]]
+    assert clear("00:00", "01:30").json() == []
+    assert _mine(api, choi) == [(_at("02:00"), _at("04:00"))]
+    assert _details(api, "availability.deleted", "cleared") == [
+        {"availability_id": block["id"], "cleared": [_at("00:00"), _at("01:30")]}
+    ]
+    assert clear("00:00", "01:00").status_code == 404
+    assert clear("03:00", "02:00", right["id"]).status_code == 422

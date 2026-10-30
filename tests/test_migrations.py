@@ -167,3 +167,41 @@ def test_0009_reads_the_old_recommendation_out_of_the_rationale(tmp_path):
             assert "ai_revealed_at" not in {c["name"] for c in inspect(conn).get_columns("session_interviewers")}
     finally:
         engine.dispose()
+
+
+def test_0010_joins_an_interviewers_touching_availability_rows(tmp_path):
+    config, url = _config(tmp_path)
+    command.upgrade(config, "0009")
+    engine = make_engine(url)
+    now = "2026-10-30 09:00:00.000000"
+
+    def at(hour: float) -> str:
+        return f"2027-03-02 {int(hour):02d}:{int(hour % 1 * 60):02d}:00.000000"
+
+    rows = [
+        f"INSERT INTO interviewers (id, employee_no, name, is_admin, created_at) VALUES ('i1', 'E1', 'A', 0, '{now}')",
+        f"INSERT INTO interviewers (id, employee_no, name, is_admin, created_at) VALUES ('i2', 'E2', 'B', 0, '{now}')",
+    ]
+    # i1: 1–2, 1:30–2:30 (on top), 2:30–3 (touching), 5–6 (apart). i2: 1–2 at the same time as i1.
+    for id_, who, start, end in [
+        ("a1", "i1", 1, 2), ("a2", "i1", 1.5, 2.5), ("a3", "i1", 2.5, 3), ("a4", "i1", 5, 6), ("b1", "i2", 1, 2)
+    ]:
+        rows.append(
+            f"INSERT INTO availabilities (id, interviewer_id, start_at, end_at, source, created_at) "
+            f"VALUES ('{id_}', '{who}', '{at(start)}', '{at(end)}', 'manual', '{now}')"
+        )
+    try:
+        with engine.begin() as conn:
+            for sql in rows:
+                conn.execute(text(sql))
+        command.upgrade(config, "head")
+        with engine.connect() as conn:
+            found = conn.execute(text("SELECT id, start_at, end_at FROM availabilities ORDER BY id")).all()
+            assert [(r[0], r[1][:16], r[2][:16]) for r in found] == [
+                ("a1", "2027-03-02 01:00", "2027-03-02 03:00"),
+                ("a4", "2027-03-02 05:00", "2027-03-02 06:00"),
+                ("b1", "2027-03-02 01:00", "2027-03-02 02:00"),
+            ]
+        command.downgrade(config, "0009")
+    finally:
+        engine.dispose()

@@ -4,15 +4,15 @@ import type { HTMLAttributes } from 'vue'
 
 import { cn } from '@/lib/utils'
 
-/** Tooltip around a single focusable child; text via the `content` prop or the `content` slot. */
+/** Tooltip around a single focusable child; text via the `content` prop or the `content` slot. `disabled` keeps it shut. */
 const props = withDefaults(
-  defineProps<{ content?: string; side?: 'top' | 'bottom' | 'left' | 'right'; class?: HTMLAttributes['class'] }>(),
-  { content: '', side: 'top' },
+  defineProps<{ content?: string; side?: 'top' | 'bottom' | 'left' | 'right'; disabled?: boolean; class?: HTMLAttributes['class'] }>(),
+  { content: '', side: 'top', disabled: false },
 )
 </script>
 
 <template>
-  <TooltipRoot>
+  <TooltipRoot :disabled="disabled">
     <TooltipTrigger as-child><slot /></TooltipTrigger>
     <TooltipPortal>
       <TooltipContent

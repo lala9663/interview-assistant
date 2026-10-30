@@ -32,6 +32,36 @@ export function subtractIntervals(free: readonly Interval[], busy: readonly Inte
   return out
 }
 
+const span = (a: Availability): Interval => ({ start: new Date(a.start_at).getTime(), end: new Date(a.end_at).getTime() })
+const iso = (ms: number) => new Date(ms).toISOString()
+
+/**
+ * The list after `written` (a new or changed block) is saved: it takes in every block of the same
+ * interviewer that it touches or overlaps, directly or through another one, and those are dropped,
+ * so one person's free time is never two boxes on top of each other. Same rule as the server
+ * (`schedule.absorb`); the grid uses it to show the result before the server answers.
+ */
+export function absorbInto(list: readonly Availability[], written: Availability): Availability[] {
+  const rest = list.filter((a) => a.id !== written.id)
+  const mine = rest.filter((a) => a.interviewer_id === written.interviewer_id)
+  const w = span(written)
+  const joined = mergeIntervals([...mine.map(span), w]).find((m) => m.start <= w.start && w.end <= m.end)!
+  const taken = new Set(mine.filter((a) => joined.start <= span(a).start && span(a).end <= joined.end).map((a) => a.id))
+  return [...rest.filter((a) => !taken.has(a.id)), { ...written, start_at: iso(joined.start), end_at: iso(joined.end) }]
+}
+
+/**
+ * The list after `cut` is taken out of block `id`: the block gets shorter, splits in two (the part
+ * after the cut gets `newId`) or goes. Server: POST /availabilities/{id}/clear.
+ */
+export function clearFrom(list: readonly Availability[], id: string, cut: Interval, newId: string): Availability[] {
+  const block = list.find((a) => a.id === id)
+  if (!block) return [...list]
+  const [first, second] = subtractIntervals([span(block)], [cut])
+  const pieces = [first && { ...block, start_at: iso(first.start), end_at: iso(first.end) }, second && { ...block, id: newId, start_at: iso(second.start), end_at: iso(second.end) }]
+  return [...list.filter((a) => a.id !== id), ...pieces.filter((a) => a !== undefined)]
+}
+
 export function availabilityByInterviewer(availabilities: readonly Availability[]): Map<string, Interval[]> {
   const map = new Map<string, Interval[]>()
   for (const a of availabilities) {

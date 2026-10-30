@@ -7,6 +7,7 @@ import type {
   CheckPoint,
   Competency,
   CompetencySet,
+  ClearAvailabilityRequest,
   ConsentRequest,
   CreateAvailabilityRequest,
   CreateCheckPointRequest,
@@ -24,11 +25,12 @@ import type {
   ScreeningStatus,
   SessionStatus,
   SubmitInterviewerScoresRequest,
+  UpdateAvailabilityRequest,
   UpdateQARequest,
   UpdateRoundRequest,
 } from '@/api/types'
 import { BARS_LEVELS, DECISION_STATUSES, SCREENING_STATUSES, SESSION_MODES } from '@/api/types'
-import { availabilityByInterviewer, subtractIntervals, suggestSlots } from '@/lib/schedule'
+import { absorbInto, availabilityByInterviewer, clearFrom, subtractIntervals, suggestSlots } from '@/lib/schedule'
 import { HOUR, isSameKstDay } from '@/lib/time'
 
 import { adminHandlers } from './admin'
@@ -951,9 +953,43 @@ export const handlers = [
     const body = (await request.json()) as CreateAvailabilityRequest
     if (!db.interviewer(body.interviewer_id)) return notFound('면접관')
     if (!(new Date(body.end_at) > new Date(body.start_at))) return invalid('end_at', '종료 시각은 시작 시각보다 늦어야 합니다.')
-    const a = { id: newId(), interviewer_id: body.interviewer_id, start_at: body.start_at, end_at: body.end_at, source: 'manual' as const, created_at: new Date().toISOString() }
-    db.availabilities.push(a)
-    return HttpResponse.json(a, { status: 201 })
+    const id = newId()
+    const at = (iso: string) => new Date(iso).toISOString()
+    // Like the server: the new block takes in the interviewer's blocks it touches.
+    db.availabilities = absorbInto(db.availabilities, {
+      id,
+      interviewer_id: body.interviewer_id,
+      start_at: at(body.start_at),
+      end_at: at(body.end_at),
+      source: 'manual',
+      created_at: new Date().toISOString(),
+    })
+    return HttpResponse.json(db.availabilities.find((a) => a.id === id), { status: 201 })
+  }),
+
+  http.patch(`${API}/availabilities/:id`, async ({ params, request }) => {
+    await latency()
+    const db = getDb()
+    const block = db.availabilities.find((a) => a.id === params.id)
+    if (!block) return notFound('가용 시간')
+    const body = (await request.json()) as UpdateAvailabilityRequest
+    const next = { ...block, ...(body.start_at && { start_at: new Date(body.start_at).toISOString() }), ...(body.end_at && { end_at: new Date(body.end_at).toISOString() }) }
+    if (!(new Date(next.end_at) > new Date(next.start_at))) return invalid('end_at', '종료 시각은 시작 시각보다 늦어야 합니다.')
+    db.availabilities = absorbInto(db.availabilities, next)
+    return HttpResponse.json(db.availabilities.find((a) => a.id === block.id))
+  }),
+
+  http.post(`${API}/availabilities/:id/clear`, async ({ params, request }) => {
+    await latency()
+    const db = getDb()
+    const block = db.availabilities.find((a) => a.id === params.id)
+    if (!block) return notFound('가용 시간')
+    const body = (await request.json()) as ClearAvailabilityRequest
+    const cut = { start: new Date(body.start_at).getTime(), end: new Date(body.end_at).getTime() }
+    if (!(cut.end > cut.start)) return invalid('end_at', '종료 시각은 시작 시각보다 늦어야 합니다.')
+    const after = newId()
+    db.availabilities = clearFrom(db.availabilities, block.id, cut, after)
+    return HttpResponse.json([block.id, after].flatMap((id) => db.availabilities.filter((a) => a.id === id)))
   }),
 
   http.delete(`${API}/availabilities/:id`, async ({ params }) => {

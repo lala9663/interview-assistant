@@ -908,6 +908,17 @@ export interface CreateAvailabilityRequest {
   end_at: string
 }
 
+export interface UpdateAvailabilityRequest {
+  start_at?: string
+  end_at?: string
+}
+
+/** The part of a block to take out (POST /availabilities/{id}/clear). */
+export interface ClearAvailabilityRequest {
+  start_at: string
+  end_at: string
+}
+
 export interface ScheduleSuggestionRequest {
   interviewer_ids: string[]
   /** search range, ISO */

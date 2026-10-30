@@ -2,6 +2,7 @@
 
 Same rules as the frontend's lib/schedule.ts (`commonFreeIntervals`, `suggestSlots`), plus one the
 mock does not apply: time already booked for a scheduled or running interview is not free.
+`absorb` is the rule for writing one interviewer's blocks: touching blocks become one.
 Intervals are (start, end) in epoch milliseconds.
 """
 
@@ -22,6 +23,15 @@ def merge(intervals: Iterable[Interval]) -> list[Interval]:
         else:
             out.append([start, end])
     return [(a, b) for a, b in out]
+
+
+def absorb(others: Mapping[str, Interval], new: Interval) -> tuple[Interval, list[str]]:
+    """What `new` becomes when it is written beside one interviewer's other blocks: a single block
+    that also covers every block touching or overlapping it (directly or through another one), and
+    the ids of the blocks it replaces. So one person's free time is never two boxes on top of
+    each other. Same rule as the frontend's `absorbInto`."""
+    joined = next(m for m in merge([*others.values(), new]) if m[0] <= new[0] and new[1] <= m[1])
+    return joined, [i for i, (a, b) in others.items() if joined[0] <= a and b <= joined[1]]
 
 
 def subtract(intervals: Iterable[Interval], busy: Iterable[Interval]) -> list[Interval]:

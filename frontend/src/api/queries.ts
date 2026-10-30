@@ -5,11 +5,16 @@
 import { keepPreviousData, useMutation, useQuery, useQueryClient } from '@tanstack/vue-query'
 import { reactive, toValue, type MaybeRefOrGetter } from 'vue'
 
+import { absorbInto, clearFrom } from '@/lib/schedule'
+
 import { endpoints } from './endpoints'
 import type {
   ApplyModelRequest,
+  Availability,
   BankQuestionBody,
+  ClearAvailabilityRequest,
   Competency,
+  CreateAvailabilityRequest,
   CreateCheckPointRequest,
   CreateRoundRequest,
   DecisionRequest,
@@ -24,6 +29,7 @@ import type {
   ScreeningStatus,
   SessionStatus,
   SubmitInterviewerScoresRequest,
+  UpdateAvailabilityRequest,
   UpdateRoundRequest,
   UploadApplicationRequest,
 } from './types'
@@ -447,12 +453,67 @@ export function useCreateSession() {
   )
 }
 
+/**
+ * Availability edits show at once: each mutation applies the server's rule (lib/schedule: touching
+ * blocks merge, a cleared part splits a block) to every cached week, puts the weeks back if the
+ * server refuses, and refetches once the last edit in flight is done.
+ */
 export function useAvailabilityMutations() {
   const qc = useQueryClient()
-  const invalidate = () => void qc.invalidateQueries({ queryKey: ['availabilities'] })
+  const key = ['availabilities']
+  function optimistic<V>(change: (list: Availability[], v: V) => Availability[]) {
+    return {
+      mutationKey: key,
+      onMutate: async (v: V) => {
+        await qc.cancelQueries({ queryKey: key })
+        const before = qc.getQueriesData<Availability[]>({ queryKey: key })
+        qc.setQueriesData<Availability[]>({ queryKey: key }, (list) => list && change(list, v))
+        return before
+      },
+      onError: (_e: unknown, _v: V, before?: [readonly unknown[], Availability[] | undefined][]) => {
+        for (const [k, d] of before ?? []) qc.setQueryData(k, d)
+      },
+      onSettled: () => {
+        if (qc.isMutating({ mutationKey: key }) > 1) return
+        void qc.invalidateQueries({ queryKey: key })
+        void qc.invalidateQueries({ queryKey: ['schedule-suggestions'] })
+      },
+    }
+  }
+  const temp = () => `pending-${crypto.randomUUID()}`
+  // A new block shows under this id until the server's copy (with its real id) replaces it.
+  const pendingId = (body: CreateAvailabilityRequest) => `pending-${body.interviewer_id}-${body.start_at}`
   return {
-    create: reactive(useMutation({ mutationFn: endpoints.createAvailability, onSuccess: invalidate })),
-    remove: reactive(useMutation({ mutationFn: endpoints.deleteAvailability, onSuccess: invalidate })),
+    create: reactive(
+      useMutation({
+        mutationFn: endpoints.createAvailability,
+        ...optimistic((list, body: CreateAvailabilityRequest) =>
+          absorbInto(list, { id: pendingId(body), ...body, source: 'manual', created_at: new Date().toISOString() }),
+        ),
+        onSuccess: (saved: Availability, body: CreateAvailabilityRequest) =>
+          qc.setQueriesData<Availability[]>({ queryKey: key }, (list) => list && absorbInto(list.filter((a) => a.id !== pendingId(body)), saved)),
+      }),
+    ),
+    update: reactive(
+      useMutation({
+        mutationFn: ({ id, ...body }: UpdateAvailabilityRequest & { id: string }) => endpoints.updateAvailability(id, body),
+        ...optimistic((list, { id, ...body }: UpdateAvailabilityRequest & { id: string }) => {
+          const block = list.find((a) => a.id === id)
+          return block ? absorbInto(list, { ...block, ...body }) : list
+        }),
+      }),
+    ),
+    clear: reactive(
+      useMutation({
+        mutationFn: ({ id, ...body }: ClearAvailabilityRequest & { id: string }) => endpoints.clearAvailability(id, body),
+        ...optimistic((list, { id, start_at, end_at }: ClearAvailabilityRequest & { id: string }) =>
+          clearFrom(list, id, { start: new Date(start_at).getTime(), end: new Date(end_at).getTime() }, temp()),
+        ),
+      }),
+    ),
+    remove: reactive(
+      useMutation({ mutationFn: endpoints.deleteAvailability, ...optimistic((list, id: string) => list.filter((a) => a.id !== id)) }),
+    ),
   }
 }
 
