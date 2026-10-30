@@ -1,6 +1,17 @@
 # API 계약 (프론트 ↔ 백엔드)
 
-2026-10-28 · v0.8 · 꼬리질문의 AI 후보는 화면에 뜬 뒤 같은 질문인지 확인한다: AI 후보의 `suggestion.done`에 `checking: true`가 붙고, 이어서 `suggestion.checked`(쓸 수 있음) 또는 `suggestion.discarded`(화면이 카드를 접음)가 온다. 거둔 후보로는 질문을 기록할 수 없다(409). 임베딩 모델에 BGE-M3 int8을 더하고 권장으로 했다(3.2, 2장 "관리자 > 모델 설정"). v0.7 · 사내 에이전트 플랫폼용 MCP 서버([agent-integration.md](agent-integration.md))가 이 API를 그대로 부른다. 에이전트 호출은 질문한 사람의 자격증명으로 돌고, 읽기와 제안 기록만 할 수 있으며, 호출마다 감사 로그가 남는다(1장 인증·권한·감사 로그, 2장 "에이전트"). v0.6 · 질문 은행·평점 기준 예시와 임베딩 검색(BGE-M3)을 더했다: 꼬리질문은 검수된 질문 은행 후보가 먼저, AI 후보가 이어서 나오고, 이미 한 질문과 같은 후보는 걸러진다(2장 "질문 은행·평점 기준 예시", 3.2, 4장 0007). v0.5 · 면접을 여러 차수(전형 차수: 1차 직무 면접, 2차 임원 면접 …)로 진행한다. 공고마다 차수 목록이 있고, 역량 사전·사전 질문은 차수별, 세션은 한 차수에 속하며, 차수마다 사람이 합격·보류·불합격을 정한다(2장 "전형", 4장 0006). 프론트(`frontend/`)가 모의 API(MSW)로 먼저 쓰던 계약을 백엔드(FastAPI, `src/interview_assistant/api/`)가 그대로 구현했다. 모든 경로가 동작하고, AI는 Provider 인터페이스를 거쳐 돈다. 어떤 provider가 어느 역할을 맡을지는 관리자 화면(관리자 > 모델 설정, 2장 마지막 절)에서 서버 재시작 없이 바꾸고, `config/providers*.yaml`은 처음 기동할 때의 기본값만 정한다. 첫 실제 provider로 로컬 Whisper STT(`faster_whisper`)가 붙었다. 지원서는 서류 선별 화면의 업로드와 채용 사이트 연동(서명된 이벤트 수신, 2장 "채용 사이트 연동") 두 통로로 들어오고, 둘 다 같은 처리 함수(`intake/service.py`)를 거친다. 채용 시스템 부서에 넘길 연동 명세는 [site-intake-spec.md](site-intake-spec.md). 프론트는 `npm run dev:api`로 실제 API에 붙는다. 실제 LLM 연결과 품질 검증은 남은 과제다(5장).
+> 다루는 것: 프론트(`frontend/`) ↔ 백엔드(FastAPI, `src/interview_assistant/api/`)의 REST·SSE·WebSocket 계약, DB 모델 결정(Alembic), 남은 과제. API의 기준 문서다.
+>
+> 상태: 구현됨 (v0.8) · 확인: 2026-10-30
+
+프론트가 모의 API(MSW)로 먼저 쓰던 계약을 백엔드가 그대로 구현했다. 모든 경로가 동작하고, AI는 provider 인터페이스로 돈다(지금은 fake로 검증, 실제 LLM은 5장). 어떤 provider가 어느 역할을 맡을지는 관리자 > 모델 설정(2장)에서 재시작 없이 바꾸고, `config/providers*.yaml`은 처음 기동할 때의 기본값만 정한다. 지원서는 업로드와 채용 사이트 연동 두 통로로 들어와 같은 처리 함수(`intake/service.py`)를 거친다. 채용 시스템 부서에 넘길 명세는 [site-intake-spec.md](site-intake-spec.md). 프론트는 `npm run dev:api`로 실제 API에 붙는다.
+
+버전:
+
+- v0.8 (2026-10-28): AI 꼬리질문 후보는 화면에 뜬 뒤 같은 질문인지 확인한다(`suggestion.done`의 `checking: true` → `suggestion.checked` 또는 `suggestion.discarded`, 거둔 후보로 질문 기록 409). 임베딩에 BGE-M3 int8을 더하고 권장으로 했다(3.2, 2장 "관리자 > 모델 설정"). 마이크 입력(3.3)과 면접 뒤 재전사(Alembic 0008).
+- v0.7 (2026-10-28): 사내 에이전트 플랫폼용 MCP 서버([agent-integration.md](agent-integration.md))가 이 API를 그대로 부른다. 질문한 사람의 자격증명으로, 읽기와 제안 기록만, 호출마다 감사 로그(1장, 2장 "에이전트").
+- v0.6 (2026-10-27): 질문 은행·평점 기준 예시와 임베딩 검색(2장 "질문 은행·평점 기준 예시", 3.2, 4장 0007).
+- v0.5 (2026-10-27): 면접 여러 차수. 차수별 역량 사전·사전 질문, 차수마다 사람이 합격·보류·불합격을 정한다(2장 "전형", 4장 0006).
 
 - 타입 정의 원본: [`frontend/src/api/types.ts`](../frontend/src/api/types.ts) (모델과 필드 이름·enum 값 동일). 백엔드 응답 스키마: [`api/schemas.py`](../src/interview_assistant/api/schemas.py) (필드 단위로 같다. `tests/test_api_contract.py`가 enum과 이 문서의 경로 목록을 대조한다)
 - 모의 구현: [`frontend/src/mocks/handlers.ts`](../frontend/src/mocks/handlers.ts) (요청 검증, 오류 코드, 스트림 이벤트 순서까지 이 문서와 같다)
@@ -10,7 +21,7 @@
 
 | 항목 | 규칙 |
 | --- | --- |
-| 경로 | 모든 라우트는 `/api` 아래. 라우터는 기능별(`api/routes/`: dashboard, postings, screening, sessions, live, evaluation, schedule, admin, intake)로 나누고 `/api`로 마운트한다. `/health`는 그대로 둔다 (활성 provider 클래스와 `ai_config_revision`) |
+| 경로 | 모든 라우트는 `/api` 아래. 라우터는 기능별(`api/routes/`: dashboard, postings, rounds, screening, sessions, live, audio, evaluation, schedule, bank, admin, retrieval_admin, intake, agent)로 나누고 `/api`로 마운트한다. `/health`는 그대로 둔다 (활성 provider 클래스와 `ai_config_revision`) |
 | 형식 | JSON, 필드는 snake_case (Pydantic 필드 이름 그대로). 업로드, 모델 연결 테스트(음성 파일), 채용 사이트 이벤트(첨부가 있을 때)만 multipart/form-data |
 | ID | UUID 문자열 (`IdMixin`) |
 | 시각 | 응답은 UTC, 밀리초, `Z` (`2026-10-23T05:30:00.000Z`, JavaScript `toISOString`과 같은 모양). 요청의 시각은 오프셋이 있어야 한다(없으면 422). 화면은 항상 KST로 표시한다 |
@@ -258,11 +269,11 @@
 
 ### 관리자 > 모델 설정 (AI provider 교체)
 
-역할 11개마다 provider를 고르고, 테스트하고, 재시작 없이 적용한다. 모두 관리자만(403). AI 모델 6개(`llm.primary` LLM 주 모델, `llm.screening` LLM 선별용, `stt.streaming` STT 실시간, `stt.batch` STT 사후, `embedding`, `diarization`)와 서류 읽기 5개(`document.reading` 읽기 방식, `document.ocr` OCR 엔진, `document.pdf` PDF 텍스트 추출, `document.hwp` HWP·HWPX 읽기, `document.legacy` 구형 오피스 변환). `ModelRoleState.group`(`ai`/`documents`)이 화면의 묶음이다.
+역할 14개마다 provider를 고르고, 테스트하고, 재시작 없이 적용한다. 모두 관리자만(403). AI 모델 6개(`llm.primary` LLM 주 모델, `llm.screening` LLM 선별용, `stt.streaming` STT 실시간, `stt.batch` STT 사후, `embedding`, `diarization`)와 서류 읽기 5개(`document.reading` 읽기 방식, `document.ocr` OCR 엔진, `document.pdf` PDF 텍스트 추출, `document.hwp` HWP·HWPX 읽기, `document.legacy` 구형 오피스 변환). 음성 입력 3개(`audio.vad` 음성 구간, `audio.turn` 답변 끝 판정, `audio.denoise` 서버 잡음 억제, [audio-input.md](audio-input.md)). `ModelRoleState.group`(`ai`/`documents`/`audio`)이 화면의 묶음이다.
 
 | 메서드 | 경로 | 요청 | 응답 | 단계 |
 | --- | --- | --- | --- | --- |
-| GET | `/api/admin/models` | | `ModelSettings` {revision, persistent, roles: ModelRoleState[11]} (spec, impl_label, 실제 model 이름, data_location, status ready/unavailable와 이유, requirements, note, last_change, pinned_sessions) | 3 |
+| GET | `/api/admin/models` | | `ModelSettings` {revision, persistent, roles: ModelRoleState[14]} (spec, impl_label, 실제 model 이름, data_location, status ready/unavailable와 이유, requirements, note, last_change, pinned_sessions) | 3 |
 | GET | `/api/admin/models/catalog` | | `ModelImpl[]` 등록된 구현마다 역할, 데이터 위치, 라이선스, 옵션 스키마(모델 선택지의 크기·다운로드 여부·역할별 권장), 역할별 기본값·안내, 이 PC의 요구 조건 | 3 |
 | POST | `/api/admin/models/{role}/check` | `{impl, options}` | `ModelCheck` {spec(검증·기본값 채움), data_location, external, requirements, ready, same_as_active}. 옵션이 스키마에 없거나 범위 밖이면 422. provider를 부르지 않는다 | 3 |
 | POST | `/api/admin/models/{role}/test` | multipart: `spec`(JSON `{impl, options}`), `confirm_external`, `audio`(STT·화자분리만, 선택, 60초·10MB 이하), `document`(서류 읽기만, 선택, 10MB 이하)와 `name`(미리보기 비식별화용 지원자 이름, 선택) | `ModelTestResult` {ok, model, latency_ms, summary, output, error, audio: sample/upload, document: sample/upload}. 요구 조건 미충족 409, 외부 전송인데 확인 없음 409, 모델 로드 실패는 200 ok=false(원인을 나누는 provider는 `output.failure`) | 3 |
@@ -274,13 +285,13 @@
 | DELETE | `/api/admin/models/downloads/{impl}/{model}` | | `ModelDownload` (취소, 받던 파일 삭제) | 3 |
 
 - **저장**: 활성 설정은 `ai_model_settings`(역할별 spec), 이력은 `ai_model_changes`(전역 revision, 누가·언제·이전·새 값·사유). 처음 기동할 때 YAML 값을 `initial`로 넣고, 그 뒤 YAML은 DB에 없는 역할의 기본값으로만 쓴다. spec에 자격증명은 없다.
-- **교체**: 역할 하나를 바꾸면 revision이 올라가고 6개 역할 전체의 새 스냅샷(`ProviderSet`, 자체 AI 게이트웨이)이 활성이 된다. 참조 하나를 바꾸는 원자적 교체라 이미 시작한 요청·백그라운드 작업은 들고 있던 스냅샷으로 끝난다. 세션은 `InterviewSession.ai_config_revision`으로 시작 때의 스냅샷을 다시 찾는다(재시작 뒤에는 이력으로 재구성). 같은 spec의 provider 인스턴스는 스냅샷끼리 공유해 Whisper 가중치를 한 번만 올리고, 활성·진행 중 세션 어디에도 안 쓰이는 인스턴스는 내린다.
+- **교체**: 역할 하나를 바꾸면 revision이 올라가고 모든 역할의 새 스냅샷(`ProviderSet`, 자체 AI 게이트웨이)이 활성이 된다. 참조 하나를 바꾸는 원자적 교체라 이미 시작한 요청·백그라운드 작업은 들고 있던 스냅샷으로 끝난다. 세션은 `InterviewSession.ai_config_revision`으로 시작 때의 스냅샷을 다시 찾는다(재시작 뒤에는 이력으로 재구성). 같은 spec의 provider 인스턴스는 스냅샷끼리 공유해 Whisper 가중치를 한 번만 올리고, 활성·진행 중 세션 어디에도 안 쓰이는 인스턴스는 내린다.
 - **요구 조건**: 네트워크 없이 본다. 구현 여부, 패키지 설치(`uv sync --extra whisper` 등), 환경변수·자격증명 파일이 있는지(값은 읽지도 보내지도 않음), 모델 파일을 받았는지. 미충족이면 테스트·적용 모두 409이고 화면에 이유와 해결 방법이 나온다. Google·Vertex 계열(외부 클라우드, 쓰지 않는 대안)은 "구현 전", "자격증명 없음"으로 보인다. 옵션이 환경변수 이름을 가리키면(오픈소스 모델 서버의 API 키) 그 변수가 있는지도 본다.
 - **보안**: API 키·자격증명은 화면에서 받지 않는다(서버 환경변수, 또는 실행 위치의 비밀 저장소). `data_location`은 `local`(이 PC), `server`(관리자가 주소를 적은 사내 모델 서버), `gcp`(외부 클라우드 Google, 쓰지 않는 대안), `external`(회사 밖 API). 데이터가 회사 밖으로 나가는 provider(`gcp`, `external`, 응답의 `external: true`)는 테스트에 `confirm_external`, 적용·되돌리기에 `confirm_external`과 사유가 있어야 한다. provider가 무엇이든 LLM 입력은 같은 비식별화·가드를 거친다(`tests/test_api_privacy.py`가 런타임 교체 뒤에도 검사). 테스트용 음성은 임시 폴더에 두었다가 테스트가 끝나면 지운다.
 - **감사 로그**: `model.tested`(결과·지연·CER·형식·읽기 시간 같은 수치만, 전사·응답·서류 본문 없음, 서류 테스트는 sample/upload), `model.applied`, `model.reverted`, `model.download_started`, `model.download_cancelled`. LLM 연결 테스트 호출 자체도 게이트웨이가 `model.connection_test`(actor ai)로 남긴다. 실시간 전사는 답변마다 `transcript.listened`(쓴 STT 모델).
 - **연결 테스트**: LLM은 지원자 데이터가 없는 고정 프롬프트(`connection-test-v0.2`)로 구조화 출력(JSON)과 간단한 지시 수행을 보고, 꼬리질문처럼 짧은 스트리밍을 한 번 받는다. `output`에 응답 시간(`generate_ms`), 스트리밍 첫 토큰 시간(`first_token_ms`), 서버가 알려 준 모델 이름(`server_model`), 서버가 가진 모델 목록(`server_models`, 오픈소스 모델 서버만)이 있다. 오픈소스 모델 서버의 실패는 `output.failure`로 나뉜다: `address`(주소 오류), `auth`(인증 실패), `model`(모델 없음), `timeout`(시간 초과), `server`, `output`(응답 형식). Claude API(`anthropic_api`, 외부 개발 환경 테스트용)는 여기에 `connection`(연결 실패), `rate_limit`(요청 한도 초과), `request`(요청 오류), `refusal`(응답 거부)이 더해지고 `address`는 없다. 키 값은 응답·감사 로그 어디에도 없다. STT는 내장 한국어 샘플(FLEURS ko_kr, CC BY 4.0, 정답과 비교해 CER) 또는 관리자가 올린 녹음을 역할의 실제 경로로 전사한다(사후 = `transcribe`, 실시간 = 16kHz PCM 조각을 `stream`). 임베딩은 벡터 차원, 화자분리는 구간 수. 서류 읽기는 역할별 내장 가상 이력서(`providers/samples/documents/`, OCR 샘플은 정답과 비교해 CER) 또는 올린 파일을, 테스트하는 설정과 나머지 서류 읽기 역할의 활성 설정으로 읽는다. `output`은 쪽마다 방법·이유·도구·신뢰도·시간(`pages`), 그림마다 판단(`images`: OCR, 증명사진 버림, 작음, 끔), 도구 버전, 비식별화한 미리보기(2,000자, 전화·이메일 모양은 한 번 더 가림)다. 원문은 응답에도 감사 로그에도 없다. 읽기 방식 "텍스트만" 테스트는 스캔한 쪽을 보류로 보여 주고 ok다(적용할 수 있다).
 - **임베딩 (BGE-M3)**: `bge_m3`(로컬 CPU, ONNX Runtime)는 밀집 1024차원과 희소(단어 일치) 가중치를 낸다. 옵션 `model`은 `bge-m3-int8`(권장, 0.59GB: `Xenova/bge-m3` 커밋 `4de1325`의 int8 변환본 + BAAI 희소 헤드, 색인 키 `BAAI/bge-m3-int8@4de1325/1024`)과 `bge-m3`(fp32 2.29GB: BAAI/bge-m3 커밋 `5617a9f`의 ONNX와 희소 헤드, `BAAI/bge-m3@5617a9f/1024`). 모델 파일은 관리자가 "다운로드"를 누를 때만 받는다. 둘은 색인 키가 달라 서로 바꾸면 다시 색인한다. 권장값(새로 고를 때의 기본값)이 바뀌어도 이미 적용한 설정은 그대로다. 옵션의 `sparse_weight`(단어 일치 가중치), `duplicate_threshold`(같은 질문으로 볼 유사도), `min_score`(질문 은행 제안 최소 점수)는 모델의 점수 척도에 맞춘 검색 설정이고, 바꿔도 벡터를 다시 만들지 않는다(같은 가중치를 쓰는 인스턴스끼리 로드된 모델을 공유해 다시 올리지도 않는다). 연결 테스트는 고정 문장 세 개로 차원, 희소 출력, 비슷한 문장이 무관한 문장보다 가까운지를 본다(`output.similar`, `unrelated`, `sparse`, `lexical`).
-- **실시간 STT와 오디오 입력**: STT provider는 받을 수 있는 입력 형식(`accepts`)을 밝힌다. 실제 음성은 16kHz 모노 16비트 PCM(`PCM16_16K`)이고, 지금 실시간 면접의 가상 지원자는 텍스트를 보내므로 fake STT만 받아 적는다. 실시간 STT를 실제 모델로 바꾸면 새로 시작하는 면접은 `stt: down`(수기 답변)이 되고 감사 로그에 `transcript.unsupported_audio`가 남는다. 마이크·WebRTC 입력(`live/audio.AudioSource`가 PCM을 내는 구현)이 붙으면 같은 교체가 그대로 쓰인다.
+- **실시간 STT와 오디오 입력**: STT provider는 받을 수 있는 입력 형식(`accepts`)을 밝힌다. 실제 음성은 16kHz 모노 16비트 PCM(`PCM16_16K`)이다. 마이크(3.3)를 켜면 그 PCM을 STT 실시간 모델이 전사한다. 마이크를 켜기 전 데모의 가상 지원자는 텍스트를 보내므로 fake STT만 받아 적고, 실제 STT면 그 면접은 `stt: down`(수기 답변)이 되며 감사 로그에 `transcript.unsupported_audio`가 남는다. 비대면 WebRTC 입력도 PCM을 내는 `AudioSource`로 붙이면 같은 교체가 그대로 쓰인다.
 
 ### 에이전트 (MCP 서버)
 
@@ -415,7 +426,7 @@ data: {"batch_id":"…","discarded":1}
 - 서버가 받은 음성: 동의가 있으면 원본 영역의 세션 WAV(`IA_RECORDINGS_DIR/<세션 id>.wav`, `recording_uri`)에 받은 그대로 덧붙인다. 진단용 샘플(`source=sample`)은 녹음하지 않는다. 음성은 메모리와 원본 영역 밖으로 나가지 않는다.
 - 면접 뒤 재전사: 관리자 > 모델 설정의 STT 사후에서 "면접 뒤 녹음 재전사"를 켜면, 면접 종료 뒤 녹음을 그 모델로 다시 전사해 `source = batch` 구간으로 저장한다(`GET …/transcript?source=batch`, 시각은 녹음 안의 위치). 자세한 것은 [audio-input.md](audio-input.md).
 
-## 4. 모델 결정 (Alembic 0003 ~ 0006)
+## 4. 모델 결정 (Alembic 0003 ~ 0008)
 
 프론트 계약이 요구했지만 1단계 모델에 자리가 없던 항목을 `migrations/versions/0003_api_support.py`로 채웠다. 모델은 17개(업무정의서 6장 13개 + 비식별 역매핑 + 아래 3개)다.
 
@@ -477,6 +488,12 @@ data: {"batch_id":"…","discarded":1}
 | 이어 질문 | `preset_questions.session_id` (NULL 허용, 둘 중 하나는 필수 CHECK), `based_on_qa_item_id`(FK 없음), grounding, rationale, model, prompt_version | 이 지원자에게만 묻는 사전 질문이라 같은 테이블에 두면 QA 연결(`preset_question_id`)·화면이 그대로 쓰인다. `based_on_qa_item_id`에 FK를 걸면 qa_items ↔ preset_questions 순환이 되어 테이블 생성 순서가 사라진다 |
 | 다운그레이드 | 1차만 남긴다: 이어 질문과 2차 이후 역량 사전·사전 질문을 지우고, 2차 이후 세션은 차수 없이 남긴다 | 0005 스키마에는 차수가 없다 |
 
+0008 (`migrations/versions/0008_transcript_source.py`, 2026-10-28):
+
+| 항목 | 결정 | 이유 |
+| --- | --- | --- |
+| 전사 출처 | `transcript_segments.source` (`live` 기본, 기존 행 모두 live / `batch`) | 면접 뒤 녹음 재전사(STT 사후)를 실시간 전사와 섞지 않고 따로 둔다. 같은 테이블이라 비식별 저장·조회가 그대로 쓰인다(`GET …/transcript?source=batch`, [audio-input.md](audio-input.md) 8장) |
+
 SQLite 마이그레이션 주의: batch 모드는 테이블을 복사한 뒤 원본을 지우는데, 외래 키가 켜져 있으면 그 DROP이 자식 행을 연쇄 삭제한다. `migrations/env.py`는 마이그레이션 동안 외래 키를 끄고 끝나면 `PRAGMA foreign_key_check`로 확인한다.
 
 ## 5. 구현 상태와 남은 과제
@@ -508,7 +525,7 @@ SQLite 마이그레이션 주의: batch 모드는 테이블을 복사한 뒤 원
 - **벡터 검색 엔진**: 지금은 메모리 내 전수 검색(수천 건). 수만 건이 되거나 여러 인스턴스가 되면 DB 엔진을 정한 뒤 pgvector 등으로 `VectorIndex`를 바꾼다. 여러 인스턴스면 색인 갱신을 다른 인스턴스에 알리는 방법도 필요하다.
 - **로그인·SSO**: 사내 SSO(앞단 인증은 실행 위치에 따라), `GET /api/me`를 세션에서. 지금은 `IA_DEV_INTERVIEWER`. 에이전트 호출은 `api/agent_access.py`에 그 자격증명을 확인하는 `AgentIdentity`를 더하고 `IA_AGENT_IDENTITY`로 고른다(바꿀 곳은 [agent-integration.md](agent-integration.md) 7장). 면접관 점수는 본인 것만 쓰게 막기(지금은 패널이면 누구 것이든 가능).
 - **WebRTC (11단계 나머지)**: 대면 면접의 브라우저 마이크는 붙었다(3.3). 비대면 면접의 참가자 트랙(LiveKit), 한 세션에 마이크 두 개(면접관·지원자 따로), 대면 면접 화자분리는 남았다. 남은 것 전체는 [audio-input.md](audio-input.md) 11장.
-- **로컬 Whisper 실시간 속도**: 이 노트북(CPU, 배터리)에서는 Whisper 호출 한 번이 30초 창 고정 비용(medium 약 5초)이라 발화 하나 확정까지 medium 약 10초 걸린다. 부분 전사는 호출 비용이 작을 때만 나온다. 실시간은 small·GPU 중에서 다시 정할 것, 외부 클라우드 스트리밍 STT(Chirp 등)는 승인 시 대안([측정](whisper-benchmark.md)).
+- **로컬 Whisper 실시간 속도**: 이 노트북(CPU)에서는 Whisper 호출 한 번이 30초 창 고정 비용이라 medium은 실시간을 따라가지 못한다. GPU가 없을 때의 기본값은 실시간 small + 사후 large-v3 재전사다(2026-10-28, [audio-input.md](audio-input.md) 8·9장). GPU 서버가 생기면 provider에 device 옵션을 더해 다시 잰다. 외부 클라우드 스트리밍 STT(Chirp 등)는 승인 시 대안([측정](whisper-benchmark.md)).
 - **모델 설정 다중 인스턴스**: 활성 스냅샷은 프로세스 메모리에 있다. 여러 인스턴스면 변경을 다른 인스턴스에 알릴 방법(DB revision 폴링 또는 메시지 버스)이 필요하다.
 - **여러 워커**: 전사 허브 상태가 프로세스 메모리에 있다. 여러 인스턴스로 돌리면 Redis Pub/Sub 같은 공유 버스와 듣기 작업 소유권이 필요하다. AI 채점도 백그라운드 태스크라 작업 큐로 옮길 것.
 - **채용 사이트 실제 연결**: 지금은 가짜 채용 사이트로만 검증했다. 사내 네트워크 경로(이 시스템의 실행 위치가 미정. 사이트 → 이 서버 수신 경로는 면접관 로그인 밖이어야 한다), 채용 시스템 부서의 개발 일정, 정보보호·법무 승인, 지원자 동의 문구가 먼저다. 확인 목록은 [site-intake-spec.md](site-intake-spec.md) 11장.
