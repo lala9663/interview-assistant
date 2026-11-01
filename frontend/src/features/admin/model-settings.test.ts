@@ -199,6 +199,27 @@ describe('관리자 > 모델 설정', { timeout: 20_000 }, () => {
     await waitFor(async () => expect(within(await card('document.ocr')).getByTestId('role-model')).toHaveTextContent('PP-OCRv5 mobile 한국어'))
   })
 
+  it('server noise suppression: DeepFilterNet3 needs its file, then the test shows the delay and how much quieter the rest got', async () => {
+    const user = userEvent.setup()
+    await renderPage()
+    await user.click(within(await card('audio.denoise')).getByRole('button', { name: '서버 잡음 억제 변경' }))
+    expect(within(await screen.findByTestId('impl-rnnoise')).getByText(/지연 약 35ms/)).toBeInTheDocument()
+    await user.click(screen.getByTestId('impl-deepfilternet'))
+    await next(user)
+    expect(screen.getByLabelText('앞 문맥 (ms)')).toHaveValue(300)
+    await user.click(within(screen.getByTestId('model-choice-deepfilternet3')).getByRole('button', { name: /다운로드 9MB/ }))
+    await waitFor(() => expect(within(screen.getByTestId('model-choice-deepfilternet3')).getByText('내려받음')).toBeInTheDocument(), { timeout: 4000 })
+    await next(user)
+    await waitFor(() => expect(screen.getByRole('button', { name: /다음/ })).toBeEnabled())
+    await next(user)
+    expect(screen.getByRole('radiogroup', { name: '테스트 음성' })).toBeInTheDocument() // sample, microphone or a file
+    await user.click(screen.getByTestId('run-test'))
+    const result = await screen.findByTestId('test-result')
+    expect(result).toHaveAttribute('data-ok', 'true')
+    expect(within(result).getByTestId('denoise-delay')).toHaveTextContent('지연 45ms')
+    expect(within(result).getByTestId('denoise-levels')).toHaveTextContent('말소리 -0.6dB · 그 밖 -14.2dB')
+  })
+
   it('the text-only reading mode holds pages that need OCR in the test, as intended', async () => {
     const user = userEvent.setup()
     await renderPage()

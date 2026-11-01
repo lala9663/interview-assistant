@@ -32,7 +32,7 @@
 필요한 것: Python 3.12와 [uv](https://docs.astral.sh/uv/), Node 24 이상. 자세한 설치와 환경변수는 [docs/setup.md](docs/setup.md).
 
 ```bash
-uv sync --extra whisper --extra ocr --extra embedding --extra agent
+uv sync --extra whisper --extra ocr --extra embedding --extra agent --extra denoise
 cp .env.example .env
 ```
 

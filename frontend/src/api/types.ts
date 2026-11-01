@@ -702,7 +702,7 @@ export interface MicStatus {
   speaking: boolean
   /** the end-of-answer detector in use (silence-2000ms, smart-turn-v3.2-cpu) */
   turn: string | null
-  /** codes of what runs degraded: VAD-MISSING, TURN-MISSING, STT-MISSING, REC-FAILED ... */
+  /** codes of what runs degraded: VAD-MISSING, TURN-MISSING, DENOISE-MISSING, STT-MISSING, REC-FAILED ... */
   notices: string[]
   /** how the last answer part ended */
   last_end: { reason: string | null; probability: number | null; at_ms: number } | null

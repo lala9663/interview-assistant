@@ -26,7 +26,8 @@ const values = defineModel<Record<string, ModelOptionValue>>({ required: true })
 const fields = computed(() => fieldsFor(props.impl, props.role))
 const weights = computed(() => weightsField(props.impl))
 const kind = computed(() => props.impl.kind)
-const staysHere = computed(() => (kind.value === 'stt' ? '음성은' : kind.value === 'embedding' ? '질문·답변 텍스트는' : '서류와 그림은'))
+const VOICE_KINDS = ['stt', 'vad', 'turn', 'denoise']
+const staysHere = computed(() => (VOICE_KINDS.includes(kind.value) ? '음성은' : kind.value === 'embedding' ? '질문·답변 텍스트는' : '서류와 그림은'))
 const downloads = useModelDownloads(() => Boolean(weights.value))
 const mutations = useModelDownloadMutations()
 

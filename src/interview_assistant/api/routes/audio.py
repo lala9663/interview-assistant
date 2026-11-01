@@ -134,6 +134,8 @@ async def open_microphone(
             turn = SilenceTurn(silence_ms=FALLBACK_SILENCE_MS)
             notices.append(codes.TURN_MISSING)
         denoise = await _ready(pinned.get("audio.denoise"), DenoiseProvider)
+        if denoise is None and getattr(pinned.get("audio.denoise"), "enabled", True):
+            notices.append(codes.DENOISE_MISSING)
         stt = pinned.get("stt.streaming")
         if not getattr(stt, "accepts", ()):
             notices.append(codes.STT_MISSING)

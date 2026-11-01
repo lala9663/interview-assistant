@@ -286,8 +286,8 @@ AI 꼬리질문은 질문 은행 예시를 프롬프트에 넣으려고 답변 �
 - [x] 질문 중 / 답변 듣는 중 전환(Alt+1/Alt+2): 말로 한 질문이 다음 질문(면접관), 답은 지원자
 - [x] 답변 중 미리 임베딩(`ai/followups.py`는 고치지 않음)
 - [x] GPU 없을 때: STT 사후 "면접 뒤 녹음 재전사"(저장까지, Alembic 0008). 질문별 나누기·채점 반영·버튼은 하지 않음
-- [x] 서버 잡음 억제는 자리만(기본 끔), 구현 안 한 이유와 측정 계획
-- [x] 오류 코드 21개를 화면에 짧게, 목록은 audio-input.md 6장
+- [x] 서버 잡음 억제 RNNoise(pyrnnoise 휠의 라이브러리만, sha256 고정)·DeepFilterNet3(공식 v0.5.6 ONNX, 관리자 다운로드, PyTorch 없이 NumPy DSP), 마이크마다 스트림·같은 길이·고정 지연(35·45ms), 관리자 연결 테스트. 소음 섞은 한국어로 CER·VAD·답변 끝·CPU 측정(`scripts/bench_denoise.py`), 켤 근거가 없어 기본 끔 유지(audio-input.md 7장, 2026-11-01)
+- [x] 오류 코드 22개를 화면에 짧게, 목록은 audio-input.md 6장
 - [x] 이 노트북 측정(audio-input.md 9장)
 - [ ] 실제 마이크·사람 목소리로 확인(Chrome, http://localhost:5173), 실제 면접 녹음으로 답변 끝 판정 다시 재기
 - [ ] WebRTC(비대면), 마이크 두 개, 재전사 결과의 질문별 반영과 채점

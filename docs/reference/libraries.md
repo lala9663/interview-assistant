@@ -30,6 +30,7 @@
 | NumPy | 2.3.5 | 메모리 벡터 검색 | BSD-3-Clause | 사용 중 |
 | anthropic (`claude` extra) | 1.13.0 | Claude API 직접 호출(`anthropic_api`, 외부 개발 테스트용) | MIT | 외부 개발 환경에서만 사용. 사내 반입 대상 아님. `gcp` extra의 `anthropic[vertex]`(Vertex AI의 Claude)는 쓰지 않음 (2026-10-28 GCP 철회) |
 | mcp (`agent` extra) | 2.3.0 | MCP 서버 (사내 에이전트 플랫폼용, [agent-integration.md](../agent-integration.md)) | MIT | 사용 중 |
+| pyrnnoise (`denoise` extra) | 0.4.5 | 휠에 든 RNNoise 네이티브 라이브러리만 ctypes로 연다 (`providers/denoise/rnnoise.py`) | Apache-2.0 (GitHub LICENSE. PyPI 메타데이터에는 비어 있음), 안의 RNNoise는 BSD-3-Clause | 사용 가능 (서버 잡음 억제, 기본 끔). 파이썬 모듈은 import하지 않는다. 그 의존성 matplotlib·audiolab은 `override-dependencies`로 뺐다(5장 아래) |
 | google-cloud-speech (`gcp` extra) | 설치 안 됨 (PyPI 최신 2.41.0) | Speech-to-Text v2 | Apache-2.0 (PyPI) | 외부 클라우드 대안 (승인 시, 10·11단계) |
 | pytest, pytest-asyncio | 9.1.1, 1.4.0 | 테스트 (dev) | MIT, Apache-2.0 | 사용 중 |
 | httpx2, httpx | 2.16.0, 0.28.1 | 사내 모델 서버 호출(httpx2, `open_model_server`), 테스트 클라이언트 | BSD-3-Clause | 사용 중 |
@@ -129,8 +130,14 @@ STT 서비스별 비교는 [stt.md](stt.md), 화자분리 모델은 [diarization
 | LiveKit turn detector | 텍스트로 답변 끝 판단 | LiveKit Model License | 무료 | LiveKit Agents 안에서만 | 로컬 | **쓰지 않음**. 라이선스가 LiveKit Agents 밖 사용을 막는다 |
 | LiveKit 서버, client-sdk-js, Agents | 비대면 WebRTC 통화 | Apache-2.0 | 무료 (자체 운영) | 가능 | 로컬 (자체 서버) | 후보 (11단계) |
 | 브라우저 AEC·NS·AGC (WebRTC 오디오 처리) | 에코 제거, 잡음 억제, 자동 음량 | 브라우저 내장 | 무료 | 가능 | 로컬 (브라우저) | 사용 중 (AEC 켬, NS·AGC 끔이 기본, [audio-input.md](../audio-input.md) 2장) |
-| RNNoise | 서버 잡음 억제 | BSD-3-Clause | 무료 | 가능 | 로컬 | 후보, 기본 끔 |
-| DeepFilterNet | 서버 잡음 억제 | MIT 또는 Apache-2.0 | 무료 | 가능 | 로컬 | 후보, 기본 끔 |
+| RNNoise (xiph/rnnoise `70f1d25`, v0.2 뒤. pyrnnoise 0.4.5 휠의 라이브러리) | 서버 잡음 억제 | BSD-3-Clause / 모델은 라이브러리 안 (14.8MB) | 무료 | 가능 | 로컬 | 구현됨, 기본 끔 (`rnnoise`, 2026-10-31) |
+| DeepFilterNet3 v0.5.6 (soniqo의 ONNX 변환, ONNX Runtime) | 서버 잡음 억제 | MIT 또는 Apache-2.0 / ONNX 변환은 MIT (8.6MB) | 무료 | 가능 | 로컬 | 구현됨, 기본 끔 (`deepfilternet`, 2026-10-31) |
+
+### 서버 잡음 억제를 들여온 방식 (2026-10-31)
+
+- **RNNoise**: pyrnnoise 0.4.5(2026-09-23, win_amd64·manylinux x86_64/aarch64·macOS 휠)가 xiph/rnnoise를 빌드해 넣은 라이브러리(`rnnoise.dll` 14,825,472바이트 `06770aeb…7f31`, `librnnoise.so` 14,840,960바이트 `de5120ab…18ff`)만 ctypes로 연다. 크기와 sha256을 플랫폼마다 고정해 불러올 때 확인한다(Silero VAD와 같은 방식). 다른 빌드는 검토 전까지 거부한다. 라이선스는 GitHub 저장소 `pengzhendong/pyrnnoise`의 LICENSE(Apache-2.0)로 확인했다. PyPI의 라이선스 칸은 비어 있다. 파이썬 모듈은 그림 그리기·파일 입출력용 matplotlib·audiolab(그 아래 soundfile·soxr·smart-open·jinja2 …)을 import하는데 우리는 쓰지 않는다. 그래서 `pyproject.toml`의 `[tool.uv] override-dependencies`에 성립하지 않는 조건(`python_version < '3'`)을 달아 잠금 파일에서 뺐다. 그 결과 새로 들어오는 패키지는 pyrnnoise 하나다(click·numpy·tqdm은 이미 있다). 다른 패키지가 matplotlib를 필요로 하게 되면 이 설정을 지워야 한다.
+- **DeepFilterNet3**: 공식 파이썬 패키지 `deepfilternet` 0.5.6(마지막 2023-08)은 PyTorch와 `numpy<2.0`을 요구해(우리는 2.3.5) 쓰지 않는다. DSP 바인딩 `deepfilterlib` 0.5.6도 Python 3.11까지만 휠이 있어 3.12에서는 Rust로 빌드해야 하므로 쓰지 않는다. 대신 Hugging Face `soniqo/DeepFilterNet3-ONNX`(커밋 `63d8ba4`, MIT)의 `deepfilter.onnx`를 쓴다. 공식 v0.5.6 체크포인트를 네트워크만 ONNX로 내보낸 파일로, 8,608,859바이트, sha256 `e1157049…56d3`이다. 원본 압축 파일의 sha256과 PyTorch 대비 오차(1.5e-6 이하)가 매니페스트에 있다. 관리자 다운로드로 받아 ONNX Runtime(이미 `embedding` extra에 있음)으로 돌린다. STFT·ERB 특징·정규화·딥 필터·합성은 libDF 소스를 따라 NumPy로 짰다. ERB 대역 폭과 Vorbis 창은 그 저장소가 공개한 상수와 같다. 스트리밍으로 돌린 결과는 녹음 전체를 한 번에 처리한 것과 1 LSB 안에서 같다.
+- 검토하고 쓰지 않은 것은 8장에 있다.
 
 ## 6. 클라우드 서비스: 무엇이 나가고 얼마인가
 
@@ -181,6 +188,11 @@ STT 서비스별 비교는 [stt.md](stt.md), 화자분리 모델은 [diarization
 | 목소리 등록으로 사람 알아보기 | 민감정보(생체인식정보), 별도 동의 필요 | [diarization.md](diarization.md) 5장 |
 | AWS Transcribe (AI 서비스 거부 정책 없이) | 기본값이 학습 허용 | [stt.md](stt.md) 6장 |
 | OpenAI 실시간 전사 | 처리가 미국·EU뿐, 모델 종료 예정 | [stt.md](stt.md) 9장 |
+| `deepfilternet` 파이썬 패키지 0.5.6 | PyTorch가 필요하고 `numpy<2.0`으로 고정돼 있다 | 5장 "서버 잡음 억제를 들여온 방식" |
+| `deepfilterlib` 0.5.6 (libDF 파이썬 바인딩) | 휠이 Python 3.11까지뿐이라 3.12에서는 Rust 빌드가 필요하다 | 같음 |
+| pyrnnoise의 파이썬 모듈 | 쓰지 않는 의존성(matplotlib, audiolab)을 끌어온다. 휠 안의 라이브러리만 쓴다 | 같음 |
+| DeepFilterNet3 ONNX `penta2himajin/deepfilternet3-onnx` | 프레임을 하나씩만 받는다. 시간 방향 합성곱이 앞 프레임을 못 보고, 딥 필터도 앞뒤 프레임을 잃는다 | [audio-input.md](../audio-input.md) 7장 |
+| `deepfilter-stream` (PyPI) | 스트리밍 ONNX가 hop 512로 다시 학습한 변형이다. 개인 GitHub 릴리스에서 받고, sounddevice·soxr에 의존한다 | 같음 |
 
 ## 출처
 
@@ -194,7 +206,7 @@ STT 서비스별 비교는 [stt.md](stt.md), 화자분리 모델은 [diarization
 - [OpenAI text-embedding-3-large](https://developers.openai.com/api/docs/models/text-embedding-3-large)
 - 라이선스: [PyMuPDF](https://pypi.org/project/pymupdf/), [pyhwp](https://github.com/mete0r/pyhwp), [hwplib](https://github.com/neolord0/hwplib), [syhwp](https://github.com/sysphere/syhwp), [LibreOffice](https://www.libreoffice.org/about-us/licenses/), [Tesseract](https://github.com/tesseract-ocr/tesseract/blob/main/LICENSE), [PaddleOCR](https://github.com/PaddlePaddle/PaddleOCR/blob/main/LICENSE), [PP-OCRv5 모델](https://huggingface.co/PaddlePaddle/PP-OCRv5_server_rec), [BAAI/bge-m3](https://huggingface.co/BAAI/bge-m3), [FlagEmbedding](https://github.com/FlagOpen/FlagEmbedding), [Pretendard](https://github.com/orioncactus/pretendard/blob/main/LICENSE), [PyAV](https://github.com/PyAV-Org/PyAV/blob/master/LICENSE.txt), [CTranslate2](https://github.com/OpenNMT/CTranslate2/blob/master/LICENSE), [ONNX Runtime](https://github.com/microsoft/onnxruntime/blob/main/LICENSE), [faster-whisper](https://github.com/SYSTRAN/faster-whisper), [openai/whisper](https://github.com/openai/whisper)
 - PyAV의 FFmpeg: [pyav-ffmpeg](https://github.com/PyAV-Org/pyav-ffmpeg), [빌드 스크립트](https://github.com/PyAV-Org/pyav-ffmpeg/blob/main/scripts/build-ffmpeg.py), [FFmpeg 패치](https://github.com/PyAV-Org/pyav-ffmpeg/blob/main/patches/ffmpeg.patch), [x264](https://www.videolan.org/developers/x264.html), [x265](https://bitbucket.org/multicoreware/x265_git/src/master/COPYING)
-- 음성 도구: [Silero VAD 라이선스](https://raw.githubusercontent.com/snakers4/silero-vad/master/LICENSE), [Pipecat Smart Turn](https://github.com/pipecat-ai/smart-turn), [LiveKit turn detector 라이선스](https://huggingface.co/livekit/turn-detector/blob/main/LICENSE), [LiveKit 서버](https://github.com/livekit/livekit), [LiveKit client-sdk-js](https://github.com/livekit/client-sdk-js), [LiveKit Agents](https://github.com/livekit/agents), [RNNoise](https://github.com/xiph/rnnoise), [DeepFilterNet](https://github.com/Rikorose/DeepFilterNet)
+- 음성 도구: [Silero VAD 라이선스](https://raw.githubusercontent.com/snakers4/silero-vad/master/LICENSE), [Pipecat Smart Turn](https://github.com/pipecat-ai/smart-turn), [LiveKit turn detector 라이선스](https://huggingface.co/livekit/turn-detector/blob/main/LICENSE), [LiveKit 서버](https://github.com/livekit/livekit), [LiveKit client-sdk-js](https://github.com/livekit/client-sdk-js), [LiveKit Agents](https://github.com/livekit/agents), [RNNoise](https://github.com/xiph/rnnoise), [pyrnnoise](https://github.com/pengzhendong/pyrnnoise), [DeepFilterNet](https://github.com/Rikorose/DeepFilterNet), [DeepFilterNet3 ONNX (soniqo)](https://huggingface.co/soniqo/DeepFilterNet3-ONNX)
 - 화자분리 모델·STT 서비스의 출처는 [diarization.md](diarization.md), [stt.md](stt.md) 끝에 있다.
 
 ### 확인 필요
@@ -205,4 +217,5 @@ STT 서비스별 비교는 [stt.md](stt.md), 화자분리 모델은 [diarization
 - Document AI의 학습 사용 정책, 가격 단위("count"가 쪽인지)
 - CLOVA OCR의 실제 리전 목록, 접근 기록 보관 기간
 - PyAV 휠에 든 FFmpeg(x264·x265)의 실제 라이선스 의무 (법무)
+- pyrnnoise의 PyPI 라이선스 칸이 비어 있다. GitHub LICENSE(Apache-2.0)로 판단했다. 사내 오픈소스 검토에서 휠의 라이선스 표기를 요구하면 확인한다
 - Gemini·사내 LLM 대안의 가격·조건 (조사 안 함). 오픈 웨이트 모델의 확인 필요 항목은 [llm.md](llm.md) 끝

@@ -197,14 +197,26 @@ class TurnProvider(Provider, ABC):
     def tracker(self, frame_ms: int) -> TurnTracker: ...
 
 
+class DenoiseStream(ABC):
+    """One microphone's noise suppression state (filters, the model's memory, samples waiting for
+    a whole frame). `delay_samples`: how many 16 kHz samples the output lags the input."""
+
+    delay_samples: int = 0
+
+    @abstractmethod
+    def process(self, pcm: bytes) -> bytes:
+        """16 kHz PCM16 chunk of any length in, the same number of bytes out. Chunks must be
+        consecutive: the state carries over from one call to the next."""
+
+
 class DenoiseProvider(Provider, ABC):
-    """Noise suppression in front of STT (16 kHz PCM16 in, same length out). Off by default:
-    suppression artifacts can raise STT errors (docs/reference/audio-quality.md 7장)."""
+    """Noise suppression in front of STT. Off by default: suppression artifacts can raise STT
+    errors (docs/reference/audio-quality.md 7장, measured in docs/audio-input.md 7장)."""
 
     enabled: bool = False
 
     @abstractmethod
-    def process(self, pcm: bytes) -> bytes: ...
+    def stream(self) -> DenoiseStream: ...
 
 
 @dataclass(frozen=True)

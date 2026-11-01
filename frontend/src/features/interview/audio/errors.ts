@@ -27,6 +27,7 @@ const TABLE: Record<string, { message: string; stop: boolean }> = {
   'AUDIO-FORMAT': { message: '오디오 형식이 맞지 않습니다 (16kHz 모노 16비트 PCM만 받습니다).', stop: true },
   'VAD-MISSING': { message: '음성 구간(VAD) 모델을 쓸 수 없어 전사하지 않습니다. 녹음은 계속됩니다.', stop: false },
   'TURN-MISSING': { message: 'Smart Turn 모델이 없어 침묵 기준으로 답변 끝을 판정합니다.', stop: false },
+  'DENOISE-MISSING': { message: '서버 잡음 억제를 쓸 수 없어 끄고 전사합니다. 관리자 > 모델 설정을 확인하세요.', stop: false },
   'STT-MISSING': { message: '실시간 STT 모델을 쓸 수 없어 전사하지 않습니다. 녹음은 계속됩니다.', stop: false },
   'STT-FORMAT': { message: '실시간 STT가 마이크 음성을 읽지 못합니다. 관리자 > 모델 설정을 확인하세요.', stop: false },
   'STT-FAILED': { message: '실시간 전사 중 오류가 났습니다. 답변은 수기로 기록할 수 있습니다.', stop: false },

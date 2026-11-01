@@ -1,11 +1,16 @@
-"""Server-side noise suppression in front of STT (registry names: off; rnnoise and deepfilternet are
-listed but not implemented, docs/audio-input.md 7장)."""
+"""Server-side noise suppression in front of STT (registry names: off, rnnoise, deepfilternet;
+docs/audio-input.md 7장). Both models work at 48 kHz behind `resample.At48k`."""
 
 from __future__ import annotations
 
 from typing import Any
 
-from interview_assistant.providers.base import DenoiseProvider
+from interview_assistant.providers.base import DenoiseProvider, DenoiseStream
+
+
+class Passthrough(DenoiseStream):
+    def process(self, pcm: bytes) -> bytes:
+        return pcm
 
 
 class NoDenoise(DenoiseProvider):
@@ -16,5 +21,5 @@ class NoDenoise(DenoiseProvider):
     def __init__(self, **_: Any) -> None:
         self.model = "off"
 
-    def process(self, pcm: bytes) -> bytes:
-        return pcm
+    def stream(self) -> DenoiseStream:
+        return Passthrough()

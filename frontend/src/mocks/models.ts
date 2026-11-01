@@ -91,11 +91,13 @@ export const WEIGHT_SIZES: Record<string, Record<string, number>> = {
   tesseract: { best: 27_928_729, fast: 5_790_503 },
   bge_m3: { 'bge-m3-int8': 585_685_408, 'bge-m3': 2_284_631_868 },
   smart_turn: { 'smart-turn-v3.2-cpu': 8_679_182 },
+  deepfilternet: { deepfilternet3: 8_608_859 },
 }
 export const weightKey = (impl: string, model: string) => `${impl}:${model}`
 const LOCAL_FILES = '서류와 그림은 이 PC 밖으로 나가지 않습니다.'
 const LOCAL_VOICE = '음성은 이 PC(서버) 밖으로 나가지 않습니다.'
 const minSpeech = field('min_speech_ms', '답변 시작으로 볼 최소 말소리 (ms)', 'integer', 250, { help: '이보다 짧은 소리(기침, 짧은 대꾸)만 있었으면 답변이 시작되지 않은 것으로 봅니다.', minimum: 0, maximum: 2000 })
+const attenLim = field('atten_lim_db', '최대 억제 (dB)', 'number', 0, { help: '0이면 모델이 정한 만큼 줄입니다. 12처럼 정하면 원래 소리를 그만큼 낮춰 섞어, 잡음을 그 이상은 줄이지 않는 대신 말소리의 변형도 덜합니다.', minimum: 0, maximum: 60 })
 const NO_LLM_IMAGES = '그림은 OCR로 글자만 읽고 버립니다. LLM에는 그림을 보내지 않습니다.'
 
 const impl = (
@@ -355,8 +357,12 @@ export function mockCatalog(downloaded: ReadonlySet<string>): ModelImpl[] {
       minSpeech,
     ]),
     impl('denoise', 'off', '끔 (기본)', '잡음 억제 없이 브라우저가 보낸 소리를 그대로 VAD와 STT에 넣습니다.', 'local', '설정입니다. 데이터를 보내지 않습니다.', '프로젝트 코드', ['audio.denoise']),
-    impl('denoise', 'rnnoise', 'RNNoise', 'Xiph의 RNN 잡음 억제(48kHz). 구현 전입니다.', 'local', LOCAL_VOICE, 'BSD-3-Clause', ['audio.denoise']),
-    impl('denoise', 'deepfilternet', 'DeepFilterNet', '딥러닝 잡음 억제(48kHz). 구현 전입니다.', 'local', LOCAL_VOICE, 'MIT 또는 Apache-2.0', ['audio.denoise']),
+    impl('denoise', 'rnnoise', 'RNNoise (로컬)', 'Xiph의 작은 RNN 잡음 억제. 16kHz 마이크 음성을 48kHz로 올려 10ms씩 걸고 다시 내립니다. 지연 약 35ms. 소음 섞은 한국어 측정에서 말소리가 잘 들리는 표본은 CER이 조금 올랐고, 키보드 소음에 작은 목소리가 묻힐 때만 나아졌습니다(에어컨 소음에서는 나빠짐). 그래서 기본은 끔입니다(docs/audio-input.md 7장).', 'local', `${LOCAL_VOICE} 라이브러리는 pyrnnoise 패키지 안에 있어 따로 내려받지 않고, 불러올 때 sha256을 확인합니다.`, 'BSD-3-Clause (RNNoise), Apache-2.0 (pyrnnoise)', ['audio.denoise'], [attenLim]),
+    impl('denoise', 'deepfilternet', 'DeepFilterNet3 (로컬)', "딥러닝 잡음 억제(공식 v0.5.6 모델, ONNX Runtime, PyTorch 없음). 48kHz에서 대역별 이득과 저역의 딥 필터로 잡음을 줄입니다. 지연 약 45ms(앞보기 20ms 포함). 내보낸 모델이 상태를 넘기지 못해 매번 '앞 문맥'만큼 지난 소리를 다시 넣습니다. 측정에서는 모든 소음 세기에서 끔보다 CER이 높았습니다(5dB 23%→28%). 비교용입니다(docs/audio-input.md 7장).", 'local', `${LOCAL_VOICE} 모델 파일(8.6MB)만 Hugging Face에서 한 번 내려받습니다(sha256 고정).`, 'MIT 또는 Apache-2.0 (DeepFilterNet), MIT (ONNX 변환)', ['audio.denoise'], [
+      field('model', '모델', 'select', 'deepfilternet3', { choices: sized('deepfilternet', [choice('deepfilternet3', 'DeepFilterNet3 (v0.5.6, ONNX)', '네트워크만 든 ONNX 파일. STFT·특징·필터는 이 프로그램이 계산합니다.', { recommended_for: ['audio.denoise'] })]) }),
+      field('context_ms', '앞 문맥 (ms)', 'integer', 300, { help: '새 소리마다 이만큼 지난 소리를 함께 다시 넣어 모델의 기억을 되살립니다. 300ms면 녹음 전체를 한 번에 처리한 결과와 거의 같고(차이 24dB), 더 늘려도 결과는 그대로이고 CPU만 늡니다.', minimum: 0, maximum: 2000 }),
+      attenLim,
+    ]),
   ]
 }
 
@@ -366,7 +372,7 @@ const ok = (key: string, label: string, detail: string): ModelRequirement => ({ 
 
 /** Mock machine: GCP credentials present (mock world), faster-whisper installed, weights as downloaded, every environment variable set. */
 export function requirementsFor(i: ModelImpl, options: Record<string, ModelOptionValue>, downloaded: ReadonlySet<string>): ModelRequirement[] {
-  const notYet = ['google_document_ai', 'clova_ocr', 'hwplib', 'rnnoise', 'deepfilternet']
+  const notYet = ['google_document_ai', 'clova_ocr', 'hwplib']
   if (notYet.includes(i.impl)) {
     const reqs = [missing('implemented', '구현', '아직 구현되지 않았습니다.', '이 provider의 구현 단계(구현 순서 문서)를 마친 뒤 쓸 수 있습니다.')]
     if (i.impl === 'clova_ocr')
@@ -384,6 +390,8 @@ export function requirementsFor(i: ModelImpl, options: Record<string, ModelOptio
   if (i.impl === 'tesseract') reqs.push(ok('program:tesseract', '프로그램 Tesseract', 'tesseract v5.4.0.20240606'))
   if (i.impl === 'libreoffice') reqs.push(ok('program:soffice', '프로그램 LibreOffice', 'LibreOffice 26.8.1.1'))
   if (i.impl === 'bge_m3') reqs.push(ok('package:onnxruntime', '패키지 onnxruntime', '설치되어 있습니다.'), ok('package:tokenizers', '패키지 tokenizers', '설치되어 있습니다.'))
+  if (i.impl === 'rnnoise') reqs.push(ok('package:pyrnnoise', '패키지 pyrnnoise', '설치되어 있습니다.'))
+  if (i.impl === 'deepfilternet') reqs.push(ok('package:onnxruntime', '패키지 onnxruntime', '설치되어 있습니다.'))
   if (i.impl === 'syhwp') reqs.push(ok('package:syhwp', '패키지 syhwp', '설치되어 있습니다.'), ok('package:olefile', '패키지 olefile', '설치되어 있습니다.'))
   const sizes = WEIGHT_SIZES[i.impl]
   if (sizes && i.impl !== 'faster_whisper') {
@@ -642,7 +650,17 @@ function readingTest(role: string, spec: ModelSpec, document: File | null, model
 /** 음성 입력 roles: the sample's speech stretches (VAD) or where the answer would close (답변 끝 판정). */
 function audioInputTest(role: string, spec: ModelSpec, audio: File | null, model: string): ModelTestResult {
   const base = { ok: true, model, error: null, audio: audio ? ('upload' as const) : ('sample' as const), latency_ms: 180 }
-  if (role === 'audio.denoise') return { ...base, audio: null, summary: '잡음 억제를 하지 않습니다 (끔). 브라우저가 보낸 소리가 그대로 VAD와 STT로 갑니다.', output: {} }
+  if (role === 'audio.denoise' && spec.impl === 'off') return { ...base, audio: null, summary: '잡음 억제를 하지 않습니다 (끔). 브라우저가 보낸 소리가 그대로 VAD와 STT로 갑니다.', output: {} }
+  if (role === 'audio.denoise') {
+    const delay = spec.impl === 'rnnoise' ? 35 : 45
+    const cpu = spec.impl === 'rnnoise' ? 220 : 370
+    return {
+      ...base,
+      latency_ms: 1400,
+      summary: `11.5초 음성을 100ms 조각으로 처리했습니다. 지연 ${delay}ms, 처리 시간 음성 1초당 ${cpu}ms. 소리 크기: 말소리 구간 -0.6dB, 그 밖 -14.2dB.`,
+      output: { audio_seconds: 11.46, same_length: true, delay_ms: delay, cpu_ms_per_second: cpu, speech_change_db: -0.6, other_change_db: -14.2 },
+    }
+  }
   const speech = [[2.34, 8.45]]
   if (role === 'audio.vad') return { ...base, summary: '11.5초 중 말소리 6.1초, 구간 1개를 찾았습니다.', output: { audio_seconds: 11.46, speech_seconds: 6.11, speech } }
   const smart = spec.impl === 'smart_turn'

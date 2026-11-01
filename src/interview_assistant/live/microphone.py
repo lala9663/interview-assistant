@@ -5,7 +5,9 @@ mono 16-bit PCM and sends it over a WebSocket, or in HTTP chunks where WebSocket
 (api/routes/audio.py). Every chunk goes through `feed`:
 
 1. With consent, the raw chunk is appended to the session's WAV in the raw zone (live/recording.py).
-2. Noise suppression (off by default, `audio.denoise`).
+2. Noise suppression (off by default, `audio.denoise`): the microphone's own stream of the model,
+   same length out, `delay_samples` late (RNNoise about 35 ms, DeepFilterNet about 45 ms), so the
+   VAD, STT and end-of-answer detector all hear the same, slightly later audio.
 3. Silero VAD marks each 32 ms frame speech or not (`audio.vad`, with hysteresis).
 4. Only speech goes to STT: frames that are not speech, or within `speech_pad_ms` after it, or
    the `PREROLL_MS` before it, are replaced by digital silence of the same length. The stream
@@ -98,6 +100,7 @@ class MicrophoneSource(AudioSource):
         self.vad = vad
         self.turn = turn
         self.denoise = denoise
+        self._denoise = denoise.stream() if denoise is not None and denoise.enabled else None
         self.recorder = recorder
         self.on_change = on_change or (lambda: None)
         self.notices: list[str] = list(notices)  # codes shown on screen (TURN-MISSING ...)
@@ -187,8 +190,8 @@ class MicrophoneSource(AudioSource):
         self.last_seen = time.monotonic()
         if self.recorder is not None:
             self.recorder.write(pcm)
-        if self.denoise is not None and self.denoise.enabled:
-            pcm = self.denoise.process(pcm)
+        if self._denoise is not None:
+            pcm = self._denoise.process(pcm)
         data = self._rest + pcm
         usable = len(data) - len(data) % (FRAME * 2)
         self._rest = data[usable:]

@@ -4,6 +4,7 @@ consent, where the recording goes, the interviewer asking aloud, answer prefetch
 from __future__ import annotations
 
 import asyncio
+import importlib.util
 import json
 import wave
 
@@ -445,3 +446,21 @@ def test_the_admin_can_test_the_vad_and_the_end_of_answer_detector_on_the_sample
     assert "1.5초 뒤 답변 끝" in turn["summary"]
     off = run("audio.denoise", {"impl": "off", "options": {}})
     assert off["ok"] and "끔" in off["summary"]
+
+
+@pytest.mark.skipif(importlib.util.find_spec("pyrnnoise") is None, reason="pyrnnoise not installed (uv sync --extra denoise)")
+def test_the_admin_can_test_both_noise_suppressors_on_the_sample(api):
+    def run(spec: dict) -> dict:
+        response = api.post("/api/admin/models/audio.denoise/test", data={"spec": json.dumps(spec)})
+        assert response.status_code == 200, response.text
+        return response.json()
+
+    rn = run({"impl": "rnnoise", "options": {}})
+    assert rn["ok"], rn
+    assert rn["output"]["same_length"] and rn["output"]["delay_ms"] == 35
+    assert "지연 35ms" in rn["summary"] and "말소리 구간" in rn["summary"]
+    assert rn["output"]["other_change_db"] < rn["output"]["speech_change_db"]  # the rest is turned down more
+    # The test server's weights folder is empty: DeepFilterNet's test is refused, naming the file.
+    spec = {"impl": "deepfilternet", "options": {}}
+    refused = api.post("/api/admin/models/audio.denoise/test", data={"spec": json.dumps(spec)})
+    assert refused.status_code == 409 and "deepfilternet3" in refused.json()["detail"]

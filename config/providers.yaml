@@ -81,4 +81,5 @@ providers:
       max_silence_ms: 3000
     denoise:
       impl: "off"
-    # 대안: turn { impl: silence, silence_ms: 2000 } / denoise { impl: rnnoise }(구현 전)
+    # 대안: turn { impl: silence, silence_ms: 2000 } / denoise { impl: rnnoise } 또는 { impl: deepfilternet }
+    #   (uv sync --extra denoise. 잡음 억제는 측정에서 CER을 고르게 낮추지 못해 끔이 기본: docs/audio-input.md 7장)

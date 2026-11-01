@@ -7,7 +7,8 @@ transcribes a voice sample, the built-in clip or the admin's own recording, thro
 path: batch `transcribe` on a file, streaming `stream` on 16 kHz PCM chunks. Embedding checks the
 vector dimension, diarization the speaker turns. 음성 입력 roles run the voice sample through the
 microphone path offline: the VAD's speech stretches, or where the end-of-answer detector would
-close the answer (with 3 s of silence after the sample). 서류 읽기 roles read a built-in fictional resume
+close the answer (with 3 s of silence after the sample), or for noise suppression the delay, the
+time per second of audio and how much quieter speech and the rest came out. 서류 읽기 roles read a built-in fictional resume
 or the admin's file with the candidate setting (`read_document`) and show how each page was read
 and a de-identified preview; the raw text never leaves the server. Nothing a test sends or
 returns is stored; the audit log keeps who tested what, the model, the outcome and the timings.
@@ -15,6 +16,7 @@ returns is stored; the audit log keeps who tested what, the model, the outcome a
 
 from __future__ import annotations
 
+import asyncio
 import json
 import math
 import re
@@ -232,8 +234,21 @@ async def _audio_input(kind: str, provider: Any, audio: Path) -> tuple[bool, str
     if kind == "denoise":
         if not getattr(provider, "enabled", False):
             return True, "잡음 억제를 하지 않습니다 (끔). 브라우저가 보낸 소리가 그대로 VAD와 STT로 갑니다.", output
-        cleaned = provider.process(pcm)
-        return len(cleaned) == len(pcm), f"{seconds:.1f}초 음성을 처리했습니다.", output
+        await provider.warm_up()
+        output |= await asyncio.to_thread(_denoise, provider, pcm, seconds)
+        if not output["same_length"]:
+            return False, "처리한 음성의 길이가 입력과 다릅니다.", output
+        levels = (
+            f" 소리 크기: 말소리 구간 {output['speech_change_db']:+.1f}dB, 그 밖 {output['other_change_db']:+.1f}dB."
+            if output.get("speech_change_db") is not None and output.get("other_change_db") is not None
+            else ""
+        )
+        return (
+            True,
+            f"{seconds:.1f}초 음성을 100ms 조각으로 처리했습니다. 지연 {output['delay_ms']}ms, "
+            f"처리 시간 음성 1초당 {output['cpu_ms_per_second']}ms.{levels}",
+            output,
+        )
     vad = provider if kind == "vad" else SileroVAD()
     await vad.warm_up()
     samples = np.frombuffer(pcm, dtype="<i2").astype(np.float32) / 32768.0
@@ -268,6 +283,39 @@ async def _audio_input(kind: str, provider: Any, audio: Path) -> tuple[bool, str
         return False, f"마지막 말소리({last:.1f}초) 뒤 3초 안에 답변 끝으로 판정하지 않았습니다.", output
     note = f", 그 전에 {len(early)}번 끊음" if early else ""
     return True, f"마지막 말소리 {last:.1f}초 → {final['at'] - last:.1f}초 뒤 답변 끝 ({final['reason']}){note}.", output
+
+
+def _denoise(provider: Any, pcm: bytes, seconds: float) -> dict[str, Any]:
+    """The sample through a fresh stream in the browser's 100 ms chunks: the delay, the time per
+    second of audio, and how much louder or quieter the speech (Silero VAD on the input) and
+    everything else came out."""
+    import numpy as np
+
+    from interview_assistant.live.microphone import speech_flags
+    from interview_assistant.providers.vad.silero import SileroVAD
+
+    stream = provider.stream()
+    started = time.perf_counter()
+    cleaned = b"".join(stream.process(pcm[i : i + 3200]) for i in range(0, len(pcm), 3200))
+    elapsed = time.perf_counter() - started
+    output: dict[str, Any] = {
+        "same_length": len(cleaned) == len(pcm),
+        "delay_ms": round(stream.delay_samples / 16),
+        "cpu_ms_per_second": round(elapsed / seconds * 1000) if seconds else None,
+    }
+    before = np.frombuffer(pcm, dtype="<i2").astype(np.float32) / 32768.0
+    after = np.frombuffer(cleaned, dtype="<i2").astype(np.float32)[stream.delay_samples :] / 32768.0
+    after = np.concatenate([after, np.zeros(len(before) - len(after), dtype=np.float32)])
+    try:
+        flags = speech_flags(SileroVAD(), before)
+    except ProviderUnavailable:
+        return output
+    frames = len(flags) * 512
+    speech = np.repeat(flags, 512)
+    for key, part in (("speech_change_db", speech), ("other_change_db", ~speech)):
+        energy = float((before[:frames][part] ** 2).sum())
+        output[key] = round(10 * math.log10(float((after[:frames][part] ** 2).sum() + 1e-12) / energy), 1) if energy else None
+    return output
 
 
 async def _embedding(provider: Any) -> tuple[bool, str, dict[str, Any]]:

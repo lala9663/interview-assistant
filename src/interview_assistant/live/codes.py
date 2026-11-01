@@ -12,6 +12,7 @@ MIC_TAKEN = "MIC-TAKEN"
 AUDIO_FORMAT = "AUDIO-FORMAT"
 VAD_MISSING = "VAD-MISSING"
 TURN_MISSING = "TURN-MISSING"
+DENOISE_MISSING = "DENOISE-MISSING"
 STT_MISSING = "STT-MISSING"
 STT_FORMAT = "STT-FORMAT"
 STT_FAILED = "STT-FAILED"
@@ -24,6 +25,7 @@ MESSAGES: dict[str, str] = {
     AUDIO_FORMAT: "오디오 형식이 맞지 않습니다 (16kHz 모노 16비트 PCM만 받습니다).",
     VAD_MISSING: "음성 구간(VAD) 모델을 쓸 수 없어 전사하지 않습니다. 녹음은 계속됩니다.",
     TURN_MISSING: "Smart Turn 모델이 없어 침묵 기준으로 답변 끝을 판정합니다.",
+    DENOISE_MISSING: "서버 잡음 억제를 쓸 수 없어 끄고 전사합니다. 관리자 > 모델 설정을 확인하세요.",
     STT_MISSING: "실시간 STT 모델을 쓸 수 없어 전사하지 않습니다. 녹음은 계속됩니다.",
     STT_FORMAT: "실시간 STT가 마이크 음성을 읽지 못합니다. 관리자 > 모델 설정을 확인하세요.",
     STT_FAILED: "실시간 전사 중 오류가 났습니다. 답변은 수기로 기록할 수 있습니다.",

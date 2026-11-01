@@ -20,6 +20,12 @@ resolution-markers = [
 anthropic = "2026-10-14T00:00:00Z"
 sse-starlette = "2026-10-14T00:00:00Z"
 
+[manifest]
+overrides = [
+    { name = "audiolab", marker = "python_full_version < '3'" },
+    { name = "matplotlib", marker = "python_full_version < '3'" },
+]
+
 [[package]]
 name = "aiohappyeyeballs"
 version = "2.7.1"
@@ -1365,6 +1371,10 @@ agent = [
 claude = [
     { name = "anthropic" },
 ]
+denoise = [
+    { name = "onnxruntime" },
+    { name = "pyrnnoise" },
+]
 embedding = [
     { name = "onnxruntime" },
     { name = "tokenizers" },
@@ -1405,12 +1415,14 @@ requires-dist = [
     { name = "mcp", marker = "extra == 'agent'", specifier = ">=2.3.0,<3" },
     { name = "numpy", specifier = ">=2.0" },
     { name = "olefile", specifier = ">=0.47" },
+    { name = "onnxruntime", marker = "extra == 'denoise'", specifier = ">=1.20" },
     { name = "onnxruntime", marker = "extra == 'embedding'", specifier = ">=1.20" },
     { name = "paddleocr", marker = "extra == 'ocr'", specifier = "==3.7.0" },
     { name = "paddlepaddle", marker = "extra == 'ocr'", specifier = "==3.2.2" },
     { name = "pdfplumber", specifier = ">=0.11.10" },
     { name = "pydantic", specifier = ">=2.7" },
     { name = "pydantic-settings", specifier = ">=2.3" },
+    { name = "pyrnnoise", marker = "extra == 'denoise'", specifier = "==0.4.5" },
     { name = "python-docx", specifier = ">=1.2.0" },
     { name = "python-multipart", specifier = ">=0.0.32" },
     { name = "python-pptx", specifier = ">=1.0.2" },
@@ -1420,7 +1432,7 @@ requires-dist = [
     { name = "tokenizers", marker = "extra == 'embedding'", specifier = ">=0.20" },
     { name = "uvicorn", extras = ["standard"], specifier = ">=0.30" },
 ]
-provides-extras = ["gcp", "claude", "whisper", "embedding", "ocr", "agent"]
+provides-extras = ["gcp", "claude", "whisper", "embedding", "ocr", "denoise", "agent"]
 
 [package.metadata.requires-dev]
 dev = [
@@ -2876,6 +2888,22 @@ wheels = [
     { url = "https://files.pythonhosted.org/packages/7f/0c/6c21f68a57d0c4c506b9e5f72506ba91d8dde47eef699f3fd9561f7bff0e/pypdfium2-5.14.0-py3-none-win32.whl", hash = "sha256:9fd5cc94a389d50298e4d8cb79af6b9b8e0d785606e2a937725dc6e271c9c6e6", size = 3805374, upload-time = "2026-10-04T15:19:14.357Z" },
     { url = "https://files.pythonhosted.org/packages/00/dc/ca7874924c9cfd701ad53f89529968523790e70473e0b71e834668316148/pypdfium2-5.14.0-py3-none-win_amd64.whl", hash = "sha256:149fd5c6397b8df8bf7911a93506eff0be874f877afe7ac936cf5d37d21a6a06", size = 3947280, upload-time = "2026-10-04T15:19:16.302Z" },
     { url = "https://files.pythonhosted.org/packages/46/ab/35f2276deeeebb781925e2647dd88a39f8ea1a910104a0dbb28218473502/pypdfium2-5.14.0-py3-none-win_arm64.whl", hash = "sha256:eb8aeca157808f323e39ea298cc6d6c8e080c192ea2efb1ca81daa0f0ff4d095", size = 3745021, upload-time = "2026-10-04T15:19:18.276Z" },
+]
+
+[[package]]
+name = "pyrnnoise"
+version = "0.4.5"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "click" },
+    { name = "numpy" },
+    { name = "tqdm" },
+]
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/29/bb/e19eb6a6c0706d955de366b72c4495369a79d52c839495a1d360e9ea1b91/pyrnnoise-0.4.5-py3-none-macosx_26_0_universal2.whl", hash = "sha256:8289b32664ac05d3246c1d8e95522f2bec7fd99b29f238a58745e9c2fad47dae", size = 13382843, upload-time = "2026-09-23T03:26:20.157Z" },
+    { url = "https://files.pythonhosted.org/packages/f1/8b/6498de7ef0a4670bbeae951bec9cfd2386e57ef386f53eec28e75be39790/pyrnnoise-0.4.5-py3-none-manylinux1_x86_64.whl", hash = "sha256:c095114532f9fa21f621084c879d72c93aaa0c9dbe38b662a63577bada2c214e", size = 13273323, upload-time = "2026-09-23T03:26:19.317Z" },
+    { url = "https://files.pythonhosted.org/packages/d7/69/96144ce909a371d9f0de8aceb18fb53188b8df14ef34fce909d345bafb42/pyrnnoise-0.4.5-py3-none-manylinux2014_aarch64.whl", hash = "sha256:4b382d39b4963d38c8fe2f61639f634a5de0dd7dc731aca7ff1df48f9b1424cf", size = 13267263, upload-time = "2026-09-23T03:26:12.884Z" },
+    { url = "https://files.pythonhosted.org/packages/20/8d/0e19fbae841a4933c4ba783cf4466dfd24c70305fab9bc0c8674aa19ebc6/pyrnnoise-0.4.5-py3-none-win_amd64.whl", hash = "sha256:f46015e5a58212d2883bf8e5a2cafb3c6b115176d8039f8340132cb24866b7da", size = 13263766, upload-time = "2026-09-23T03:26:50.721Z" },
 ]
 
 [[package]]

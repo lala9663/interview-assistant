@@ -9,7 +9,7 @@
 Python 3.12, [uv](https://docs.astral.sh/uv/).
 
 ```bash
-uv sync --extra whisper --extra ocr --extra embedding --extra agent
+uv sync --extra whisper --extra ocr --extra embedding --extra agent --extra denoise
 cp .env.example .env
 ```
 
@@ -19,6 +19,7 @@ cp .env.example .env
 | `ocr` | paddleocr 3.7.0, paddlepaddle 3.2.2 (CPU, 약 500MB) | 스캔본·그림 OCR 안 됨 |
 | `embedding` | onnxruntime, tokenizers (BGE-M3). faster-whisper가 이미 쓰는 패키지라 더 받는 것은 거의 없다 | 질문 은행 검색을 fake 임베딩으로만 |
 | `agent` | Python MCP SDK `mcp` 2.3 (MCP 서버, [agent-integration.md](agent-integration.md)) | MCP 서버를 못 띄운다. 테스트는 dev 그룹의 같은 `mcp`로 돈다 |
+| `denoise` | pyrnnoise 0.4.5 (RNNoise 라이브러리만 쓴다, 약 13MB), onnxruntime (DeepFilterNet3). 서버 잡음 억제는 기본 끔([audio-input.md](audio-input.md) 7장) | 관리자 화면에서 RNNoise·DeepFilterNet을 고를 수 없다. 끔은 그대로 |
 | `claude` | anthropic SDK (Claude API, 외부 개발 테스트용, [ai-models.md](ai-models.md)) | 사내에는 넣지 않는다 |
 | `gcp` | Google·Vertex SDK | 쓰지 않는다 (외부 클라우드, 구현 전) |
 
@@ -33,7 +34,7 @@ cp .env.example .env
 | LibreOffice | 구형 .doc·.ppt 변환. 없으면 그런 서류는 "변환기 없음"으로 거부 | `winget install TheDocumentFoundation.LibreOffice` | `apt install libreoffice-core libreoffice-writer libreoffice-impress` | `SOFFICE_CMD` |
 | Tesseract | OCR 엔진 Tesseract(비교용, 기본은 PaddleOCR) | `winget install UB-Mannheim.TesseractOCR` | `apt install tesseract-ocr` | `TESSERACT_CMD` |
 
-모델 파일(Whisper, PaddleOCR PP-OCRv5, Tesseract 한국어 데이터, BGE-M3 int8 0.59GB, Smart Turn 8.7MB)은 설치가 아니라 관리자 > 모델 설정의 "다운로드"로 받는다([ai-models.md](ai-models.md)). 인터넷이 막힌 곳에서는 받아 둔 `weights/` 폴더를 옮긴다([audio-input.md](audio-input.md) 10장).
+모델 파일(Whisper, PaddleOCR PP-OCRv5, Tesseract 한국어 데이터, BGE-M3 int8 0.59GB, Smart Turn 8.7MB, DeepFilterNet3 8.6MB)은 설치가 아니라 관리자 > 모델 설정의 "다운로드"로 받는다([ai-models.md](ai-models.md)). 인터넷이 막힌 곳에서는 받아 둔 `weights/` 폴더를 옮긴다([audio-input.md](audio-input.md) 10장).
 
 ### .env
 
@@ -45,7 +46,7 @@ cp .env.example .env
 | `IA_DATABASE_URL` | 기본 `sqlite+pysqlite:///./dev.db` |
 | `IA_DEV_INTERVIEWER` | 로그인 전까지 로그인한 면접관의 사번. 시드의 김서연 = `E24017`(관리자) |
 | `IA_UPLOADS_DIR`, `IA_RECORDINGS_DIR` | 원본 영역(업로드 서류, 녹음). git 제외, 서빙하지 않는다 |
-| `IA_WEIGHTS_DIR` | 내려받은 모델 가중치(로컬 Whisper, PaddleOCR, Tesseract 한국어 데이터, BGE-M3). 기본 `weights/`, git 제외 |
+| `IA_WEIGHTS_DIR` | 내려받은 모델 가중치(로컬 Whisper, PaddleOCR, Tesseract 한국어 데이터, BGE-M3, Smart Turn, DeepFilterNet3). 기본 `weights/`, git 제외 |
 | `SOFFICE_CMD`, `TESSERACT_CMD` | LibreOffice·Tesseract 실행 파일 경로. PATH와 기본 설치 위치에 없을 때만 |
 | `IA_DEMO_SPEED` | 가상 지원자 속도. 1이면 프론트 모의 모드와 비슷, 0이면 지연 없음 |
 | `IA_SITE_SECRET`, `IA_SITE_SECRET_PREVIOUS` | 채용 사이트 연동의 공유 HMAC 키([site-intake-spec.md](site-intake-spec.md) 4장). 없으면 사이트 수신 엔드포인트가 503. 키 교체 중에는 이전 키도 받는다. 커밋하지 않는다 |

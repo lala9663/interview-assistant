@@ -366,7 +366,7 @@ data: {"qa_item_id":"…","answer_deidentified":"…","answered_at":"2026-10-23T
 - 세션이 끝나면 `status`(stopped)를 보내고 스트림을 닫는다. 진행 중이 아닌 세션에 접속하면 `status` 하나로 끝난다.
 - 수기 모드(동의 없음)에서는 프론트가 이 스트림을 열지 않는다.
 - 오디오: 브라우저가 마이크를 붙이면(3.3) 그 세션은 마이크를 듣는다. 붙이기 전에는 `live/audio.py`의 `ScriptedCandidate`가 데모 대본을 문장 단위 텍스트로 보내고 fake STT가 받아 적는다(실제 STT는 이 텍스트를 못 읽어 `stt: down`). 속도는 `IA_DEMO_SPEED`(1 = 프론트 모의 모드와 비슷).
-- 마이크가 붙은 세션에서는 `status`에 `mic` {connected, transport(websocket/http), role(candidate/interviewer), speaking(서버 VAD가 말소리를 듣는 중), turn(답변 끝 판정기), notices[](VAD-MISSING·TURN-MISSING·STT-MISSING·REC-FAILED 등), last_end{reason, probability, at_ms}}와 `error` {code, message}가 붙는다. 녹음 중이 아니면 두 필드가 없다.
+- 마이크가 붙은 세션에서는 `status`에 `mic` {connected, transport(websocket/http), role(candidate/interviewer), speaking(서버 VAD가 말소리를 듣는 중), turn(답변 끝 판정기), notices[](VAD-MISSING·TURN-MISSING·DENOISE-MISSING·STT-MISSING·REC-FAILED 등), last_end{reason, probability, at_ms}}와 `error` {code, message}가 붙는다. 녹음 중이 아니면 두 필드가 없다.
 - 마이크 답변은 여러 조각일 수 있다. 답변 끝 판정이 답을 닫은 뒤 지원자가 이어 말하면 같은 질문의 답에 이어 붙이고 `qa.answered`를 더 긴 답으로 다시 보낸다. 프론트는 그때마다 꼬리질문을 다시 요청한다.
 - `qa.created` {QAItem}: 질문 중 모드에서 면접관이 말로 한 질문이 다음 질문으로 기록됐다(`POST /live/role`). 그 말은 interviewer 구간으로 이미 왔고, 이 질문에 붙는다.
 - 상태(구독자, 듣는 중인 질문)는 프로세스 메모리에 있다. 워커를 여러 개 띄우려면 공유 버스가 필요하다(남은 과제).

@@ -116,7 +116,7 @@
 | 대조 | reconcile | 놓친 이벤트를 사이트와 맞춰 보는 절차. 명세만 있고 구현 안 함 | 명세 9.2 |
 | SSE | server-sent events | 서버 → 브라우저 한 방향 스트림. 실시간 전사와 꼬리질문에 쓴다. WebSocket은 마이크 음성을 올리는 데만 쓴다 | [api-contract.md](../api-contract.md) 3장, `frontend/src/api/sse.ts` |
 | 모의 API | mock API (MSW) | 백엔드 없이 브라우저가 `/api`에 답하는 모드(`npm run dev`). `npm run dev:api`는 실제 백엔드 | `frontend/src/mocks/`, [frontend.md](../frontend.md) |
-| extra | optional dependencies | `uv sync --extra whisper --extra ocr --extra embedding --extra agent`. extra 없이 `uv sync`를 돌리면 이 패키지들이 지워진다 | `pyproject.toml`, [setup.md](../setup.md) |
+| extra | optional dependencies | `uv sync --extra whisper --extra ocr --extra embedding --extra agent --extra denoise`. extra 없이 `uv sync`를 돌리면 이 패키지들이 지워진다 | `pyproject.toml`, [setup.md](../setup.md) |
 | 시드 | seed | 데모 데이터를 DB에 넣는 것 | `scripts/seed_demo.py` |
 | N단계 | step N | 구현 순서의 0~12단계(10 STT 배치, 11 비대면 실시간, 12 평가셋·게이트 1) | [implementation-order.md](../implementation-order.md) |
 | 게이트 1 | gate 1 | 12단계의 통과 기준 4개: 면접관 점수 일치도, 비식별 누출률, 1건당 비용, 모델 교체 검증 | 같은 문서 |

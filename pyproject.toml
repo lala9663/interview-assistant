@@ -52,6 +52,14 @@ ocr = [
     "paddleocr==3.7.0",
     "paddlepaddle==3.2.2",
 ]
+# Server-side noise suppression in front of STT, off by default (docs/audio-input.md 7장). RNNoise
+# (Xiph, BSD-3-Clause) is the native library built into pyrnnoise's wheels (Apache-2.0): only that
+# library is loaded, never pyrnnoise's Python module (providers/denoise/rnnoise.py). DeepFilterNet3
+# runs on ONNX Runtime; its ONNX file comes from the admin screen's download.
+denoise = [
+    "pyrnnoise==0.4.5",
+    "onnxruntime>=1.20",
+]
 # MCP server for the in-house agent platform (Python MCP SDK, MIT): a thin layer over the REST API,
 # read tools and proposals only (docs/agent-integration.md). Pinned below 3 for the v2 server API.
 agent = [
@@ -73,6 +81,10 @@ dev = [
 # Two-week rule for new dependencies: sse-starlette 3.6.0 (mcp's dependency) came out 2026-10-25,
 # anthropic 1.17.0 on 2026-10-20 (1.13.0 is used).
 exclude-newer-package = { sse-starlette = "2026-10-14T00:00:00Z", anthropic = "2026-10-14T00:00:00Z" }
+# pyrnnoise's plotting and file-reading dependencies serve its own CLI, which is never imported here
+# (only its native RNNoise library is loaded): a marker that never holds (Python 3.12+) leaves them out. Nothing
+# else in the lock needs them; a new dependency that does would have to drop this.
+override-dependencies = ["matplotlib; python_version < '3'", "audiolab; python_version < '3'"]
 
 [build-system]
 requires = ["hatchling"]

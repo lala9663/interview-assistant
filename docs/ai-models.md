@@ -161,7 +161,7 @@ uv run python scripts/bench_whisper.py --manifest clips.json --sizes small mediu
 
 BAAI의 다국어 임베딩 모델 BGE-M3(MIT)를 이 PC의 CPU에서 돌린다. 공식 ONNX 변환본을 ONNX Runtime(MIT)과 tokenizers(Apache-2.0)로 읽어 torch가 필요 없다. 의미 벡터(밀집, 1024차원)와 단어 일치 가중치(희소)를 함께 내고, 검색 점수는 의미 유사도 + `sparse_weight` × 단어 일치다. 질문·답변 텍스트는 PC 밖으로 나가지 않는다. 쓰는 곳은 [question-bank.md](question-bank.md), 측정은 [embedding-benchmark.md](embedding-benchmark.md).
 
-1. `uv sync --extra whisper --extra ocr --extra embedding --extra agent` (onnxruntime·tokenizers는 faster-whisper도 쓰는 패키지라 대부분 이미 있다)
+1. `uv sync --extra whisper --extra ocr --extra embedding --extra agent --extra denoise` (onnxruntime·tokenizers는 faster-whisper도 쓰는 패키지라 대부분 이미 있다)
 2. 모델 설정 > 임베딩 > 변경 > "BGE-M3 (로컬)" > 모델을 고르고 모델 카드의 "다운로드". 받기 전에는 요구 조건 미충족으로 테스트·적용이 안 된다. 희소 헤드(`sparse_linear.pt`)는 바이트로만 읽고 pickle은 실행하지 않는다. 모든 파일을 커밋 고정·sha256 검증으로 받는다.
    - **BGE-M3 (int8 ONNX)**, 권장, 0.59GB: Hugging Face `Xenova/bge-m3` 커밋 `4de1325`의 int8 변환본(transformers.js, MIT)과 BAAI의 희소 헤드를 `weights/bge-m3/onnx-int8/`에. 이 노트북에서 답변 1건 0.28초, 메모리 약 0.9GB. 평가 세트에서 검색 품질 차이는 37개 중 1개([embedding-benchmark.md](embedding-benchmark.md) "int8 양자화")
    - **BGE-M3 (fp32 ONNX)**, 2.29GB: BAAI/bge-m3 커밋 `5617a9f`의 공식 ONNX를 `weights/bge-m3/onnx-fp32/`에. 답변 1건 0.44~0.9초, 메모리 약 1.6GB
@@ -181,7 +181,7 @@ BAAI의 다국어 임베딩 모델 BGE-M3(MIT)를 이 PC의 CPU에서 돌린다.
 
 - **음성 구간 (VAD)**: Silero VAD. faster-whisper 패키지 안의 모델 파일을 쓰고 불러올 때 sha256을 확인한다(내려받을 것 없음, `uv sync --extra whisper`). 옵션: 말소리 기준(0.5), 말소리 뒤 여유(300ms), 답변 시작으로 볼 최소 말소리(250ms). 연결 테스트는 내장 샘플(또는 녹음·파일)에서 찾은 말소리 구간을 보여 준다.
 - **답변 끝 판정**: 침묵 기준(ms 조정) 또는 Smart Turn v3.2. Smart Turn은 모델 카드의 "다운로드 9MB"로 받는다(Hugging Face `pipecat-ai/smart-turn-v3` 커밋 고정, sha256 검증, `weights/smart-turn/v3.2-cpu/`). 옵션: 판정 시작 침묵(1,000ms), 끝 판정 기준(0.8), 최대 침묵(3,000ms). 연결 테스트는 샘플 뒤 3초 무음을 붙여 마지막 말소리 몇 초 뒤에 답변 끝으로 보는지 보여 준다. 실사용 기본(`config/providers.yaml`)은 Smart Turn이고, 파일이 없으면 침묵 2초로 판정한다.
-- **서버 잡음 억제**: "끔"만 쓸 수 있다. RNNoise·DeepFilterNet은 구현 전(측정 계획은 [audio-input.md](audio-input.md) 7장).
+- **서버 잡음 억제**: 끔(기본), RNNoise, DeepFilterNet3. 둘 다 `uv sync --extra denoise`. RNNoise는 pyrnnoise 휠 안의 라이브러리를 쓰고 불러올 때 sha256을 확인한다(내려받을 것 없음, 지연 35ms). DeepFilterNet3은 모델 카드의 "다운로드 9MB"로 받는다(Hugging Face `soniqo/DeepFilterNet3-ONNX` 커밋 고정, sha256 검증, `weights/deepfilternet/dfn3-onnx/`, 지연 45ms). 옵션: 최대 억제(dB, 0 = 제한 없음), DeepFilterNet은 앞 문맥(300ms). 연결 테스트는 샘플을 100ms 조각으로 넣어 지연, 처리 시간, 말소리 구간과 그 밖의 소리 크기 변화를 보여 준다. 고른 억제기를 쓸 수 없으면 끄고 전사한다(`DENOISE-MISSING`). 측정과 언제 켤지는 [audio-input.md](audio-input.md) 7장.
 
 ## 서류 읽기
 

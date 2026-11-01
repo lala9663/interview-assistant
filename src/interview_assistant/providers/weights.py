@@ -339,6 +339,27 @@ SMART_TURN: dict[str, WeightSet] = {
 }
 
 
+# DeepFilterNet3 (Hendrik Schröter et al., MIT or Apache-2.0), checked 2026-10-30: the official
+# v0.5.6 checkpoint exported to one ONNX graph, the network only (soniqo's export, published under
+# the MIT option; its export_manifest.json records the source archive's sha256 and PyTorch parity
+# within 1.5e-6). Repo commit of 2026-07-15. The STFT, features and filtering are in
+# providers/denoise/deepfilternet.py.
+DEEPFILTERNET: dict[str, WeightSet] = {
+    "deepfilternet3": WeightSet(
+        "deepfilternet/dfn3-onnx",
+        "soniqo/DeepFilterNet3-ONNX",
+        "63d8ba442ba900143c468b798e94a04009b2f0c9",
+        (
+            WeightFile(
+                "deepfilter.onnx",
+                8608859,
+                "e1157049059434ae0d5857e32c812abea227b975e946b2eb64d001abbce156d3",
+            ),
+        ),
+    ),
+}
+
+
 def is_complete(weights: WeightSet, root: Path) -> bool:
     """Every file present with its expected size, and the marker written after verification."""
     folder = weights.path(root)

@@ -36,7 +36,7 @@ src/interview_assistant/
     base.py             # LLM·STT·임베딩·화자분리·OCR·VAD·답변 끝·잡음 억제 provider 인터페이스 (공통: model, warm_up), 오디오 형식
     registry.py         # impl 이름 -> 구현 클래스
     catalog.py          # 관리자 화면이 고르는 목록: 역할 14개, 데이터 위치, 옵션 스키마, 요구 조건(네트워크 없이)
-    weights.py          # 모델 가중치(Whisper, PaddleOCR, Tesseract 한국어 데이터, BGE-M3, Smart Turn): 커밋 고정·sha256, 이어받는 다운로드, 진행률
+    weights.py          # 모델 가중치(Whisper, PaddleOCR, Tesseract 한국어 데이터, BGE-M3, Smart Turn, DeepFilterNet3): 커밋 고정·sha256, 이어받는 다운로드, 진행률
     programs.py         # 시스템 프로그램(Tesseract, LibreOffice) 찾기와 버전, 네트워크 없이
     audio.py            # 파일 URI, 16kHz PCM 디코딩(PyAV), 조각 내기, 내장 한국어 샘플(samples/, FLEURS CC BY 4.0)
     llm/open_model_server.py  # 사내 오픈 웨이트 모델 서버(vLLM·Ollama 등)의 OpenAI 형식 API. openai.com 주소는 거부
@@ -44,7 +44,8 @@ src/interview_assistant/
     stt/faster_whisper.py  # 로컬 Whisper STT (CPU int8, 한국어, VAD, stream·transcribe)
     embedding/bge_m3.py # 로컬 BGE-M3 임베딩 (ONNX Runtime CPU, fp32·int8, 밀집 1024 + 희소, 같은 가중치는 인스턴스끼리 공유)
     ocr/paddle.py, ocr/tesseract.py  # 로컬 OCR (PP-OCRv5 한국어 CPU, Tesseract kor+eng)
-    vad/silero.py, turn/silence.py, turn/smart_turn.py, denoise/  # 마이크 경로: 말소리 구간, 답변 끝 판정, 잡음 억제(끔만 구현)
+    vad/silero.py, turn/silence.py, turn/smart_turn.py  # 마이크 경로: 말소리 구간, 답변 끝 판정
+    denoise/rnnoise.py, denoise/deepfilternet.py, denoise/resample.py  # 서버 잡음 억제(기본 끔): 16↔48kHz 스트림, 마이크마다 상태
     isolated.py         # 네이티브 엔진을 작업 프로세스에서 돌리기 (PaddleOCR: 그 DLL이 faster-whisper와 충돌)
     samples/documents/  # 서류 읽기 연결 테스트용 가상 이력서
     fake.py             # 자격증명 없이 도는 구현 (speed로 지연 흉내)
@@ -60,6 +61,7 @@ scripts/
   bench_embedding.py    # BGE-M3 로딩·임베딩·1,000건 색인·검색 시간, 메모리(단독, Whisper·PaddleOCR과 함께)
   bench_live_audio.py   # 마이크 경로: 말 끝 → 답변 닫힘 → 첫 꼬리질문 카드 (audio-input.md 9장)
   bench_turns.py        # 답변 끝 판정 비교: 침묵 기준 vs Smart Turn (audio-input.md 5장)
+  bench_denoise.py      # 서버 잡음 억제: 소음 섞은 한국어로 끔·RNNoise·DeepFilterNet의 CER, VAD, 답변 끝, CPU (audio-input.md 7장)
   eval_retrieval.py     # 한국어 검색 품질: 가상 답변 → 맞는 질문 상위 3개 적중률 (하이브리드 vs 의미만)
   check_leaks.py        # 비식별화 누출 검수 (텍스트 샘플 / --documents 파일 샘플, --ocr로 OCR 포함 / --report 검토 리포트)
   fake_recruiting_site.py  # 가짜 채용 사이트: 서명된 지원서 이벤트 약 500건(중복·순서 바뀜·철회·일부러 넣은 오류), 처리 결과·시간 보고
@@ -134,7 +136,7 @@ uploads/, recordings/, reports/   # 원본 영역 (git 제외)
 
 `live/hub.py`: 지원자 오디오 → 세션이 고정한 스트리밍 STT → 비식별화 → SSE(부분·확정 전사, 답변 닫힘). 확정 구간만 저장하고 원문은 원본 영역(`QAItem.answer_text`)에만 둔다.
 
-- 마이크: 브라우저가 16kHz PCM16을 WebSocket(막히면 HTTP 청크)으로 보내면 `live/microphone.py`가 녹음(동의 시) → 잡음 억제(끔) → Silero VAD → 말소리만 STT로 넣고, 답변 끝 판정(침묵·Smart Turn)이 답의 조각을 끝낸다. 이어 말하면 같은 답에 붙는다. 자세한 것은 [audio-input.md](audio-input.md).
+- 마이크: 브라우저가 16kHz PCM16을 WebSocket(막히면 HTTP 청크)으로 보내면 `live/microphone.py`가 녹음(동의 시, 원음) → 잡음 억제(기본 끔) → Silero VAD → 말소리만 STT로 넣고, 답변 끝 판정(침묵·Smart Turn)이 답의 조각을 끝낸다. 이어 말하면 같은 답에 붙는다. 자세한 것은 [audio-input.md](audio-input.md).
 - 마이크를 붙이기 전에는 `live/audio.py`의 가상 지원자가 데모 대본을 텍스트로 보내고 fake STT가 받아 적는다. 속도는 `speed`(providers.fake.yaml)와 `IA_DEMO_SPEED`.
 - 오디오 소스는 내보내는 형식을 밝힌다. 실제 음성은 16kHz 모노 16비트 PCM이고, STT provider가 그 형식을 못 읽으면(예: Whisper에 가상 지원자 텍스트) 그 면접은 수기 답변 입력으로 바뀐다.
 - 상태는 프로세스 메모리에 있다. 서버를 여러 대 띄우려면 공유 버스가 필요하다.

@@ -88,6 +88,7 @@ function pickDocument(e: Event) {
 const reading = computed(() => (takesDocument(props.role) && result.value ? (result.value.output as unknown as ReadingTestOutput) : null))
 const percent = (v: number | null | undefined) => (typeof v === 'number' ? `${Math.round(v * 100)}%` : '–')
 const seconds = (ms: number | null | undefined) => (typeof ms === 'number' ? `${(ms / 1000).toFixed(1)}초` : '–')
+const signed = (db: number) => (db > 0 ? `+${db.toFixed(1)}` : db.toFixed(1))
 </script>
 
 <template>
@@ -100,7 +101,8 @@ const seconds = (ms: number | null | undefined) => (typeof ms === 'number' ? `${
       </Segmented>
 
       <p v-if="source === 'sample'" class="text-xs leading-relaxed text-muted-foreground">
-        한국어 낭독 11.5초 (FLEURS, CC BY 4.0). 정답 전사와 비교해 글자 오류율(CER)도 보여 줍니다.
+        한국어 낭독 11.5초 (FLEURS, CC BY 4.0).
+        {{ role.startsWith('stt.') ? '정답 전사와 비교해 글자 오류율(CER)도 보여 줍니다.' : role === 'audio.denoise' ? '조용한 녹음이라 줄일 잡음이 적습니다. 소음 있는 방에서 마이크로 녹음해 보면 억제 정도가 보입니다.' : '' }}
       </p>
 
       <div v-else-if="source === 'mic'" class="space-y-2 rounded-lg border bg-subtle p-3" data-testid="mic-recorder">
@@ -193,6 +195,11 @@ const seconds = (ms: number | null | undefined) => (typeof ms === 'number' ? `${
         <Badge v-if="num('audio_seconds') !== null" variant="outline" class="tabular">음성 {{ num('audio_seconds')!.toFixed(1) }}초</Badge>
         <Badge v-if="num('realtime_factor') !== null" variant="outline" class="tabular">음성 길이의 {{ num('realtime_factor')!.toFixed(2) }}배 시간</Badge>
         <Badge v-if="num('cer') !== null" variant="outline" class="tabular">CER {{ (num('cer')! * 100).toFixed(1) }}%</Badge>
+        <Badge v-if="num('delay_ms') !== null" variant="outline" class="tabular" data-testid="denoise-delay">지연 {{ num('delay_ms') }}ms</Badge>
+        <Badge v-if="num('cpu_ms_per_second') !== null" variant="outline" class="tabular">음성 1초당 {{ num('cpu_ms_per_second') }}ms</Badge>
+        <Badge v-if="num('speech_change_db') !== null" variant="outline" class="tabular" data-testid="denoise-levels">
+          말소리 {{ signed(num('speech_change_db')!) }}dB · 그 밖 {{ signed(num('other_change_db') ?? 0) }}dB
+        </Badge>
         <Badge v-if="num('dimensions') !== null" variant="outline" class="tabular">{{ num('dimensions') }}차원</Badge>
         <Badge v-if="out.sparse === true" variant="outline">단어 일치 가중치 있음</Badge>
         <Badge v-if="num('similar') !== null" variant="outline" class="tabular" data-testid="embedding-similar">

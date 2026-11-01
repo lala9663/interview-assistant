@@ -38,7 +38,7 @@
 ## 2. 실행
 
 ```bash
-uv sync --extra whisper --extra ocr --extra embedding --extra agent
+uv sync --extra whisper --extra ocr --extra embedding --extra agent --extra denoise
 ```
 
 1. API 쪽 `.env`에 신원 확인 방식을 정한다. 플랫폼이 정해지기 전에는 개발용 토큰(`IA_AGENT_IDENTITY=dev_token`, 기본값)뿐이다.

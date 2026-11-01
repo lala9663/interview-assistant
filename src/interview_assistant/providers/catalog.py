@@ -23,6 +23,7 @@ from interview_assistant.providers import registry
 from interview_assistant.providers.programs import JAVA, LIBREOFFICE, TESSERACT, Program
 from interview_assistant.providers.weights import (
     BGE_M3,
+    DEEPFILTERNET,
     PADDLEOCR,
     SMART_TURN,
     TESSDATA,
@@ -249,6 +250,16 @@ def _retrieval_options(sparse: float, duplicate: float, minimum: float) -> tuple
 
 
 _LOCAL_VOICE = "음성은 이 PC(서버) 밖으로 나가지 않습니다."
+_ATTEN_LIM = OptionField(
+    "atten_lim_db",
+    "최대 억제 (dB)",
+    "number",
+    0,
+    "0이면 모델이 정한 만큼 줄입니다. 12처럼 정하면 원래 소리를 그만큼 낮춰 섞어, 잡음을 그 이상은 줄이지 "
+    "않는 대신 말소리의 변형도 덜합니다.",
+    minimum=0,
+    maximum=60,
+)
 
 
 def _check_smart_turn(values: dict[str, Any]) -> dict[str, Any]:
@@ -403,24 +414,59 @@ def _audio_impls() -> tuple[ImplInfo, ...]:
         ImplInfo(
             "denoise",
             "rnnoise",
-            "RNNoise",
-            "Xiph의 RNN 잡음 억제(48kHz). 구현 전입니다. 파이썬에서 쓰려면 C 라이브러리를 빌드해 붙여야 해서, "
-            "실제 면접 녹음으로 CER을 비교한 뒤 정합니다(docs/audio-input.md).",
+            "RNNoise (로컬)",
+            "Xiph의 작은 RNN 잡음 억제. 16kHz 마이크 음성을 48kHz로 올려 10ms씩 걸고 다시 내립니다. 지연 약 35ms. "
+            "소음 섞은 한국어 측정에서 말소리가 잘 들리는 표본은 CER이 조금 올랐고, 키보드 소음에 작은 목소리가 "
+            "묻힐 때만 나아졌습니다(에어컨 소음에서는 나빠짐). 그래서 기본은 끔입니다(docs/audio-input.md 7장).",
             DataLocation.local,
-            _LOCAL_VOICE,
-            "BSD-3-Clause",
+            f"{_LOCAL_VOICE} 라이브러리는 pyrnnoise 패키지 안에 있어 따로 내려받지 않고, 불러올 때 sha256을 확인합니다.",
+            "BSD-3-Clause (RNNoise), Apache-2.0 (pyrnnoise)",
             ("audio.denoise",),
+            options=(_ATTEN_LIM,),
+            packages=(("pyrnnoise", "uv sync --extra denoise"),),
         ),
         ImplInfo(
             "denoise",
             "deepfilternet",
-            "DeepFilterNet",
-            "딥러닝 잡음 억제(48kHz). 구현 전입니다. 파이썬 패키지가 PyTorch를 요구해 무겁습니다. 실제 면접 "
-            "녹음으로 CER을 비교한 뒤 정합니다(docs/audio-input.md).",
+            "DeepFilterNet3 (로컬)",
+            "딥러닝 잡음 억제(공식 v0.5.6 모델, ONNX Runtime, PyTorch 없음). 48kHz에서 대역별 이득과 저역의 "
+            "딥 필터로 잡음을 줄입니다. 지연 약 45ms(앞보기 20ms 포함). 내보낸 모델이 상태를 넘기지 못해 매번 "
+            "'앞 문맥'만큼 지난 소리를 다시 넣습니다. 측정에서는 모든 소음 세기에서 끔보다 CER이 높았습니다(5dB "
+            "23%→28%). 비교용입니다(docs/audio-input.md 7장).",
             DataLocation.local,
-            _LOCAL_VOICE,
-            "MIT 또는 Apache-2.0",
+            f"{_LOCAL_VOICE} 모델 파일(8.6MB)만 Hugging Face에서 한 번 내려받습니다(sha256 고정).",
+            "MIT 또는 Apache-2.0 (DeepFilterNet), MIT (ONNX 변환)",
             ("audio.denoise",),
+            options=(
+                OptionField(
+                    "model",
+                    "모델",
+                    "select",
+                    "deepfilternet3",
+                    choices=(
+                        Choice(
+                            "deepfilternet3",
+                            "DeepFilterNet3 (v0.5.6, ONNX)",
+                            "네트워크만 든 ONNX 파일. STFT·특징·필터는 이 프로그램이 계산합니다.",
+                            DEEPFILTERNET["deepfilternet3"].size_bytes,
+                            ("audio.denoise",),
+                        ),
+                    ),
+                ),
+                OptionField(
+                    "context_ms",
+                    "앞 문맥 (ms)",
+                    "integer",
+                    300,
+                    "새 소리마다 이만큼 지난 소리를 함께 다시 넣어 모델의 기억을 되살립니다. 300ms면 녹음 전체를 한 번에 "
+                    "처리한 결과와 거의 같고(차이 24dB), 더 늘려도 결과는 그대로이고 CPU만 늡니다.",
+                    0,
+                    2000,
+                ),
+                _ATTEN_LIM,
+            ),
+            packages=(("onnxruntime", "uv sync --extra denoise"),),
+            weights=DEEPFILTERNET,
         ),
     )
 
